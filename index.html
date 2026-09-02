@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2d3a4a" />
+  <title>专注计划 · 学习会计系统</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header id="app-header">
+    <div class="header-top">
+      <div class="brand">
+        <h1>专注计划</h1>
+        <p>系统是账本，你是会计</p>
+      </div>
+      <nav id="main-nav">
+        <button class="nav-btn active" data-view="tasks">任务</button>
+        <button class="nav-btn" data-view="timeline">时间轴</button>
+        <button class="nav-btn" data-view="stats">历史</button>
+        <button class="nav-btn" data-view="settings">设置</button>
+        <button class="nav-btn" id="btn-about" title="公告与使用指南">📖 指南</button>
+      </nav>
+    </div>
+    <!-- 顶部固定统计条 -->
+    <div id="stat-bar">
+      <div class="stat-item" title="必须完成任务进度">
+        <span class="stat-label">必须</span><span id="stat-req" class="stat-value">0/0</span>
+      </div>
+      <div class="stat-item" title="理想任务进度">
+        <span class="stat-label">理想</span><span id="stat-ideal" class="stat-value">0/0</span>
+      </div>
+      <div class="stat-item" title="长期拓展进度">
+        <span class="stat-label">拓展</span><span id="stat-extra" class="stat-value">0/0</span>
+      </div>
+      <div class="stat-item" title="积分余额，点击兑换">
+        <span class="stat-label">积分</span>
+        <button id="stat-points" class="stat-value stat-btn">0</button>
+      </div>
+      <div class="stat-item" title="休闲时间累计（展示）">
+        <span class="stat-label">休闲</span><span id="stat-leisure" class="stat-value">0分</span>
+      </div>
+      <div class="stat-item" title="今日任务实际用时">
+        <span class="stat-label">今日用时</span><span id="stat-used" class="stat-value">0分</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 活动计时条（有计时任务时出现） -->
+  <div id="timer-bar" class="hidden">
+    <div class="timer-info">
+      <span class="timer-task" id="timer-task">任务</span>
+      <span class="timer-meta" id="timer-meta">已用 00:00 / 预计 00:00</span>
+    </div>
+    <div class="timer-track"><div id="timer-progress" class="timer-progress"></div></div>
+    <div class="timer-actions">
+      <button id="timer-pause" class="btn btn-small">⏸ 暂停</button>
+      <button id="timer-stop" class="btn btn-small btn-primary">⏹ 完成</button>
+    </div>
+  </div>
+
+  <main>
+    <!-- 任务视图 -->
+    <section id="view-tasks" class="view active">
+      <div class="view-tabs">
+        <button class="tab-btn active" data-tab="today">今天</button>
+        <button class="tab-btn" data-tab="tomorrow">明天（提前填写）</button>
+      </div>
+      <div id="tasks-today" class="tab-panel active">
+        <div id="task-columns"></div>
+        <div class="card day-footer">
+          <button id="btn-end-day" class="btn btn-primary btn-block">🏁 结束今天</button>
+        </div>
+      </div>
+      <div id="tasks-tomorrow" class="tab-panel">
+        <div id="tomorrow-columns"></div>
+        <p class="hint">提示：今晚填好明天的任务，"结束今天"时未完成的任务也会自动顺延到这里。</p>
+      </div>
+    </section>
+
+    <!-- 时间轴视图 -->
+    <section id="view-timeline" class="view">
+      <div class="card tool-row">
+        <button id="tl-today-btn" class="btn btn-small">回到今天</button>
+        <button id="tl-prev-day" class="btn btn-small">‹ 前一天</button>
+        <input type="date" id="tl-date" class="date-input" />
+        <button id="tl-next-day" class="btn btn-small">后一天 ›</button>
+        <span class="spacer"></span>
+        <select id="tl-filter-cat" class="select-small">
+          <option value="">全部分类</option>
+          <option value="study">学习</option>
+          <option value="extend">拓展</option>
+          <option value="fun">休闲</option>
+          <option value="life">生活</option>
+          <option value="other">其他</option>
+        </select>
+        <input type="search" id="tl-keyword" class="search-small" placeholder="搜索内容…" />
+        <button id="tl-export" class="btn btn-small">导出</button>
+        <button id="tl-import" class="btn btn-small">导入</button>
+      </div>
+      <div id="timeline-wrap">
+        <div id="timeline-grid"></div>
+      </div>
+      <div class="card stat-summary" id="tl-summary"></div>
+      <input type="file" id="import-file" class="hidden" accept=".json" />
+    </section>
+
+    <!-- 历史视图 -->
+    <section id="view-stats" class="view">
+      <div class="card">
+        <h2>📅 历史回顾</h2>
+        <div class="chart-row">
+          <div class="chart-box">
+            <h3>本周每日用时（柱状图）</h3>
+            <svg id="chart-week" class="chart" viewBox="0 0 600 220"></svg>
+          </div>
+          <div class="chart-box">
+            <h3>近30天学习时间趋势（折线图）</h3>
+            <svg id="chart-month" class="chart" viewBox="0 0 600 220"></svg>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>积分流水账</h3>
+        <div id="ledger-list"></div>
+      </div>
+      <div class="card">
+        <h3>按日记录</h3>
+        <div id="day-history"></div>
+      </div>
+    </section>
+
+    <!-- 设置视图 -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <h2>⚙️ 规则设置（全部由你自己定）</h2>
+        <div id="settings-form"></div>
+      </div>
+      <div class="card">
+        <h3>🎁 积分兑换表</h3>
+        <p class="hint">积分为消费型资产：完成理想/拓展任务赚积分，按你的兑换表花掉。</p>
+        <div id="redeem-table"></div>
+        <button id="btn-add-redeem" class="btn btn-small">＋ 添加兑换项</button>
+      </div>
+      <div class="card">
+        <h3>💾 数据</h3>
+        <div class="btn-row">
+          <button id="btn-export-json" class="btn btn-small">导出全部数据 (.json)</button>
+          <button id="btn-export-csv" class="btn btn-small">导出记录 (.csv)</button>
+          <button id="btn-import-json" class="btn btn-small">导入数据</button>
+          <button id="btn-reset" class="btn btn-small btn-danger">清空全部数据</button>
+        </div>
+        <p class="hint">数据保存在浏览器本地（localStorage + IndexedDB 双备份），导出文件可随时恢复。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>数据仅存于你的浏览器 · 导出即备份 · 分享此页面给朋友即可使用</footer>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/tasks.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () { /* file:// 下无碍 */ });
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "专注计划 - 学习会计系统",
+  "short_name": "专注计划",
+  "description": "系统是账本，你是会计：任务降档、正向计时、奖惩积分、柳比歇夫时间轴",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#2d3a4a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
