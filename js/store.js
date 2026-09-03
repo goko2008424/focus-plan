@@ -230,10 +230,10 @@
     download('focus-plan-backup-' + todayKey() + '.json', JSON.stringify(data, null, 2));
   }
   function exportCSV() {
-    const rows = [['日期', '开始', '结束', '时长(分钟)', '内容', '分类', '计入学习', '来源', '关联任务']];
+    const rows = [['日期', '开始', '结束', '时长(分钟)', '内容', '分类', '计入学习', '来源', '关联任务', '总结']];
     Object.keys(data.days).sort().forEach(function (k) {
       data.days[k].timeline.forEach(function (r) {
-        rows.push([k, hhmmOf(r.start), hhmmOf(r.end), r.minutes, r.content, r.category, r.countAsStudy ? '是' : '否', r.auto ? '自动' : '手动', r.taskText || '']);
+        rows.push([k, hhmmOf(r.start), hhmmOf(r.end), r.minutes, r.content, r.category, r.countAsStudy ? '是' : '否', r.auto ? '自动' : '手动', r.taskText || '', r.note || '']);
       });
     });
     download('focus-plan-timeline-' + todayKey() + '.csv', '\ufeff' + rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n'));

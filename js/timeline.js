@@ -108,6 +108,9 @@
       '</div>' +
       '<div class="field"><label>持续时间（自动计算）</label><p id="rec-dur" style="font-weight:700;color:#3b82f6">--</p></div>' +
       '<div class="field"><label>活动内容</label><textarea id="rec-content" placeholder="">' + S().esc(content) + '</textarea></div>' +
+      (isEdit && record.note
+        ? '<div class="field"><label>本次总结（计时完成时填写）</label><p style="font-size:13px;color:#374151;background:#f4faf6;border-radius:8px;padding:6px 10px">' + S().esc(record.note) + '</p></div>'
+        : '') +
       '<div class="field"><label>活动分类</label>' +
       '<div class="cat-picker" id="rec-cats">' +
       Object.keys(App.ui.CATS).map(function (k) {

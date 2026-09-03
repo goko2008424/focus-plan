@@ -89,22 +89,23 @@ input, select, textarea { font-family: inherit; }
 .stat-btn:active { transform: scale(.94); }
 .stat-points-bump { animation: bump .5s ease; }
 
-/* 计时悬浮窗 */
+/* 计时悬浮窗（可拖动） */
 #timer-float {
   position: fixed;
   right: 16px;
   bottom: 16px;
-  width: 272px;
+  width: 280px;
   background: #fff;
   border: 2px solid var(--primary);
   border-radius: 14px;
   box-shadow: 0 10px 30px rgba(20,26,34,.32);
-  padding: 14px 16px;
+  padding: 12px 16px 14px;
   z-index: 90;
   animation: pop .2s ease;
 }
 #timer-float.hidden { display: none; }
-.tf-head { font-weight: 700; font-size: 14.5px; margin-bottom: 8px; color: var(--brand); }
+.tf-head { font-weight: 700; font-size: 14px; margin-bottom: 8px; color: var(--brand); cursor: move; user-select: none; }
+.tf-drag-hint { font-size: 11px; font-weight: 400; color: #a3aab4; }
 .tf-line { font-size: 12.5px; color: #6b7280; margin-bottom: 4px; word-break: break-word; }
 .tf-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .tf-track { height: 8px; background: #eef1f5; border-radius: 4px; overflow: hidden; margin: 10px 0; }
@@ -116,6 +117,8 @@ input, select, textarea { font-family: inherit; }
 }
 .tf-actions { display: flex; gap: 8px; }
 .tf-actions .btn { flex: 1; }
+#tf-cd { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; }
+#tf-cd .tf-line b { color: var(--req); }
 
 /* ============ 主体 ============ */
 main { max-width: 960px; margin: 20px auto 0; padding: 0 16px; }
@@ -228,6 +231,18 @@ details.task-details summary:hover { text-decoration: underline; }
 .task-points:disabled { opacity: .45; background: #f0f2f5; color: #6b7280; }
 .pts-unit { font-size: 11px; color: var(--muted); }
 .extra-append { margin-top: 10px; }
+
+/* 子任务（小任务限时倒计时） */
+.sub-block { border-top: 1px dashed var(--line); padding: 6px 4px 2px 26px; }
+.sub-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; flex-wrap: wrap; }
+.sub-item .sub-text { color: #374151; font-size: 12.5px; }
+.sub-item.done .sub-text { text-decoration: line-through; color: #8a919c; }
+.sub-item.fail .sub-text { color: var(--req); }
+.sub-item .sub-meta { color: #8a919c; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.sub-item .running-txt { color: var(--req); font-weight: 600; }
+.sub-item .btn-small { padding: 2px 10px; font-size: 12px; }
+.sub-add { background: none; border: none; color: var(--primary); font-size: 12px; cursor: pointer; padding: 4px 0; }
+.sub-add:hover { text-decoration: underline; }
 .day-footer { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ============ 按钮 ============ */

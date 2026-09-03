@@ -10,6 +10,7 @@
   const LEDGER_NAMES = {
     'earn-ideal': '⭐ 理想任务完成',
     'earn-extra': '🌱 拓展任务完成',
+    'earn-sub': '🧩 小任务完成',
     'reward-base': '🎉 保底奖励',
     'reward-perfect': '🏆 完美奖励',
     'redeem': '🎁 积分兑换',

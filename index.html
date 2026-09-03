@@ -47,16 +47,27 @@
     </div>
   </header>
 
-  <!-- 计时悬浮窗（任务进行中显示，右下角） -->
+  <!-- 计时悬浮窗（任务进行中显示，可拖动） -->
   <div id="timer-float" class="hidden">
-    <div class="tf-head">⏱ 正在专注</div>
-    <div class="tf-line">预计完成内容：<b id="tf-content">--</b></div>
-    <div class="tf-line">预计时间：<b id="tf-plan">--</b></div>
-    <div class="tf-line">实际时间：<b id="tf-used">00:00</b></div>
-    <div class="tf-track"><div id="tf-progress" class="timer-progress"></div></div>
-    <div class="tf-actions">
-      <button id="timer-pause" class="btn btn-small">⏸ 暂停</button>
-      <button id="timer-stop" class="btn btn-small btn-primary">⏹ 完成</button>
+    <div class="tf-head" id="tf-head">🪟 计时悬浮窗 <span class="tf-drag-hint">（按住可拖动）</span></div>
+    <div id="tf-forward">
+      <div class="tf-line">预计完成内容：<b id="tf-content">--</b></div>
+      <div class="tf-line">预计时间：<b id="tf-plan">--</b></div>
+      <div class="tf-line">实际时间：<b id="tf-used">00:00</b></div>
+      <div class="tf-track"><div id="tf-progress" class="timer-progress"></div></div>
+      <div class="tf-actions">
+        <button id="timer-pause" class="btn btn-small">⏸ 暂停</button>
+        <button id="timer-stop" class="btn btn-small btn-primary">⏹ 完成</button>
+      </div>
+    </div>
+    <div id="tf-cd" class="hidden">
+      <div class="tf-line">小任务：<b id="tf-cd-text">--</b></div>
+      <div class="tf-line">剩余时间：<b id="tf-cd-left">00:00</b> <span class="tf-drag-hint">（目标 <span id="tf-cd-target">--</span>）</span></div>
+      <div class="tf-track"><div id="tf-cd-progress" class="timer-progress"></div></div>
+      <div class="tf-actions">
+        <button id="cd-pause" class="btn btn-small">⏸ 暂停</button>
+        <button id="cd-stop" class="btn btn-small btn-primary">⏹ 结束</button>
+      </div>
     </div>
   </div>
 
