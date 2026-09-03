@@ -89,34 +89,33 @@ input, select, textarea { font-family: inherit; }
 .stat-btn:active { transform: scale(.94); }
 .stat-points-bump { animation: bump .5s ease; }
 
-/* 计时条 */
-#timer-bar {
-  max-width: 960px;
-  margin: 12px auto 0;
-  background: var(--card);
+/* 计时悬浮窗 */
+#timer-float {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 272px;
+  background: #fff;
   border: 2px solid var(--primary);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  box-shadow: 0 4px 14px rgba(59,130,246,.25);
-  position: sticky;
-  top: 108px;
-  z-index: 49;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(20,26,34,.32);
+  padding: 14px 16px;
+  z-index: 90;
+  animation: pop .2s ease;
 }
-.timer-info { flex: 1 1 240px; min-width: 0; }
-.timer-task { font-weight: 700; font-size: 14.5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.timer-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.timer-track { flex: 2 1 280px; height: 10px; background: #eef1f5; border-radius: 5px; overflow: hidden; }
+#timer-float.hidden { display: none; }
+.tf-head { font-weight: 700; font-size: 14.5px; margin-bottom: 8px; color: var(--brand); }
+.tf-line { font-size: 12.5px; color: #6b7280; margin-bottom: 4px; word-break: break-word; }
+.tf-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.tf-track { height: 8px; background: #eef1f5; border-radius: 4px; overflow: hidden; margin: 10px 0; }
 .timer-progress {
   height: 100%; width: 0%;
   background: linear-gradient(90deg, #3b82f6, #22a06b);
   border-radius: 5px;
   transition: width .6s linear;
 }
-.timer-actions { display: flex; gap: 8px; }
+.tf-actions { display: flex; gap: 8px; }
+.tf-actions .btn { flex: 1; }
 
 /* ============ 主体 ============ */
 main { max-width: 960px; margin: 20px auto 0; padding: 0 16px; }
@@ -164,6 +163,12 @@ footer {
 .tab-panel.active { display: block; }
 
 /* ============ 任务栏 ============ */
+.date-label { font-size: 12.5px; color: var(--muted); margin: 0 2px 10px; }
+details.task-details { margin-top: 8px; }
+details.task-details summary { cursor: pointer; font-size: 12.5px; color: var(--primary); user-select: none; }
+details.task-details summary:hover { text-decoration: underline; }
+.task-detail-line { font-size: 12.5px; padding: 2px 0; color: #374151; }
+.review-meta { font-size: 11.5px; color: var(--muted); }
 .task-col { border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--line); background: var(--card); }
 .task-col.req { border-left: 5px solid var(--req); }
 .task-col.ideal { border-left: 5px solid var(--ideal); }
@@ -307,7 +312,7 @@ footer {
   z-index: 3;
   line-height: 1.35;
 }
-.tl-record .tl-rec-time { opacity: .85; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.tl-record .tl-rec-time { opacity: .92; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tl-record.cat-study { background: var(--study); }
 .tl-record.cat-extend { background: var(--extend); }
 .tl-record.cat-fun { background: var(--fun); }
@@ -479,6 +484,6 @@ footer {
   .header-top { flex-direction: column; align-items: flex-start; }
   #stat-bar { font-size: 12px; gap: 10px; }
   main { padding: 0 12px; }
-  #timer-bar { top: 128px; }
+  #timer-float { right: 10px; bottom: 10px; width: 240px; }
   .modal { padding: 18px; }
 }

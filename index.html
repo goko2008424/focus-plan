@@ -47,14 +47,14 @@
     </div>
   </header>
 
-  <!-- 活动计时条（有计时任务时出现） -->
-  <div id="timer-bar" class="hidden">
-    <div class="timer-info">
-      <span class="timer-task" id="timer-task">任务</span>
-      <span class="timer-meta" id="timer-meta">已用 00:00 / 预计 00:00</span>
-    </div>
-    <div class="timer-track"><div id="timer-progress" class="timer-progress"></div></div>
-    <div class="timer-actions">
+  <!-- 计时悬浮窗（任务进行中显示，右下角） -->
+  <div id="timer-float" class="hidden">
+    <div class="tf-head">⏱ 正在专注</div>
+    <div class="tf-line">预计完成内容：<b id="tf-content">--</b></div>
+    <div class="tf-line">预计时间：<b id="tf-plan">--</b></div>
+    <div class="tf-line">实际时间：<b id="tf-used">00:00</b></div>
+    <div class="tf-track"><div id="tf-progress" class="timer-progress"></div></div>
+    <div class="tf-actions">
       <button id="timer-pause" class="btn btn-small">⏸ 暂停</button>
       <button id="timer-stop" class="btn btn-small btn-primary">⏹ 完成</button>
     </div>
@@ -68,12 +68,15 @@
         <button class="tab-btn" data-tab="tomorrow">明天（提前填写）</button>
       </div>
       <div id="tasks-today" class="tab-panel active">
+        <div id="today-date" class="date-label"></div>
         <div id="task-columns"></div>
+        <div class="card" id="review-card"></div>
         <div class="card day-footer">
           <button id="btn-end-day" class="btn btn-primary btn-block">🏁 结束今天</button>
         </div>
       </div>
       <div id="tasks-tomorrow" class="tab-panel">
+        <div id="tomorrow-date" class="date-label"></div>
         <div id="tomorrow-columns"></div>
         <p class="hint">提示：今晚填好明天的任务，"结束今天"时未完成的任务也会自动顺延到这里。</p>
       </div>

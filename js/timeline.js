@@ -51,7 +51,7 @@
       el.style.top = top + 'px';
       el.style.height = height + 'px';
       el.innerHTML = '<span class="tl-rec-time">' + S().hhmmOf(r.start) + '–' + S().hhmmOf(r.end) +
-        ' · ' + S().fmtDur(r.minutes) + '</span><br/>' + S().esc(r.content);
+        ' · ' + S().fmtDur(r.minutes) + '</span><br/>' + (r.auto ? '⏱ ' : '') + S().esc(r.content);
       el.title = r.content + '（' + App.ui.CATS[r.category].label + '）';
       grid.appendChild(el);
     });

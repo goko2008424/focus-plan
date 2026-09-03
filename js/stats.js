@@ -107,6 +107,27 @@
           const focusMin = day.sessions.reduce(function (s, x) { return s + (x.actualMinutes || 0); }, 0);
           const dayPts = S().ledger().filter(function (e) { return e.date === k; }).reduce(function (s, e) { return s + (e.points || 0); }, 0);
           const dayLei = S().ledger().filter(function (e) { return e.date === k; }).reduce(function (s, e) { return s + (e.leisure || 0); }, 0);
+          // 当天任务明细（每条：完成状态 + 文本 + 积分）
+          const detailLines = [];
+          ['required', 'ideal', 'extra'].forEach(function (lk) {
+            day.tasks[lk].forEach(function (t) {
+              const pts = t.points != null ? t.points
+                : (lk === 'ideal' ? (S().settings().idealPoints || 0)
+                  : lk === 'extra' ? (S().settings().extPoints || 0) : null);
+              detailLines.push('<div class="task-detail-line">' +
+                (t.done ? '☑' : '☐') + ' ' + S().esc(t.text) +
+                (t.done ? '' : ' <span style="color:#e2545d">未完成</span>') +
+                (pts != null ? ' <span style="color:#8a919c">+' + pts + '分</span>' : '') +
+                '</div>');
+            });
+          });
+          const detailHTML = detailLines.length
+            ? '<details class="task-details"><summary>查看当天任务明细（' + detailLines.length + ' 条）</summary>' + detailLines.join('') + '</details>'
+            : '';
+          // 当日复盘
+          const reviewHTML = (day.review && day.review.text)
+            ? '<div style="margin-top:8px;font-size:13px;color:#374151;background:#f4faf6;border-left:3px solid #22a06b;padding:6px 10px;border-radius:6px">📝 复盘：' + S().esc(day.review.text) + '</div>'
+            : '';
           return '<div class="day-card">' +
             '<div class="day-card-head">' +
             '<button class="d-date" data-day="' + k + '" style="background:none;border:none;font-size:14.5px;font-weight:700;color:var(--primary);cursor:pointer">' + S().fmtDateCN(k) + ' →</button>' +
@@ -121,6 +142,7 @@
             '<span>⭐ 当日积分 ' + (dayPts >= 0 ? '+' : '') + dayPts + '</span>' +
             (dayLei ? '<span>🕐 当日休闲 +' + dayLei + '分钟</span>' : '') +
             '</div>' +
+            detailHTML + reviewHTML +
             '</div>';
         }).join('')
       : '<p class="hint">还没有任何一天的任务或记录。</p>';

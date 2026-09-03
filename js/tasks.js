@@ -38,14 +38,14 @@
 
   function onTick() {
     if (!timer) return;
-    const bar = document.getElementById('timer-bar');
-    if (bar.classList.contains('hidden')) return;
+    const f = document.getElementById('timer-float');
+    if (!f || f.classList.contains('hidden')) return;
     const usedMs = elapsedMs();
     const planMs = timer.planMinutes * 60000;
-    document.getElementById('timer-meta').textContent =
-      '已用 ' + S().fmtClock(usedMs) + ' / 预计 ' + S().fmtClock(planMs);
+    // 实际时间实时更新
+    document.getElementById('tf-used').textContent = S().fmtClock(usedMs);
     const pct = planMs > 0 ? Math.min(100, (usedMs / planMs) * 100) : 0;
-    const prog = document.getElementById('timer-progress');
+    const prog = document.getElementById('tf-progress');
     prog.style.width = pct + '%';
     prog.style.background = pct >= 100
       ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
@@ -53,13 +53,16 @@
   }
 
   function showTimerBar() {
-    const bar = document.getElementById('timer-bar');
-    bar.classList.remove('hidden');
-    document.getElementById('timer-task').textContent = timer.taskText;
+    const f = document.getElementById('timer-float');
+    f.classList.remove('hidden');
+    // 悬浮窗：预计完成内容 / 预计时间 / 实际时间
+    document.getElementById('tf-content').textContent = timer.planContent;
+    document.getElementById('tf-plan').textContent = S().fmtDur(timer.planMinutes);
+    document.getElementById('tf-used').textContent = S().fmtClock(elapsedMs());
     document.getElementById('timer-pause').textContent = timer.paused ? '▶ 继续' : '⏸ 暂停';
     onTick();
   }
-  function hideTimerBar() { document.getElementById('timer-bar').classList.add('hidden'); }
+  function hideTimerBar() { document.getElementById('timer-float').classList.add('hidden'); }
 
   /* ---------- 开始计时（弹窗填写计划） ---------- */
   function startTimer(taskKey, taskId) {
@@ -158,7 +161,9 @@
   }
 
   function saveSession(actualMin) {
-    const dayKey = S().todayKey();
+    // 会话按「开始计时」的日期归账（跨天也归开始那天）
+    const stDate = new Date(timer.startedAt);
+    const dayKey = S().dateKey(stDate);
     const day = S().getDay(dayKey);
     const session = {
       id: S().uid(),
@@ -167,17 +172,16 @@
       planContent: timer.planContent,
       planMinutes: timer.planMinutes,
       actualMinutes: actualMin,
-      startAt: new Date(timer.startedAt).toISOString(),
+      startAt: stDate.toISOString(),
       endAt: new Date().toISOString(),
       pausedMs: timer.pausedMs || 0
     };
     day.sessions.push(session);
-    // 自动生成时间轴记录
-    const stDate = new Date(timer.startedAt);
+    // 自动生成时间轴记录（开始/结束 = 计时的现实时间）
     let startMin = stDate.getHours() * 60 + stDate.getMinutes();
     const endDate = new Date();
     let endMin = endDate.getHours() * 60 + endDate.getMinutes();
-    if (endMin < startMin) endMin = 1439; // 跨午夜截断到 24:00 前
+    if (endMin < startMin) endMin = 1439; // 跨午夜截断到开始日 24:00 前
     const span = endMin - startMin;
     const mins = Math.min(actualMin, span > 0 ? span : actualMin);
     day.timeline.push({
@@ -195,7 +199,7 @@
     timer = null;
     stopTick();
     hideTimerBar();
-    App.ui.toast('已记录本次用时，记得给任务打勾 ☑');
+    App.ui.toast('已保存：时间轴已自动生成记录（' + S().hhmmOf(startMin) + '–' + S().hhmmOf(endMin) + '），记得打勾 ☑');
     App.tasks.renderAll();
   }
 
@@ -445,10 +449,20 @@
         body += '<p style="color:#22a06b;font-weight:600">🎉 今天任务全部完成，提前收工吧！</p>';
       }
 
+      // 结束时的复盘（可选，写给自己）
+      body += '<div class="field"><label>📝 今日复盘（可选，结束前写几句）</label>' +
+        '<textarea id="end-review" style="width:100%;min-height:64px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13.5px;resize:vertical">' +
+        S().esc((day.review && day.review.text) || '') + '</textarea></div>';
+
       const modal = App.ui.openModal('🏁 结束今天', body,
         '<button class="btn btn-primary" data-act="ok">确认结束</button><button class="btn" data-act="cancel">取消</button>');
       App.ui.bindActions({
         ok: function () {
+          const revTa = modal.querySelector('#end-review');
+          if (revTa) {
+            const revText = revTa.value.trim();
+            if (revText) day.review = { text: revText, at: new Date().toISOString() };
+          }
           if (settings.rollover && undone.length > 0) {
             const ids = [];
             modal.querySelectorAll('[data-roll]:checked').forEach(function (c) { ids.push(c.dataset.roll); });
@@ -513,23 +527,51 @@
     const dayKey = S().todayKey();
     const day = S().getDay(dayKey);
     const box = document.getElementById('task-columns');
+    // 日期显示
+    document.getElementById('today-date').textContent = '📅 今天：' + S().fmtDateCN(dayKey);
     box.innerHTML = COLS.map(function (col) {
       const list = day.tasks[col.key];
       const doneN = list.filter(function (t) { return t.done; }).length;
-      let rows = list.map(function (t) { return taskRowHTML(col.key, t); }).join('');
-      // 拓展可追加
-      if (col.key === 'extra' && S().settings().extAppendable &&
-        list.length > 0 && list.every(function (t) { return t.done; })) {
-        rows += '<div class="extra-append"><button class="btn btn-small" data-act="append-extra">＋ 追加新拓展任务（还能加）</button></div>';
+      const rows = list.map(function (t) { return taskRowHTML(col.key, t); }).join('');
+      // 每栏底部"＋ 添加任务"（当天临时加任务；拓展栏受"可追加"开关控制）
+      let addBtn = '';
+      if (col.key !== 'extra' || S().settings().extAppendable) {
+        addBtn = '<div class="extra-append"><button class="btn btn-small" data-act="add">＋ 添加任务（临时）</button></div>';
       }
-      return '<div class="task-col ' + col.style + '">' +
+      return '<div class="task-col ' + col.style + '" data-col="' + col.key + '">' +
         '<div class="task-col-head"><h3>' + col.name + '</h3>' +
         '<span class="badge">' + doneN + '/' + list.length + '</span></div>' +
         '<div class="task-col-head"><span class="desc">' + col.desc + '</span></div>' +
-        rows +
+        rows + addBtn +
         '</div>';
     }).join('');
     bindTodayEvents();
+    renderReview(dayKey);
+  }
+
+  /* ---------- 今日复盘（随时可写，结束今天时也能写） ---------- */
+  function renderReview(dayKey) {
+    const day = S().getDay(dayKey);
+    const card = document.getElementById('review-card');
+    if (!card) return;
+    const text = (day.review && day.review.text) || '';
+    card.innerHTML = '<h3>📝 今日复盘</h3>' +
+      '<textarea id="review-text" style="width:100%;min-height:64px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:14px;resize:vertical">' +
+      S().esc(text) + '</textarea>' +
+      '<div class="btn-row" style="margin-top:8px;align-items:center">' +
+      '<button class="btn btn-small btn-primary" data-act="review-save">保存复盘</button>' +
+      (text ? '<span class="review-meta">已保存' + (day.review.at ? ' · ' + new Date(day.review.at).toLocaleString('zh-CN') : '') + '</span>' : '') +
+      '</div>';
+    const ta = card.querySelector('#review-text');
+    if (ta && !text) ta.placeholder = '自由写下今天的感想与反思';
+    card.onclick = function (e) {
+      if (!e.target.closest('[data-act="review-save"]')) return;
+      const txt = ta.value.trim();
+      day.review = { text: txt, at: new Date().toISOString() };
+      S().save();
+      App.ui.toast('复盘已保存');
+      renderReview(dayKey);
+    };
   }
 
   function bindTodayEvents() {
@@ -549,8 +591,12 @@
     box.onclick = function (e) {
       const row = e.target.closest('.task-row');
       if (!row) {
-        if (e.target.closest('[data-act="append-extra"]')) {
-          addTaskModal('extra', S().todayKey(), false);
+        const actBtn = e.target.closest('[data-act]');
+        if (actBtn && actBtn.dataset.act === 'add') {
+          const colEl = actBtn.closest('.task-col');
+          const listKey = colEl ? colEl.dataset.col : null;
+          if (!listKey) { App.ui.toast('无法识别任务栏'); return; }
+          addTaskModal(listKey, S().todayKey(), false);
         }
         return;
       }
@@ -568,6 +614,7 @@
     const dayKey = S().tomorrowKey();
     const day = S().getDay(dayKey);
     const box = document.getElementById('tomorrow-columns');
+    document.getElementById('tomorrow-date').textContent = '📅 明天（提前填写）：' + S().fmtDateCN(dayKey);
     box.innerHTML = COLS.map(function (col) {
       const list = day.tasks[col.key];
       const rows = list.map(function (t) {
@@ -585,7 +632,7 @@
           '<button class="task-timer-btn" data-act="del" title="删除">🗑</button>' +
           '</div>';
       }).join('')
-      return '<div class="task-col ' + col.style + '">' +
+      return '<div class="task-col ' + col.style + '" data-col="' + col.key + '">' +
         '<div class="task-col-head"><h3>' + col.name + '</h3>' +
         '<span class="badge">' + list.length + ' 条</span></div>' +
         '<div class="task-col-head"><span class="desc">' + col.desc + '</span></div>' +
@@ -616,8 +663,12 @@
       const act = actBtn.dataset.act;
       const row = e.target.closest('.task-row');
       const colEl = e.target.closest('.task-col');
-      const listKey = colEl ? colEl.className.match(/task-col (\w+)/)[1] : null;
-      if (act === 'add') { addTaskModal(listKey, S().tomorrowKey(), false); return; }
+      const listKey = colEl ? colEl.dataset.col : null;
+      if (act === 'add') {
+        if (!listKey) { App.ui.toast('无法识别任务栏'); return; }
+        addTaskModal(listKey, S().tomorrowKey(), false);
+        return;
+      }
       if (!row) return;
       const taskId = row.dataset.id;
       if (act === 'edit') editTaskModal(listKey, taskId, S().tomorrowKey(), false);
