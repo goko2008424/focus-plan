@@ -89,41 +89,65 @@
     });
   }
 
-  /* ---------- 回来：填结束时间 + 状态/感想 ---------- */
+  /* ---------- 回来：填结束时间 + 状态/感想（可跳过 · 好好休息得积分） ---------- */
   function linkBack() {
     if (!pause) return;
     const p = pause;
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const strict = S().settings().recordMode === 'strict';
-    let restOk = null;
+    let restState = null; // 'ok' 好好休息 | 'bad' 没休息好 | 'off' 中途跑去干别的
+
+    const noteLabel = function () {
+      if (p.type === 'rest' && strict) {
+        if (restState === 'bad') return '写写消耗了什么 / 为什么没休息好';
+        if (restState === 'off') return '写写为什么中途跑去干别的事了 + 解决办法';
+        return '这段时间想到的 / 自洽的复盘（可选，能写就写，方便以后翻）';
+      }
+      return '这段时间的感想 / 记录（可选）';
+    };
+    const noteHint = p.type === 'rest' && strict && (restState === 'bad' || restState === 'off');
 
     const body = function () {
       return '<div class="field"><label>结束时间</label><input type="time" id="lk-end" value="' + S().hhmmOf(nowMin) + '" /></div>' +
         (p.type === 'rest' && strict
-          ? '<div class="field"><label>这次休息得好吗？（好好休息才有积分）</label>' +
+          ? '<div class="field"><label>这次休息得怎么样？（好好休息才有积分）</label>' +
             '<div class="btn-row">' +
-            '<button class="btn btn-small' + (restOk === true ? ' btn-primary' : '') + '" data-act="rest-ok">🙂 好好休息了</button>' +
-            '<button class="btn btn-small' + (restOk === false ? ' btn-primary' : '') + '" data-act="rest-bad">😞 没休息好（写写消耗了什么）</button>' +
-            '</div></div>'
+            '<button class="btn btn-small' + (restState === 'ok' ? ' btn-primary' : '') + '" data-act="rest-ok">🙂 好好休息了</button>' +
+            '<button class="btn btn-small' + (restState === 'off' ? ' btn-primary' : '') + '" data-act="rest-off">🧭 中途去干别的了</button>' +
+            '<button class="btn btn-small' + (restState === 'bad' ? ' btn-primary' : '') + '" data-act="rest-bad">😞 没休息好</button>' +
+            '</div>' +
+            '<p class="hint">好好休息得积分；中途干别的/没休息好不得积分，而且要写原因+解决办法。</p></div>'
           : '') +
-        '<div class="field"><label>这段时间的感想 / 记录（可选' + (p.type === 'rest' && strict && restOk === false ? '，没休息好请写原因' : '') + '）</label>' +
-        '<textarea id="lk-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical"></textarea></div>';
+        '<div class="field"><label>' + noteLabel() + (noteHint ? ' <span style="color:#e2545d">（必填）</span>' : '') + '</label>' +
+        '<textarea id="lk-note" placeholder="' + (p.type === 'rest' && strict && restState === 'ok' ? '比如：看了两条消息但没消耗、想通了某个题、休息时想到的点子…' : '') + '" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical"></textarea></div>' +
+        '<p class="hint">也可以选「⏭ 跳过这段」：这段不记录、不加时间轴，直接接着学。</p>';
     };
 
     function reopen() {
       const modal = App.ui.openModal('🔙 我回来了', body(),
-        '<button class="btn btn-primary" data-act="link-ok">确认，记入时间轴</button><button class="btn" data-act="cancel">取消</button>');
+        '<button class="btn btn-primary" data-act="link-ok">确认，记入时间轴</button>' +
+        '<button class="btn" data-act="link-skip">⏭ 跳过这段，直接接着学</button>' +
+        '<button class="btn" data-act="cancel">取消</button>', { wide: true, lock: false });
       const noteTa = modal.querySelector('#lk-note');
       App.ui.bindActions({
-        'rest-ok': function () { restOk = true; App.ui.closeModal(); reopen(); },
-        'rest-bad': function () { restOk = false; App.ui.closeModal(); reopen(); },
+        'rest-ok': function () { restState = 'ok'; App.ui.closeModal(); reopen(); },
+        'rest-bad': function () { restState = 'bad'; App.ui.closeModal(); reopen(); },
+        'rest-off': function () { restState = 'off'; App.ui.closeModal(); reopen(); },
+        'link-skip': function () {
+          pause = null;
+          render();
+          App.ui.closeModal();
+          App.ui.toast('⏭ 已跳过这段，直接接着学');
+        },
         'link-ok': function () {
           const endVal = modal.querySelector('#lk-end').value || S().hhmmOf(nowMin);
           const endMin = S().minOfDay(endVal);
           const note = noteTa ? noteTa.value.trim() : '';
-          if (p.type === 'rest' && strict && restOk == null) { App.ui.toast('先选一下：好好休息了 / 没休息好'); return; }
-          if (p.type === 'rest' && strict && restOk === false && !note) { App.ui.toast('没休息好，写一句消耗了什么'); return; }
-          linkConfirm(p, endMin, note, restOk);
+          if (p.type === 'rest' && strict && restState == null) { App.ui.toast('先选一下休息得怎么样'); return; }
+          if (p.type === 'rest' && strict && (restState === 'bad' || restState === 'off') && !note) {
+            App.ui.toast(restState === 'off' ? '写一句：为什么跑去干别的 + 解决办法' : '写一句消耗了什么'); return;
+          }
+          linkConfirm(p, endMin, note, restState);
           App.ui.closeModal();
         },
         cancel: App.ui.closeModal
@@ -132,7 +156,7 @@
     reopen();
   }
 
-  function linkConfirm(p, endMin, note, restOk) {
+  function linkConfirm(p, endMin, note, restState) {
     const day = S().getDay(p.startKey);
     const t = TYPES[p.type];
     if (endMin < p.startMin) endMin = 1439; // 跨午夜截断
@@ -144,8 +168,8 @@
       content: content, category: t.cat, countAsStudy: false,
       auto: false, source: 'link', note: note
     });
-    // 严格模式的休息奖励
-    if (p.type === 'rest' && S().settings().recordMode === 'strict' && restOk === true) {
+    // 严格模式的休息奖励（只有「好好休息」才有）
+    if (p.type === 'rest' && S().settings().recordMode === 'strict' && restState === 'ok') {
       const pts = S().settings().restRewardPoints || 0;
       if (pts > 0) {
         S().addLedger(p.startKey, 'rest', { points: pts, note: '好好休息 +' + pts + '分' });
@@ -194,6 +218,9 @@
     });
     (day.sessions || []).forEach(function (se) {
       lines.push('学习 ' + se.taskText + ' · ' + se.planContent + ' 计划' + se.planMinutes + 'min 实际' + se.actualMinutes + 'min' + (se.done === true ? '完成' : (se.done === false ? '未完成' : '')) + (se.note ? '  总结：' + se.note : ''));
+    });
+    (day.timeline || []).forEach(function (rec) {
+      if (rec.note) lines.push('时间段「' + rec.content + '」的感想：' + rec.note);
     });
     if (day.review && day.review.text) lines.push('今日复盘：' + day.review.text);
     return lines.join('\n');
