@@ -94,7 +94,7 @@
     if (!pause) return;
     const p = pause;
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-    const strict = S().settings().recordMode === 'strict';
+    const strict = true; // 休息的状态选项（好好休息/干别的/没休息好）与积分，两种模式都展示
     let restState = null; // 'ok' 好好休息 | 'bad' 没休息好 | 'off' 中途跑去干别的
 
     const noteLabel = function () {
@@ -169,7 +169,7 @@
       auto: false, source: 'link', note: note
     });
     // 严格模式的休息奖励（只有「好好休息」才有）
-    if (p.type === 'rest' && S().settings().recordMode === 'strict' && restState === 'ok') {
+    if (p.type === 'rest' && restState === 'ok') {
       const pts = S().settings().restRewardPoints || 0;
       if (pts > 0) {
         S().addLedger(p.startKey, 'rest', { points: pts, note: '好好休息 +' + pts + '分' });

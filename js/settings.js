@@ -57,7 +57,7 @@
       '<option value="easy"' + (s.recordMode === 'easy' ? ' selected' : '') + '>平常心（只记学习时长，休息不拷问）</option>' +
       '</select></div>' +
       numRow('set-rest-points', '严格模式「好好休息」奖励积分', s.restRewardPoints, '分') +
-      '<p class="hint">严格版是为了让时间轴完全用起来、休息也被监管；平常版只记录学习时长，休息自动入时间轴、不追问。两种都保证一整天连贯。</p>' +
+      '<p class="hint">两种模式都会在休息回来后问一句「休息得怎么样」（好好休息得积分 / 干别的或没休息好要写原因），也都可以「跳过这段直接接着学」。差别只在：严格版更强调每段都要记录完整。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🤖 AI 复盘（SiliconFlow · 可选）</h4>' +
       '<div class="set-row"><span class="set-label">API Key</span><input type="password" id="set-ai-key" class="set-input" value="' + S().esc(s.aiKey || '') + '" placeholder="sk-..." /></div>' +
