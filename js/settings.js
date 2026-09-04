@@ -49,6 +49,20 @@
       '<div class="set-group"><h4>🔘 行为开关</h4>' +
       switchRow('set-ext-append', '拓展任务完成后可继续追加', s.extAppendable) +
       switchRow('set-rollover', '每日未完成任务自动顺延到明天', s.rollover) +
+      '</div>' +
+      '<div class="set-group"><h4>🎛 记录模式（时段衔接的监管强度）</h4>' +
+      '<div class="set-row"><span class="set-label">模式</span>' +
+      '<select id="set-mode" class="select-small">' +
+      '<option value="strict"' + (s.recordMode === 'strict' ? ' selected' : '') + '>严格监管（休息要填状态、好好休息得积分）</option>' +
+      '<option value="easy"' + (s.recordMode === 'easy' ? ' selected' : '') + '>平常心（只记学习时长，休息不拷问）</option>' +
+      '</select></div>' +
+      numRow('set-rest-points', '严格模式「好好休息」奖励积分', s.restRewardPoints, '分') +
+      '<p class="hint">严格版是为了让时间轴完全用起来、休息也被监管；平常版只记录学习时长，休息自动入时间轴、不追问。两种都保证一整天连贯。</p>' +
+      '</div>' +
+      '<div class="set-group"><h4>🤖 AI 复盘（SiliconFlow · 可选）</h4>' +
+      '<div class="set-row"><span class="set-label">API Key</span><input type="password" id="set-ai-key" class="set-input" value="' + S().esc(s.aiKey || '') + '" placeholder="sk-..." /></div>' +
+      '<div class="set-row"><span class="set-label">模型</span><input type="text" id="set-ai-model" class="set-input" value="' + S().esc(s.aiModel || '') + '" placeholder="Qwen/Qwen2.5-7B-Instruct" /></div>' +
+      '<p class="hint">到 cloud.siliconflow.cn 申请免费 Key，填好后今天页点「🤖 AI 今日复盘」即可生成超时/弱点总结。Key 只存你浏览器本地，不联网上传。</p>' +
       '</div>';
 
     // 绑定
@@ -67,6 +81,10 @@
     bind('set-perfect-points', function () { s.perfectRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
+    bind('set-mode', function () { s.recordMode = this.value; S().save(); });
+    bind('set-rest-points', function () { s.restRewardPoints = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-ai-key', function () { s.aiKey = this.value.trim(); S().save(); });
+    bind('set-ai-model', function () { s.aiModel = this.value.trim(); S().save(); });
 
     renderRedeem();
     bindDataButtons();

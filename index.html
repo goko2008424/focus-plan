@@ -62,7 +62,7 @@
     </div>
     <div id="tf-cd" class="hidden">
       <div class="tf-line">小任务：<b id="tf-cd-text">--</b></div>
-      <div class="tf-line">剩余时间：<b id="tf-cd-left">00:00</b> <span class="tf-drag-hint">（目标 <span id="tf-cd-target">--</span>）</span></div>
+      <div class="tf-line">剩余/超时：<b id="tf-cd-left">00:00</b> <span id="tf-cd-over" style="color:var(--req);font-weight:700"></span> <span class="tf-drag-hint">（目标 <span id="tf-cd-target">--</span>）</span></div>
       <div class="tf-track"><div id="tf-cd-progress" class="timer-progress"></div></div>
       <div class="tf-actions">
         <button id="cd-pause" class="btn btn-small">⏸ 暂停</button>
@@ -82,7 +82,10 @@
         <div id="today-date" class="date-label"></div>
         <div id="task-columns"></div>
         <div class="card" id="review-card"></div>
+        <div id="link-card"></div>
         <div class="card day-footer">
+          <button id="btn-link" class="btn btn-block">🔄 一段做完了（休息/杂事/娱乐）</button>
+          <button id="btn-ai" class="btn btn-block">🤖 AI 今日复盘（超时 / 弱点总结 · 需先填 API Key）</button>
           <button id="btn-end-day" class="btn btn-primary btn-block">🏁 结束今天</button>
         </div>
       </div>
@@ -181,6 +184,7 @@
   <script src="js/timeline.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/link.js"></script>
   <script src="js/app.js"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）

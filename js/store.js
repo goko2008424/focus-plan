@@ -68,6 +68,10 @@
       perfectRewardPoints: 20, // 100% 额外奖励：积分
       extAppendable: true,  // 拓展任务可追加
       rollover: true,       // 未完成顺延
+      recordMode: 'strict', // 记录模式：strict=严格监管休息 / easy=平常心只记学习
+      restRewardPoints: 5,  // 严格模式下「好好休息」得积分
+      aiKey: '',            // SiliconFlow API Key（存本地）
+      aiModel: 'Qwen/Qwen2.5-7B-Instruct', // AI 复盘所用模型
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },

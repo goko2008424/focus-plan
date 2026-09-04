@@ -20,6 +20,16 @@
   let tickId = null;
   let activeTab = 'today';
 
+  // 小任务开始时随机播一句至理名言
+  const QUOTES = [
+    '短时专注一块块垒，长时专注一座楼。',
+    '别想一整章，只想眼前的这一题。',
+    '保持思考连贯，别让暂停打断心流。',
+    '限时不是催，是让心不再漂移。',
+    '先做最难那一步，后面自然顺。',
+    '这一分钟稳住，下一分钟才稳。'
+  ];
+
   /* ---------- 计时器 ---------- */
   function isRunning() { return !!timer && !timer.paused; }
 
@@ -63,21 +73,30 @@
         ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
         : 'linear-gradient(90deg,#3b82f6,#22a06b)';
     }
-    // 子任务倒计时区（到达 0 时触发完成确认）
+    // 子任务倒计时区（到点继续计时、不自动弹窗，显示超时）
     if (cdTimer) {
-      const left = cdRemainingMs();
-      document.getElementById('tf-cd-left').textContent = S().fmtClock(left);
+      const elapsed = cdElapsedMs();
       const total = cdTimer.minutes * 60000;
-      const pct = total > 0 ? Math.max(0, Math.min(100, (left / total) * 100)) : 0;
+      const over = elapsed - total;
+      const leftEl = document.getElementById('tf-cd-left');
+      if (leftEl) {
+        if (over > 0) {
+          leftEl.textContent = '+' + S().fmtClock(over).replace(/^00:/, '');
+          leftEl.style.color = 'var(--req)';
+          document.getElementById('tf-cd-over').textContent = '已超时';
+        } else {
+          leftEl.textContent = S().fmtClock(total - elapsed);
+          leftEl.style.color = '';
+          document.getElementById('tf-cd-over').textContent = '';
+        }
+      }
+      const pct = total > 0 ? Math.max(0, Math.min(100, (Math.max(0, total - elapsed) / total) * 100)) : 0;
       const prog2 = document.getElementById('tf-cd-progress');
       prog2.style.width = pct + '%';
       prog2.style.background = pct <= 20
         ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
         : 'linear-gradient(90deg,#3b82f6,#22a06b)';
-      if (left <= 0 && !cdTimer.finished) {
-        cdTimer.finished = true;
-        cdFinish();
-      }
+      // 不再自动弹窗：到点继续统计，由用户点「⏹ 结束」手动弹确认
     }
   }
 
@@ -369,13 +388,16 @@
       '</div>';
   }
 
-  function addSubModal(taskKey, taskId, editId, dayKey) {
+  function addSubModal(taskKey, taskId, editId, dayKey, groupId) {
     const day = S().getDay(dayKey || S().todayKey());
     const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
     if (!task) return;
-    const existing = editId ? (task.subs || []).find(function (s) { return s.id === editId; }) : null;
-    const modal = App.ui.openModal(existing ? '✎ 编辑小任务' : '🧩 添加小任务', '' +
-      (existing ? '' : '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">给总任务下的每一小题设一个限时，到点提醒你完成没，更容易进入心流</p>') +
+    const group = groupId ? (task.groups || []).find(function (g) { return g.id === groupId; }) : null;
+    const subList = group ? (group.subs || []) : (task.subs || []);
+    const existing = editId ? subList.find(function (s) { return s.id === editId; }) : null;
+    const inGroup = !!group;
+    const modal = App.ui.openModal(existing ? '✎ 编辑小任务' : (inGroup ? '🧩 给「' + S().esc(group.name) + '」加小题' : '🧩 添加小任务'), '' +
+      (existing ? '' : '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">给每个小题设一个限时，到点提醒你完成没，更容易进入心流</p>') +
       '<div class="field"><label>小任务内容（如：第3题）</label><input type="text" id="sub-text" value="' + (existing ? S().esc(existing.text) : '') + '" placeholder="" /></div>' +
       '<div class="field-row">' +
       '<div class="field"><label>限时（分钟）</label><input type="number" id="sub-min" min="1" value="' + (existing ? existing.minutes : 5) + '" /></div>' +
@@ -391,8 +413,8 @@
         if (existing) {
           existing.text = text; existing.minutes = mins; existing.points = pts;
         } else {
-          task.subs = task.subs || [];
-          task.subs.push({ id: S().uid(), text: text, minutes: mins, points: pts, done: null });
+          if (group) { group.subs = group.subs || []; group.subs.push({ id: S().uid(), text: text, minutes: mins, points: pts, done: null }); }
+          else { task.subs = task.subs || []; task.subs.push({ id: S().uid(), text: text, minutes: mins, points: pts, done: null }); }
         }
         S().save();
         App.ui.closeModal();
@@ -421,15 +443,165 @@
     });
   }
 
-  function startCdTimer(taskKey, taskId, subId) {
+  /* ---------- 任务组（SmartGoal）：把几个小题打包，整组做完奖励一段休息） ---------- */
+  function findSubInTask(task, subId) {
+    if (!task) return null;
+    const direct = (task.subs || []).find(function (s) { return s.id === subId; });
+    if (direct) return { sub: direct, group: null };
+    let g = null;
+    (task.groups || []).forEach(function (gr) {
+      if ((gr.subs || []).some(function (s) { return s.id === subId; })) g = gr;
+    });
+    if (g) return { sub: g.subs.find(function (s) { return s.id === subId; }), group: g };
+    return null;
+  }
+
+  function groupBlockHTML(task) {
+    const groups = task.groups || [];
+    const body = groups.map(function (g) {
+      const subs = g.subs || [];
+      const doneN = subs.filter(function (s) { return s.done === true; }).length;
+      const prog = subs.length ? (doneN + '/' + subs.length) : '空组';
+      const allDone = subs.length > 0 && subs.every(function (s) { return s.done === true; });
+      const items = subs.map(function (s) {
+        const running = cdTimer && cdTimer.groupId === g.id && cdTimer.subId === s.id;
+        const cls = s.done === true ? ' done' : (s.done === false ? ' fail' : (running ? ' running' : ''));
+        const stateTxt = s.done === true ? ' ✓完成' : (s.done === false ? ' ✗未完成' : '');
+        return '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
+          '<span class="sub-text">' + S().esc(s.text) + '</span>' +
+          '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
+          (running
+            ? '<span class="sub-meta running-txt">⏳ 倒计时中…</span>'
+            : '<button class="btn btn-small sub-start" data-act="g-cd-start" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
+          '<button class="task-timer-btn" data-act="g-sub-edit" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
+          '<button class="task-timer-btn" data-act="g-sub-del" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
+          '</div>';
+      }).join('');
+      const rewardTxt = allDone
+        ? (g.awarded
+            ? '<span class="group-reward done">✅ 已领休息</span>'
+            : '<button class="btn btn-small btn-primary" data-act="g-claim" data-task="' + task.id + '" data-group="' + g.id + '" title="整组做完，领取休息">🎁 领取休息 +' + (g.rewardRest || 10) + '分钟</button>')
+        : '<span class="group-reward">整组做完 · 奖励休息</span>';
+      return '<div class="group-card" data-group="' + g.id + '">' +
+        '<div class="group-head"><span class="group-name">🎯 ' + S().esc(g.name) + '</span>' +
+        '<span class="group-progress">' + prog + '</span>' +
+        rewardTxt +
+        '<button class="task-timer-btn" data-act="g-sub-add" data-task="' + task.id + '" data-group="' + g.id + '" title="加小题">＋</button>' +
+        '<button class="task-timer-btn" data-act="g-edit" data-task="' + task.id + '" data-group="' + g.id + '" title="改组名/奖励">✎</button>' +
+        '<button class="task-timer-btn" data-act="g-del" data-task="' + task.id + '" data-group="' + g.id + '" title="删组">🗑</button>' +
+        '</div>' +
+        '<div class="group-subs">' + items + '</div>' +
+        '<div class="extra-append"><button class="btn btn-small" data-act="g-sub-add" data-task="' + task.id + '" data-group="' + g.id + '">＋ 给本组加小题</button></div>' +
+        '</div>';
+    }).join('');
+    return '<div class="group-block">' + body +
+      '<div class="extra-append"><button class="btn btn-small btn-primary" data-act="group-new" data-task="' + task.id + '">🎯 建一个任务组（打包小题，整组做完奖励休息）</button></div>' +
+      '</div>';
+  }
+
+  function addGroupModal(taskKey, taskId, dayKey) {
+    const task = S().getDay(dayKey || S().todayKey()).tasks[taskKey].find(function (t) { return t.id === taskId; });
+    if (!task) return;
+    const m = App.ui.openModal('🎯 新建任务组（SmartGoal）', '' +
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把几个关联的小题打包成一组，整组都做完就奖励一段休息（自动进时间轴），专治“大任务太沉、开不了头”</p>' +
+      '<div class="field"><label>任务组名称</label><input type="text" id="g-name" placeholder="如：搞定第三章" /></div>' +
+      '<div class="field"><label>整组奖励休息（分钟）</label><input type="number" id="g-rest" min="1" value="10" /></div>',
+      '<button class="btn btn-primary" data-act="ok">创建</button><button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const name = m.querySelector('#g-name').value.trim();
+        if (!name) { App.ui.toast('请填写组名称'); return; }
+        task.groups = task.groups || [];
+        task.groups.push({ id: S().uid(), name: name, rewardRest: Math.max(1, +m.querySelector('#g-rest').value || 10), subs: [], awarded: false });
+        S().save(); App.ui.closeModal(); App.tasks.renderAll();
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  function editGroupModal(taskKey, taskId, groupId, dayKey) {
+    const task = S().getDay(dayKey || S().todayKey()).tasks[taskKey].find(function (t) { return t.id === taskId; });
+    const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
+    if (!g) return;
+    const m = App.ui.openModal('✎ 任务组', '' +
+      '<div class="field"><label>组名称</label><input type="text" id="g-name" value="' + S().esc(g.name) + '" /></div>' +
+      '<div class="field"><label>整组奖励休息（分钟）</label><input type="number" id="g-rest" min="1" value="' + (g.rewardRest || 10) + '" /></div>',
+      '<button class="btn btn-primary" data-act="ok">保存</button><button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        g.name = m.querySelector('#g-name').value.trim() || g.name;
+        g.rewardRest = Math.max(1, +m.querySelector('#g-rest').value || 10);
+        S().save(); App.ui.closeModal(); App.tasks.renderAll();
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  function delGroup(taskKey, taskId, groupId, dayKey) {
+    const task = S().getDay(dayKey || S().todayKey()).tasks[taskKey].find(function (t) { return t.id === taskId; });
+    const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
+    if (!g) return;
+    App.ui.confirm('删除任务组「' + g.name + '」及其所有小题？', '删除', function () {
+      const idx = task.groups.findIndex(function (x) { return x.id === groupId; });
+      task.groups.splice(idx, 1);
+      if (cdTimer && cdTimer.groupId === groupId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
+      S().save(); App.tasks.renderAll();
+    });
+  }
+
+  function delGroupSub(taskKey, taskId, groupId, subId, dayKey) {
+    const task = S().getDay(dayKey || S().todayKey()).tasks[taskKey].find(function (t) { return t.id === taskId; });
+    const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
+    const subs = g ? (g.subs || []) : [];
+    const sub = subs.find(function (s) { return s.id === subId; });
+    if (!sub) return;
+    App.ui.confirm('删除小题「' + sub.text + '」？', '删除', function () {
+      const idx = subs.findIndex(function (s) { return s.id === subId; });
+      subs.splice(idx, 1);
+      if (cdTimer && cdTimer.groupId === groupId && cdTimer.subId === subId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
+      S().save(); App.tasks.renderAll();
+    });
+  }
+
+  /* 领取组奖励：填休息时长 + 备注 → 休闲累计 + 时间轴（fun 类） */
+  function groupClaim(taskKey, taskId, groupId, dayKey) {
+    const day = S().getDay(dayKey || S().todayKey());
+    const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
+    const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
+    if (!g || g.awarded) return;
+    const m = App.ui.openModal('🎁 整组达成，奖励休息！', '' +
+      '<p style="font-size:14px">「' + S().esc(g.name) + '」全部做完，犒劳一下自己</p>' +
+      '<div class="field"><label>休息时长（分钟）</label><input type="number" id="g-rest" min="1" value="' + (g.rewardRest || 10) + '" /></div>' +
+      '<div class="field"><label>备注 / 感想（可选）</label><input type="text" id="g-note" placeholder="如：看会儿窗外的云" /></div>',
+      '<button class="btn btn-primary" data-act="ok">记录休息</button><button class="btn" data-act="cancel">跳过</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const rest = Math.max(1, +m.querySelector('#g-rest').value || 10);
+        const note = m.querySelector('#g-note').value.trim();
+        const now = new Date();
+        let sm = now.getHours() * 60 + now.getMinutes();
+        let em = sm + rest; if (em > 1440) em = 1440;
+        day.timeline.push({ id: S().uid(), start: sm, end: em, minutes: Math.max(1, em - sm), content: '组奖励休息：' + g.name + (note ? '（' + note + '）' : ''), category: 'fun', countAsStudy: false, auto: true, source: 'group', note: note || '' });
+        S().addLedger(dayKey, 'rest', { leisure: rest, note: '组奖励休息：' + g.name });
+        g.awarded = true;
+        S().save(); App.ui.closeModal(); App.tasks.renderAll();
+        if (App.app && App.app.refreshStats) App.app.refreshStats();
+        App.ui.toast('🕐 休闲 +' + rest + '分钟，好好歇会儿');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  function startCdTimer(taskKey, taskId, subId, groupId) {
     const day = S().getDay(S().todayKey());
     const task = day.tasks[taskKey] && day.tasks[taskKey].find(function (t) { return t.id === taskId; });
-    const sub = task && (task.subs || []).find(function (s) { return s.id === subId; });
+    const found = findSubInTask(task, subId);
+    const sub = found && found.sub;
     if (!sub) return;
     if (task.done) { App.ui.toast('这个任务已完成，结束它或重新开始再计时'); return; }
     // 已有倒计时在跑：直接切换（旧的不受影响）
     cdTimer = {
-      taskKey: taskKey, taskId: taskId, subId: subId,
+      taskKey: taskKey, taskId: taskId, subId: subId, groupId: groupId || null,
       taskText: task.text, text: sub.text,
       minutes: Math.max(1, sub.minutes || 1), points: sub.points || 0,
       startedAt: Date.now(), pausedMs: 0, paused: false, finished: false
@@ -437,7 +609,7 @@
     startTick();
     showTimerBar();
     App.tasks.renderAll();
-    App.ui.toast('⏳ 「' + sub.text + '」限时 ' + cdTimer.minutes + ' 分钟，开始！');
+    App.ui.toast('⏳「' + sub.text + '」限时 ' + cdTimer.minutes + ' 分钟 · ' + QUOTES[Math.floor(Math.random() * QUOTES.length)]);
   }
 
   function toggleCdPause() {
@@ -454,22 +626,30 @@
     App.tasks.renderAll();
   }
 
-  /* 倒计时结束 / 手动结束 → 完成确认弹窗 */
+  /* 手动结束 / 到点后结束 → 完成确认弹窗（用时对比 + 小总结） */
   function cdFinish() {
     if (!cdTimer) return;
     const cd = cdTimer;
+    const elapsed = Date.now() - cd.startedAt - cd.pausedMs;
+    const over = elapsed - cd.minutes * 60000;
+    const timeLine = '实际用时 ' + S().fmtClock(elapsed) + ' / 目标 ' + S().fmtDur(cd.minutes) +
+      (over > 0 ? '  <span style="color:#e2545d">（超时 ' + S().fmtClock(over).replace(/^00:/, '') + '）</span>' : '  <span style="color:#22a06b">（在目标内）</span>');
+    const noteEl = '<div class="field"><label>小总结（超时可写一句为什么超时）</label>' +
+      '<textarea id="cd-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical"></textarea></div>';
     const modal = App.ui.openModal('⏰ 时间到！', '' +
       '<div class="field"><label>小任务</label><p style="font-size:14px;font-weight:700">' + S().esc(cd.text) + '</p></div>' +
-      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">所属任务：' + S().esc(cd.taskText) + '</p>' +
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:8px">所属任务：' + S().esc(cd.taskText) + '</p>' +
+      '<div class="field"><label>用时对比</label><p style="font-size:13px">' + timeLine + '</p></div>' +
       (cd.points > 0
         ? '<div class="field"><label>完成可得</label><p style="font-weight:700;color:#22a06b">+' + cd.points + ' 分</p></div>'
-        : ''),
+        : '') +
+      noteEl,
       '<button class="btn btn-primary" data-act="sub-done">✅ 完成了，领取积分</button>' +
       '<button class="btn" data-act="sub-fail">❌ 没完成</button>' +
       '<button class="btn" data-act="sub-retry">🔁 再来一轮</button>');
     App.ui.bindActions({
-      'sub-done': function () { markSub(cd, true); App.ui.closeModal(); },
-      'sub-fail': function () { markSub(cd, false); App.ui.closeModal(); },
+      'sub-done': function () { markSub(cd, true, modal.querySelector('#cd-note').value.trim()); App.ui.closeModal(); },
+      'sub-fail': function () { markSub(cd, false, modal.querySelector('#cd-note').value.trim()); App.ui.closeModal(); },
       'sub-retry': function () {
         cdTimer.startedAt = Date.now();
         cdTimer.pausedMs = 0;
@@ -481,22 +661,85 @@
     });
   }
 
-  function markSub(cd, doneFlag) {
+  function markSub(cd, doneFlag, summary) {
     const day = S().getDay(S().todayKey());
     const task = day.tasks[cd.taskKey] && day.tasks[cd.taskKey].find(function (t) { return t.id === cd.taskId; });
-    const sub = task && task.subs && task.subs.find(function (s) { return s.id === cd.subId; });
+    const found = findSubInTask(task, cd.subId);
+    const sub = found && found.sub;
+    const group = found && found.group;
+    // 本次实际用时（小任务时长也计入今日总时长 + 时间轴，学习性质）
+    const stDate = new Date(cd.startedAt);
+    const endDate = new Date();
+    let sMin = stDate.getHours() * 60 + stDate.getMinutes();
+    let eMin = endDate.getHours() * 60 + endDate.getMinutes();
+    if (eMin < sMin) eMin = 1439;
+    const span = Math.max(0, eMin - sMin);
+    const elapsedMin = Math.max(1, Math.round((Date.now() - cd.startedAt - cd.pausedMs) / 60000));
+    const mins = Math.max(1, Math.min(elapsedMin, span > 0 ? span : elapsedMin));
     if (sub) {
       sub.done = doneFlag;
+      if (summary) sub.summary = summary;
       if (doneFlag && cd.points > 0) {
         S().addLedger(S().todayKey(), 'earn-sub', { points: cd.points, note: '小任务：' + cd.text + '（' + task.text + '）', taskId: cd.taskId });
         App.ui.floatAt(document.getElementById('stat-points'), '+' + cd.points + '分');
       }
     }
+    // 整组全部完成后自动弹出组奖励
+    if (sub && group && group.subs.length > 0 && group.subs.every(function (s) { return s.done === true; }) && !group.awarded) {
+      groupClaim(cd.taskKey, cd.taskId, group.id, S().todayKey());
+    }
+    // 时间轴记录
+    day.timeline.push({
+      id: S().uid(), start: sMin, end: eMin, minutes: mins,
+      content: cd.text, category: 'study', countAsStudy: true,
+      auto: true, sub: true, taskId: cd.taskId, taskText: cd.taskText,
+      note: summary || ''
+    });
+    // 累计「今日任务实际用时」
+    day.sessions.push({
+      id: S().uid(), taskId: cd.taskId, taskText: cd.taskText,
+      planContent: cd.text, planMinutes: cd.minutes,
+      actualMinutes: mins, sub: true, done: doneFlag, note: summary || '',
+      startAt: stDate.toISOString(), endAt: endDate.toISOString(), pausedMs: cd.pausedMs || 0
+    });
     cdTimer = null;
     stopTickIfIdle();
     showTimerBar();
     S().save();
     App.tasks.renderAll();
+  }
+
+  /* ---------- 任务总结（勾选完成时填写） ---------- */
+  function summaryTaskModal(listKey, taskId, taskText, onDone) {
+    let doneFlag = true;
+    const body = function () {
+      return '<div class="field"><label>任务</label><p style="font-size:14px;font-weight:700">' + S().esc(taskText) + '</p></div>' +
+        '<div class="field"><label>这次做完了吗？</label><div class="btn-row">' +
+        '<button class="btn btn-small' + (doneFlag ? ' btn-primary' : '') + '" data-act="sum-done">✅ 做完了</button>' +
+        '<button class="btn btn-small' + (doneFlag ? '' : ' btn-primary') + '" data-act="sum-part">⛔ 没做完</button>' +
+        '</div></div>' +
+        '<div class="field"><label>总结 / 心得 / 注意事项</label>' +
+        '<textarea id="sum-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical"></textarea></div>';
+    };
+    function reopen() {
+      const modal = App.ui.openModal('📝 写个任务总结', body(),
+        '<button class="btn btn-primary" data-act="sum-save">保存总结</button>');
+      const ta = modal.querySelector('#sum-note');
+      App.ui.bindActions({
+        'sum-done': function () { doneFlag = true; App.ui.closeModal(); reopen(); },
+        'sum-part': function () { doneFlag = false; App.ui.closeModal(); reopen(); },
+        'sum-save': function () {
+          const day = S().getDay(S().todayKey());
+          const task = day.tasks[listKey].find(function (t) { return t.id === taskId; });
+          if (task) task.summary = { done: doneFlag, text: ta.value.trim(), at: new Date().toISOString() };
+          S().save();
+          App.ui.closeModal();
+          App.tasks.renderAll();
+          if (typeof onDone === 'function') onDone();
+        }
+      });
+    }
+    reopen();
   }
 
   /* ---------- 打勾 / 取消打勾（含积分记账与奖励触发） ---------- */
@@ -537,14 +780,16 @@
     S().save();
     App.tasks.renderAll();
 
-    // 奖励触发检查（只在打勾为完成时）
+    // 勾选完成：先填任务总结，确认后再触发奖励检查
     if (task.done) {
-      const allDone = function (k) { return day.tasks[k].length > 0 && day.tasks[k].every(function (t) { return t.done; }); };
-      if (allDone('required') && !day.rewards.some(function (r) { return r.kind === 'base'; })) {
-        baseRewardModal();
-      } else if (['required', 'ideal', 'extra'].every(allDone) && !day.rewards.some(function (r) { return r.kind === 'perfect'; })) {
-        perfectRewardModal();
-      }
+      summaryTaskModal(listKey, taskId, task.text, function () {
+        const allDone = function (k) { return day.tasks[k].length > 0 && day.tasks[k].every(function (t) { return t.done; }); };
+        if (allDone('required') && !day.rewards.some(function (r) { return r.kind === 'base'; })) {
+          baseRewardModal();
+        } else if (['required', 'ideal', 'extra'].every(allDone) && !day.rewards.some(function (r) { return r.kind === 'perfect'; })) {
+          perfectRewardModal();
+        }
+      });
     }
   }
 
@@ -673,6 +918,11 @@
 
   /* ---------- 结束今天 ---------- */
   function endDay() {
+    // 若正在休息/杂事/娱乐，先提醒收回来
+    if (typeof App.link !== 'undefined' && App.link.isPausing && App.link.isPausing()) {
+      App.link.endDayGuard();
+      return;
+    }
     const dayKey = S().todayKey();
     const day = S().getDay(dayKey);
     const settings = S().settings();
@@ -792,7 +1042,8 @@
       ptsInput +
       btn +
       '</div>' +
-      subBlockHTML(task);
+      subBlockHTML(task) +
+      groupBlockHTML(task);
   }
 
   function renderToday() {
@@ -874,6 +1125,14 @@
         if (act2 === 'sub-edit') { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey()); return; }
         if (act2 === 'sub-del') { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey()); return; }
         if (act2 === 'cd-start') { startCdTimer(listKey, actBtn.dataset.task, actBtn.dataset.sub); return; }
+        if (act2 === 'group-new') { addGroupModal(listKey, actBtn.dataset.task, S().todayKey()); return; }
+        if (act2 === 'g-sub-add') { addSubModal(listKey, actBtn.dataset.task, null, S().todayKey(), actBtn.dataset.group); return; }
+        if (act2 === 'g-sub-edit') { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey(), actBtn.dataset.group); return; }
+        if (act2 === 'g-sub-del') { delGroupSub(listKey, actBtn.dataset.task, actBtn.dataset.group, actBtn.dataset.sub, S().todayKey()); return; }
+        if (act2 === 'g-cd-start') { startCdTimer(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
+        if (act2 === 'g-claim') { groupClaim(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
+        if (act2 === 'g-edit') { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
+        if (act2 === 'g-del') { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         return;
       }
       const listKey = row.dataset.list, taskId = row.dataset.id;
@@ -906,7 +1165,9 @@
           ptsInput +
           '<button class="task-timer-btn" data-act="edit" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" title="删除">🗑</button>' +
-          '</div>';
+          '</div>' +
+          subBlockHTML(t) +
+          groupBlockHTML(t);
       }).join('')
       return '<div class="task-col ' + col.style + '" data-col="' + col.key + '">' +
         '<div class="task-col-head"><h3>' + col.name + '</h3>' +
@@ -949,6 +1210,14 @@
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'cd-start' && listKey) { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
+      if (act === 'group-new' && listKey) { addGroupModal(listKey, actBtn.dataset.task, S().tomorrowKey()); return; }
+      if (act === 'g-sub-add' && listKey) { addSubModal(listKey, actBtn.dataset.task, null, S().tomorrowKey(), actBtn.dataset.group); return; }
+      if (act === 'g-sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey(), actBtn.dataset.group); return; }
+      if (act === 'g-sub-del' && listKey) { delGroupSub(listKey, actBtn.dataset.task, actBtn.dataset.group, actBtn.dataset.sub, S().tomorrowKey()); return; }
+      if (act === 'g-edit' && listKey) { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().tomorrowKey()); return; }
+      if (act === 'g-del' && listKey) { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().tomorrowKey()); return; }
+      if (act === 'g-cd-start') { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
+      if (act === 'g-claim') { App.ui.toast('明天还没开始用，等哪天完成了再领休息'); return; }
       if (!row) return;
       const taskId = row.dataset.id;
       if (act === 'edit') editTaskModal(listKey, taskId, S().tomorrowKey(), false);

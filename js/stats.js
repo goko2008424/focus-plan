@@ -11,6 +11,7 @@
     'earn-ideal': '⭐ 理想任务完成',
     'earn-extra': '🌱 拓展任务完成',
     'earn-sub': '🧩 小任务完成',
+    'rest': '🧘 好好休息奖励',
     'reward-base': '🎉 保底奖励',
     'reward-perfect': '🏆 完美奖励',
     'redeem': '🎁 积分兑换',
@@ -119,6 +120,9 @@
                 (t.done ? '☑' : '☐') + ' ' + S().esc(t.text) +
                 (t.done ? '' : ' <span style="color:#e2545d">未完成</span>') +
                 (pts != null ? ' <span style="color:#8a919c">+' + pts + '分</span>' : '') +
+                (t.summary && t.summary.text
+                  ? '<div style="color:#6b7280;font-size:12px;margin:2px 0 4px 18px">📝 ' + S().esc(t.summary.text) + (t.summary.done ? '' : ' <span style="color:#e2545d">（未做完）</span>') + '</div>'
+                  : '') +
                 '</div>');
             });
           });
