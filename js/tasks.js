@@ -515,6 +515,7 @@
       const subs = g.subs || [];
       const doneN = subs.filter(function (s) { return s.done === true; }).length;
       const prog = subs.length ? (doneN + '/' + subs.length) : '空组';
+      const gPlanned = subs.reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
       const allDone = subs.length > 0 && subs.every(function (s) { return s.done === true; });
       const items = subs.map(function (s) {
         const running = cdTimer && cdTimer.groupId === g.id && cdTimer.subId === s.id;
@@ -539,6 +540,7 @@
         : '<span class="group-reward">整组做完 · 奖励休息</span>';
       return '<div class="group-card" data-group="' + g.id + '">' +
         '<div class="group-head"><span class="group-name">🎯 ' + S().esc(g.name) + '</span>' +
+        '<span class="group-time">本组 ' + subs.length + ' 题 · <b>预计 ' + S().fmtDur(gPlanned) + '</b></span>' +
         '<span class="group-progress">' + prog + '</span>' +
         rewardTxt +
         '<button class="task-timer-btn" data-act="g-sub-add" data-task="' + task.id + '" data-group="' + g.id + '" title="加小题">＋</button>' +

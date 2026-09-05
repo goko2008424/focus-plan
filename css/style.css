@@ -251,6 +251,7 @@ details.task-details summary:hover { text-decoration: underline; }
 .group-block { border-top: 1px dashed var(--line); padding: 8px 4px 2px 26px; display: flex; flex-direction: column; gap: 8px; }
 .group-card { border: 1px dashed var(--line); border-left: 3px solid var(--primary); border-radius: 8px; padding: 6px 8px; background: rgba(0,0,0,0.02); }
 .group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.group-time { font-size: 12px; color: #6b7280; background: rgba(255,255,255,.06); border-radius: 8px; padding: 2px 8px; font-variant-numeric: tabular-nums; }
 .group-name { font-weight: 700; font-size: 13px; }
 .group-progress { color: var(--primary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .group-reward { color: #8a919c; font-size: 11.5px; }
