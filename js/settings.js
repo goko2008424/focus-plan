@@ -67,7 +67,14 @@
       '<span class="unit">分钟（短时）</span></div>' +
       '<div class="set-row"><span class="set-label">连续做满</span>' +
       '<input type="number" id="set-sr-max-min" class="set-input" min="1" value="' + s.srMaxMin + '" />' +
-      '<span class="unit">分钟没休息就该强制小休</span></div>' +
+      '<span class="unit">分钟就提醒休息（定时提醒，可关）</span></div>' +
+      '<div class="set-row"><span class="set-label">自动提醒开关</span></div>' +
+      switchRow('set-sr-progress', '按进度提醒（做到预计的 % 就提醒小休）', s.srEnableProgress) +
+      switchRow('set-sr-time', '按时间提醒（连续做满设定分钟就提醒）', s.srEnableTime) +
+      '<div class="set-row"><span class="set-label">提醒间隔</span>' +
+      '<input type="number" id="set-sr-cooldown" class="set-input" min="1" value="' + s.srCooldownMin + '" />' +
+      '<span class="unit">分钟（两个提醒不连推、不冲突）</span></div>' +
+      '<p class="hint">两个自动提醒可以各自关掉，也可以都关掉——只保留你自己随时点的「☕ 主动小休」，完全由你决定什么时候休息。收到自动提醒时你也可以选「继续」拒绝。</p>' +
       '<p class="hint">原理见「📖 指南」里新增的《强化休息系统》：完成任务不安排休息、休息放在任务内；最有效的是提前、高频、短时、放空的休息。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🤖 AI 复盘（SiliconFlow · 可选）</h4>' +
@@ -97,6 +104,9 @@
     bind('set-sr-rest-at', function () { s.srRestAt = Math.min(100, Math.max(1, +this.value || 70)); S().save(); });
     bind('set-sr-rest-min', function () { s.srRestMin = Math.max(1, +this.value || 2); S().save(); });
     bind('set-sr-max-min', function () { s.srMaxMin = Math.max(1, +this.value || 40); S().save(); });
+    bind('set-sr-progress', function () { s.srEnableProgress = this.checked; S().save(); });
+    bind('set-sr-time', function () { s.srEnableTime = this.checked; S().save(); });
+    bind('set-sr-cooldown', function () { s.srCooldownMin = Math.max(1, +this.value || 5); S().save(); });
     bind('set-ai-key', function () { s.aiKey = this.value.trim(); S().save(); });
     bind('set-ai-model', function () { s.aiModel = this.value.trim(); S().save(); });
 

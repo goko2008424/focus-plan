@@ -75,6 +75,9 @@
       srRestAt: 70,         // 强化休息系统：做到预计时间的这个百分比就提醒小休
       srRestMin: 2,         // 强化休息系统：每次任务内小休的分钟数（短时）
       srMaxMin: 40,         // 强化休息系统：实际连续用时超过这个分钟且没休息就强制提醒
+      srEnableProgress: true, // 强化休息系统：进度自动提醒开关（用户可关）
+      srEnableTime: true,     // 强化休息系统：定时自动提醒开关（用户可关）
+      srCooldownMin: 5,       // 强化休息系统：两次自动提醒的最小间隔（避免冲突连推）
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },

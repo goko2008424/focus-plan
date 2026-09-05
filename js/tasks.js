@@ -100,17 +100,19 @@
           document.getElementById('tf-cd-over').textContent = '';
         }
       }
-      // 强化休息系统：做到预计 70% 提醒 / 连续超时未休息 → 强制休息
-      if (isStrongMode() && !cdTimer.paused) {
+      // 强化休息系统：进度提醒 / 定时提醒 —— 可各自开关，且之间不冲突（冷却间隔内只推一条）
+      if (isStrongMode() && !cdTimer.paused && !cdTimer.microRest) {
         const s = S().settings();
         const elapsedMin = elapsed / 60000;
-        if (!cdTimer.srReminded70 && cdTimer.minutes > 0 && elapsedMin >= cdTimer.minutes * (s.srRestAt || 70) / 100) {
-          cdTimer.srReminded70 = true;
-          srPrompt70();
-        }
-        if (!cdTimer.srForced && !cdTimer.srRested && (s.srMaxMin > 0) && elapsedMin >= s.srMaxMin) {
-          cdTimer.srForced = true;
-          srForceRest();
+        const cooldownMs = Math.max(0, (s.srCooldownMin || 5)) * 60000;
+        const cooled = (Date.now() - (cdTimer.srLastPromptAt || 0)) >= cooldownMs;
+        const progressHit = s.srEnableProgress !== false && !cdTimer.srReminded70 && cdTimer.minutes > 0 &&
+          elapsedMin >= cdTimer.minutes * (s.srRestAt || 70) / 100;
+        const timeHit = s.srEnableTime !== false && !cdTimer.srForced && !cdTimer.srRested &&
+          (s.srMaxMin > 0) && elapsedMin >= s.srMaxMin;
+        if (cooled) {
+          if (progressHit) { cdTimer.srReminded70 = true; cdTimer.srLastPromptAt = Date.now(); srPrompt70(); }
+          else if (timeHit) { cdTimer.srForced = true; cdTimer.srLastPromptAt = Date.now(); srForceRest(); }
         }
       }
       const pct = total > 0 ? Math.max(0, Math.min(100, (Math.max(0, total - elapsed) / total) * 100)) : 0;
@@ -516,6 +518,8 @@
       const doneN = subs.filter(function (s) { return s.done === true; }).length;
       const prog = subs.length ? (doneN + '/' + subs.length) : '空组';
       const gPlanned = subs.reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
+      const gSess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
+      const gActual = gSess.reduce(function (a, se) { return subs.some(function (s) { return s.text === se.planContent; }) ? a + (se.actualMinutes || 0) : a; }, 0);
       const allDone = subs.length > 0 && subs.every(function (s) { return s.done === true; });
       const items = subs.map(function (s) {
         const running = cdTimer && cdTimer.groupId === g.id && cdTimer.subId === s.id;
@@ -540,7 +544,7 @@
         : '<span class="group-reward">整组做完 · 奖励休息</span>';
       return '<div class="group-card" data-group="' + g.id + '">' +
         '<div class="group-head"><span class="group-name">🎯 ' + S().esc(g.name) + '</span>' +
-        '<span class="group-time">本组 ' + subs.length + ' 题 · <b>预计 ' + S().fmtDur(gPlanned) + '</b></span>' +
+        '<span class="group-time">本组 ' + subs.length + ' 题 · 预计 <b>' + S().fmtDur(gPlanned) + '</b> · 实际 <b>' + S().fmtDur(gActual) + '</b></span>' +
         '<span class="group-progress">' + prog + '</span>' +
         rewardTxt +
         '<button class="task-timer-btn" data-act="g-sub-add" data-task="' + task.id + '" data-group="' + g.id + '" title="加小题">＋</button>' +
@@ -660,7 +664,8 @@
     cdTimer.pauseAt = cdTimer.pauseAt == null ? Date.now() : cdTimer.pauseAt;
     cdTimer.microRest = true;
     cdTimer.microEndAt = Date.now() + secs * 1000;
-    cdTimer.srRested = true;                    // 已休息过 → 强制休息不再触发
+    cdTimer.srRested = true;                    // 已休息过 → 定时提醒不再触发
+    cdTimer.srLastPromptAt = Date.now();        // 重置提醒冷却，避免刚休息完又连推
     showTimerBar();
     App.tasks.renderAll();
     App.ui.toast('☕ 小休 ' + (secs / 60) + ' 分钟，放空 / 闭眼…回来接着把这题做完');
@@ -725,7 +730,8 @@
       taskText: task.text, text: sub.text,
       minutes: Math.max(1, sub.minutes || 1), points: sub.points || 0,
       startedAt: Date.now(), pausedMs: 0, paused: false, finished: false,
-      microRest: false, microEndAt: 0, srRested: false, srReminded70: false, srForced: false
+      microRest: false, microEndAt: 0, srRested: false, srReminded70: false, srForced: false,
+      srLastPromptAt: 0
     };
     startTick();
     showTimerBar();
@@ -779,6 +785,7 @@
         cdTimer.finished = false;
         cdTimer.microRest = false; cdTimer.microEndAt = 0;
         cdTimer.srRested = false; cdTimer.srReminded70 = false; cdTimer.srForced = false;
+        cdTimer.srLastPromptAt = 0;
         App.ui.closeModal();
         showTimerBar();
       }
@@ -1160,22 +1167,17 @@
         '<input type="number" class="task-points" data-act="points" min="0" value="' + pts + '"' + (task.done || isThis ? ' disabled' : '') + ' />' +
         '<span class="pts-unit">分</span></span>'
       : '';
-    // 预计 / 实际 用时统计（有小题的任务，任何模式都显示总时长）
+    // 直接小题（不在任务组里）的预计 / 实际统计；任务组各自的统计在组卡片里
     let statLine = '';
-    {
-      const hasSub = (task.subs && task.subs.length > 0) ||
-        (task.groups && task.groups.reduce(function (a, g) { return a + ((g.subs || []).length > 0 ? 1 : 0); }, 0) > 0);
-      if (hasSub) {
-        const planned = (task.subs || []).reduce(function (a, s) { return a + (s.minutes || 0); }, 0) +
-          (task.groups || []).reduce(function (a, g) { return a + (g.subs || []).reduce(function (b, s) { return b + (s.minutes || 0); }, 0); }, 0);
-        const sess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
-        const actual = sess.reduce(function (a, se) { return a + (se.actualMinutes || 0); }, 0);
-        const pct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
-        statLine = '<div class="task-stat" title="这块任务你总共安排了这些时间（预计） vs 实际花了多少">' +
-          '🕑 预计 <b>' + S().fmtDur(planned) + '</b> ｜ 实际 <b>' + S().fmtDur(actual) + '</b>' +
-          (planned ? ' ｜ 进度 <b style="color:' + (pct >= 100 ? 'var(--req)' : '#22a06b') + '">' + pct + '%</b>' : '') +
-          '</div>';
-      }
+    if (task.subs && task.subs.length > 0) {
+      const planned = task.subs.reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
+      const sess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
+      const actual = sess.reduce(function (a, se) { return task.subs.some(function (s) { return s.text === se.planContent; }) ? a + (se.actualMinutes || 0) : a; }, 0);
+      const pct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
+      statLine = '<div class="task-stat" title="这道任务下的直接小题总时长：预计 vs 实际">' +
+        '🕑 预计 <b>' + S().fmtDur(planned) + '</b> ｜ 实际 <b>' + S().fmtDur(actual) + '</b>' +
+        (planned ? ' ｜ 进度 <b style="color:' + (pct >= 100 ? 'var(--req)' : '#22a06b') + '">' + pct + '%</b>' : '') +
+        '</div>';
     }
     return '<div class="task-row' + (task.done ? ' done' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
