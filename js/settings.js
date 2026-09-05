@@ -55,9 +55,20 @@
       '<select id="set-mode" class="select-small">' +
       '<option value="strict"' + (s.recordMode === 'strict' ? ' selected' : '') + '>严格监管（休息要填状态、好好休息得积分）</option>' +
       '<option value="easy"' + (s.recordMode === 'easy' ? ' selected' : '') + '>平常心（只记学习时长，休息不拷问）</option>' +
+      '<option value="strong"' + (s.recordMode === 'strong' ? ' selected' : '') + '>💪 强化休息系统（任务内高频短休）</option>' +
       '</select></div>' +
-      numRow('set-rest-points', '严格模式「好好休息」奖励积分', s.restRewardPoints, '分') +
-      '<p class="hint">两种模式都会在休息回来后问一句「休息得怎么样」（好好休息得积分 / 干别的或没休息好要写原因），也都可以「跳过这段直接接着学」。差别只在：严格版更强调每段都要记录完整。</p>' +
+      numRow('set-rest-points', '休息奖励积分（好好休息才有）', s.restRewardPoints, '分') +
+      '<p class="hint">「强化休息系统」：完成任务不休息、直接无缝切下一个；休息放在任务进行中（打断未完成任务）。高频·短时·放空才是真休息，玩手机不算。下面三个数值都只对这个模式生效。</p>' +
+      '<div class="set-row"><span class="set-label">到预计时间提醒</span>' +
+      '<input type="number" id="set-sr-rest-at" class="set-input" min="1" max="100" value="' + s.srRestAt + '" />' +
+      '<span class="unit">% 时提醒小休</span></div>' +
+      '<div class="set-row"><span class="set-label">每次小休</span>' +
+      '<input type="number" id="set-sr-rest-min" class="set-input" min="1" value="' + s.srRestMin + '" />' +
+      '<span class="unit">分钟（短时）</span></div>' +
+      '<div class="set-row"><span class="set-label">连续做满</span>' +
+      '<input type="number" id="set-sr-max-min" class="set-input" min="1" value="' + s.srMaxMin + '" />' +
+      '<span class="unit">分钟没休息就该强制小休</span></div>' +
+      '<p class="hint">原理见「📖 指南」里新增的《强化休息系统》：完成任务不安排休息、休息放在任务内；最有效的是提前、高频、短时、放空的休息。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🤖 AI 复盘（SiliconFlow · 可选）</h4>' +
       '<div class="set-row"><span class="set-label">API Key</span><input type="password" id="set-ai-key" class="set-input" value="' + S().esc(s.aiKey || '') + '" placeholder="sk-..." /></div>' +
@@ -83,6 +94,9 @@
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
     bind('set-mode', function () { s.recordMode = this.value; S().save(); });
     bind('set-rest-points', function () { s.restRewardPoints = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-sr-rest-at', function () { s.srRestAt = Math.min(100, Math.max(1, +this.value || 70)); S().save(); });
+    bind('set-sr-rest-min', function () { s.srRestMin = Math.max(1, +this.value || 2); S().save(); });
+    bind('set-sr-max-min', function () { s.srMaxMin = Math.max(1, +this.value || 40); S().save(); });
     bind('set-ai-key', function () { s.aiKey = this.value.trim(); S().save(); });
     bind('set-ai-model', function () { s.aiModel = this.value.trim(); S().save(); });
 

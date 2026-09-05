@@ -41,8 +41,20 @@
 
   /* ---------- 进入衔接 ---------- */
   function open() {
-    const day = S().getDay(S().todayKey());
-    if (!day || day.ended) { App.ui.toast('今天已结束，先开始新的一天吧'); return; }
+    const dayKey = S().todayKey();
+    let day = S().getDay(dayKey);
+    if (!day) { App.ui.toast('今天还没有数据，先刷新一下'); return; }
+    if (day.ended) {
+      // 今天被标记为「已结束」（可能是误点），给一个一键恢复，别再卡住
+      const m = App.ui.openModal('今天曾被标记为「已结束」',
+        '<p class="hint">你可能之前误点了「直接结束今天」，把今天标成了结束。如果其实还想继续工作 / 休息 / 记录，可以直接重新打开今天继续。</p>',
+        '<button class="btn btn-primary" data-act="reopen">🔓 重新打开今天，继续</button><button class="btn" data-act="cancel">取消</button>');
+      App.ui.bindActions({
+        reopen: function () { day.ended = false; S().save(); App.ui.closeModal(); open(); },
+        cancel: App.ui.closeModal
+      });
+      return;
+    }
     if (pause) { App.ui.toast('现在正在' + TYPES[pause.type].label.replace(/[😴🧹🎮 ]/g, '') + '中，先「我回来了」'); return; }
     const modal = App.ui.openModal('🔄 一段做完了，接下来', '' +
       '<p class="hint" style="margin-bottom:10px">学完一段，选择接下来做什么（先做别的事也行）。结束后直接记进时间轴，不用去时间轴里手点。</p>' +
@@ -233,7 +245,7 @@
     const text = buildTodayData(S().todayKey());
     if (!text) { App.ui.toast('今天还没有记录，先做点再去复盘 😄'); return; }
     const model = (s.aiModel || 'Qwen/Qwen2.5-7B-Instruct').trim();
-    const sys = '你是一位专注学习的复盘教练。基于提供的今日记录，用中文输出一个 JSON 对象（不要 markdown 代码块），格式：{"summary":"一两句点评今天整体","overtime":[{"item":"任务或小题名","plan":"计划多少","actual":"实际多少","over":"超时分钟数","reason":"可能原因"}],"weak":["薄弱点1","薄弱点2"],"advice":"明天最该改进的一件事"}。没有超时则 overtime 为 []。文字口语化、不空洞。';
+    const sys = '你是一位专注的学习复盘教练。基于今日记录，用中文输出 JSON（不要 markdown 代码块）。必须逐题分析：把记录里每一道题（任务或小题）都列出来，不省略、不只挑一道；没写评语的该题在 note 里写"未写评语"。格式：{"summary":"一两句整体点评","items":[{"name":"题名","status":"完成/未完成/未写评语","note":"该题评语原文或未写评语","problem":"这题暴露的问题(可空)","good":"做得好的地方(可空)"}],"weak":["整体薄弱点1","薄弱点2"],"advice":"明天最该改进的一件事"}。items 必须覆盖记录里的每一题，别漏题；文字口语化、具体、不空洞。';
     const user = '今日记录：\n' + text;
     App.ui.toast('🤖 AI 正在分析…');
     fetch('https://api.siliconflow.cn/v1/chat/completions', {
@@ -242,7 +254,7 @@
       body: JSON.stringify({
         model: model,
         messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
-        temperature: 0.7, max_tokens: 1200, response_format: { type: 'json_object' }
+        temperature: 0.6, max_tokens: 1800, response_format: { type: 'json_object' }
       })
     }).then(function (r) {
       if (!r.ok) { if (r.status === 401) throw new Error('API Key 无效（401）'); if (r.status === 402) throw new Error('余额不足（402）'); throw new Error('HTTP ' + r.status); }
@@ -263,12 +275,18 @@
       App.ui.bindActions({ close: App.ui.closeModal });
       return;
     }
+    const itemRows = (obj.items || []).map(function (it) {
+      return '<tr><td>' + S().esc(it.name || '') + '</td><td>' + S().esc(it.status || '') + '</td><td>' + S().esc(it.note || '') + '</td><td style="color:#e2545d">' + S().esc(it.problem || '') + '</td><td style="color:#22a06b">' + S().esc(it.good || '') + '</td></tr>';
+    }).join('');
     const rows = (obj.overtime || []).map(function (o) {
       return '<tr><td>' + S().esc(o.item || '') + '</td><td>' + S().esc(o.plan || '') + '</td><td>' + S().esc(o.actual || '') + '</td><td style="color:#e2545d">' + S().esc(o.over || '') + '</td><td>' + S().esc(o.reason || '') + '</td></tr>';
     }).join('');
     const weak = (obj.weak || []).map(function (w) { return '<li>' + S().esc(w) + '</li>'; }).join('');
     const html = '<div class="card">' +
       '<p>' + S().esc(obj.summary || '') + '</p>' +
+      (itemRows
+        ? '<h4 style="margin:10px 0 4px;font-size:13.5px">📋 逐题复盘</h4><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">题</th><th>状态</th><th>评语/笔记</th><th>问题</th><th>亮点</th></tr></thead><tbody>' + itemRows + '</tbody></table>'
+        : '') +
       (rows
         ? '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px"><thead><tr><th style="text-align:left">项目</th><th>计划</th><th>实际</th><th>超时</th><th>可能原因</th></tr></thead><tbody>' + rows + '</tbody></table>'
         : '<p style="color:var(--primary)">🎯 今天没有超时，保持住这份节奏！</p>') +

@@ -63,6 +63,12 @@
       '<li><b>⚙️ 设置</b>：时段、奖励数值、积分定价、顺延开关……全部由你自己定。</li>' +
       '</ul>' +
 
+      '<h4 style="margin:14px 0 6px;color:#2d3a4a">💪 强化休息系统（一个可自选的模式）</h4>' +
+      '<p style="font-size:13.5px"><b>核心原理</b>：完成任务后<b>不该安排休息</b>，而应直接流畅切到下一个任务；休息要放在<b>任务进行中</b>（打断那个还没做完的任务）。因为没做完的任务还吊在你脑子里（工作记忆 + 未完成感），休息完你更容易回来继续；而在任务之间休息，等于强行切断做事状态，重新启动很难。</p>' +
+      '<p style="font-size:13.5px">最有效的休息是<b>提前、高频、短时、放空</b>的休息；<b>玩手机 / 游戏这种高强度用脑不算休息</b>，真正的休息是闭眼放空、让大脑后台继续巩固记忆。</p>' +
+      '<p style="font-size:13.5px"><b>怎么开</b>：设置 → 记录模式 → 选「💪 强化休息系统」。开启后做小题倒计时时：① 做到预计时间的 70% 会提醒你小休几分钟；② 你随时可以点悬浮窗里的「☕ 小休」主动短休；③ 连续做满你设的时间还没休息，会<u>强制</u>提醒你小休。每段有小题的任务还会显示「预计 vs 实际」用时。</p>' +
+      '<p style="font-size:13.5px">原理详解视频：<a href="https://www.bilibili.com/video/BV1J3tz6jEP3" target="_blank" rel="noopener">《完成一个任务后，不应该安排休息，应该在任务中间安排休息；最有效的休息是提前、高频、短时、放空；玩手机不是休息》</a></p>' +
+
       '<h4 style="margin:14px 0 6px;color:#2d3a4a">🚀 应该如何使用？（一天完整流程）</h4>' +
       '<ol style="font-size:13.5px;padding-left:20px;line-height:1.9">' +
       '<li><b>前一天晚上</b>：任务页切到「明天」，填写明天的任务——必须任务一定要定少一点（70%~80% 的量），理想、拓展各填几条；顺便去设置里定好奖励数值和兑换表。</li>' +
@@ -128,6 +134,7 @@
     };
     // 小任务倒计时按钮
     document.getElementById('cd-pause').onclick = function () { App.tasks.toggleCdPause(); };
+    document.getElementById('cd-rest').onclick = function () { App.tasks.startMicroRest(); };
     document.getElementById('cd-stop').onclick = function () { App.tasks.cdFinish(); };
 
     App.tasks.init();

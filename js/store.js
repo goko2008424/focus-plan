@@ -72,6 +72,9 @@
       restRewardPoints: 5,  // 严格模式下「好好休息」得积分
       aiKey: '',            // SiliconFlow API Key（存本地）
       aiModel: 'Qwen/Qwen2.5-7B-Instruct', // AI 复盘所用模型
+      srRestAt: 70,         // 强化休息系统：做到预计时间的这个百分比就提醒小休
+      srRestMin: 2,         // 强化休息系统：每次任务内小休的分钟数（短时）
+      srMaxMin: 40,         // 强化休息系统：实际连续用时超过这个分钟且没休息就强制提醒
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },

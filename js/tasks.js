@@ -75,6 +75,16 @@
     }
     // 子任务倒计时区（到点继续计时、不自动弹窗，显示超时）
     if (cdTimer) {
+      // 任务内小休（强化休息系统）：倒计时展示 + 到点自动恢复原题
+      if (cdTimer.microRest) {
+        const secs = Math.max(0, Math.ceil((cdTimer.microEndAt - Date.now()) / 1000));
+        const leftEl2 = document.getElementById('tf-cd-left');
+        if (leftEl2) leftEl2.textContent = S().fmtClock(secs * 1000).replace(/^00:/, '');
+        const overEl = document.getElementById('tf-cd-over');
+        if (overEl) overEl.textContent = '☕ 小休中…';
+        if (secs <= 0) { resumeCdAfterRest(); App.ui.toast('☕ 小休结束，接着把这题做完吧'); }
+        return;
+      }
       const elapsed = cdElapsedMs();
       const total = cdTimer.minutes * 60000;
       const over = elapsed - total;
@@ -88,6 +98,19 @@
           leftEl.textContent = S().fmtClock(total - elapsed);
           leftEl.style.color = '';
           document.getElementById('tf-cd-over').textContent = '';
+        }
+      }
+      // 强化休息系统：做到预计 70% 提醒 / 连续超时未休息 → 强制休息
+      if (isStrongMode() && !cdTimer.paused) {
+        const s = S().settings();
+        const elapsedMin = elapsed / 60000;
+        if (!cdTimer.srReminded70 && cdTimer.minutes > 0 && elapsedMin >= cdTimer.minutes * (s.srRestAt || 70) / 100) {
+          cdTimer.srReminded70 = true;
+          srPrompt70();
+        }
+        if (!cdTimer.srForced && !cdTimer.srRested && (s.srMaxMin > 0) && elapsedMin >= s.srMaxMin) {
+          cdTimer.srForced = true;
+          srForceRest();
         }
       }
       const pct = total > 0 ? Math.max(0, Math.min(100, (Math.max(0, total - elapsed) / total) * 100)) : 0;
@@ -176,7 +199,7 @@
       cd.classList.remove('hidden');
       document.getElementById('tf-cd-text').textContent = cdTimer.text;
       document.getElementById('tf-cd-target').textContent = S().fmtDur(cdTimer.minutes);
-      document.getElementById('cd-pause').textContent = cdTimer.paused ? '▶ 继续' : '⏸ 暂停';
+      document.getElementById('cd-pause').textContent = cdTimer.microRest ? '🔚 结束小休' : (cdTimer.paused ? '▶ 继续' : '⏸ 暂停');
     } else {
       cd.classList.add('hidden');
     }
@@ -380,8 +403,10 @@
           (running
             ? '<span class="sub-meta running-txt">⏳ 倒计时中…</span>'
             : '<button class="btn btn-small sub-start" data-act="cd-start" data-task="' + task.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
+          '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="sub-note" data-task="' + task.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn" data-act="sub-edit" data-task="' + task.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="sub-del" data-task="' + task.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
+          (s.summary ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
           '</div>';
       }).join('') +
       '<button class="sub-add" data-act="sub-add" data-task="' + task.id + '">＋ 添加小任务</button>' +
@@ -443,6 +468,34 @@
     });
   }
 
+  /* ---------- 题评语：随时补充 / 修改（每道小题） ---------- */
+  function editSubSummary(taskKey, taskId, subId, dayKey, groupId) {
+    const task = S().getDay(dayKey || S().todayKey()).tasks[taskKey].find(function (t) { return t.id === taskId; });
+    const found = findSubInTask(task, subId);
+    const sub = found && found.sub;
+    if (!sub) return;
+    const m = App.ui.openModal('✍️ 题评语 / 复盘', '' +
+      '<p class="hint">写给这一题的评语（心得 / 错在哪 / 下次注意）。以后随时可以点回来补充修改，方便一天结束统一复盘。</p>' +
+      '<div class="field"><label>' + S().esc(sub.text) + '</label>' +
+      '<textarea id="note-text" style="width:100%;min-height:72px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13.5px;resize:vertical">' + S().esc(sub.summary || '') + '</textarea></div>',
+      '<button class="btn btn-primary" data-act="ok">保存评语</button>' +
+      '<button class="btn" data-act="clear">清空</button>' +
+      '<button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const t = m.querySelector('#note-text').value.trim();
+        sub.summary = t ? t : null;
+        S().save(); App.ui.closeModal(); App.tasks.renderAll();
+      },
+      clear: function () {
+        sub.summary = null;
+        S().save(); App.ui.closeModal(); App.tasks.renderAll();
+        App.ui.toast('已清空这题的评语');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
   /* ---------- 任务组（SmartGoal）：把几个小题打包，整组做完奖励一段休息） ---------- */
   function findSubInTask(task, subId) {
     if (!task) return null;
@@ -473,8 +526,10 @@
           (running
             ? '<span class="sub-meta running-txt">⏳ 倒计时中…</span>'
             : '<button class="btn btn-small sub-start" data-act="g-cd-start" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
+          '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="g-sub-note" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn" data-act="g-sub-edit" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="g-sub-del" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
+          (s.summary ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
           '</div>';
       }).join('');
       const rewardTxt = allDone
@@ -592,6 +647,69 @@
     });
   }
 
+  /* ---------- 强化休息系统：任务内高频短休 ---------- */
+  function isStrongMode() { return S().settings().recordMode === 'strong'; }
+  function startMicroRest() {
+    if (!cdTimer) { App.ui.toast('先开始一个小题的倒计时，才能小休'); return; }
+    if (!isStrongMode()) { App.ui.toast('「☕ 小休」只在「强化休息系统」模式下开启（设置里切换）'); return; }
+    if (cdTimer.microRest) { App.ui.toast('正在小休中…'); return; }
+    const secs = Math.max(60, (S().settings().srRestMin || 2) * 60);
+    cdTimer.paused = true;                      // 原题倒计时暂停（休息不计入用时）
+    cdTimer.pauseAt = cdTimer.pauseAt == null ? Date.now() : cdTimer.pauseAt;
+    cdTimer.microRest = true;
+    cdTimer.microEndAt = Date.now() + secs * 1000;
+    cdTimer.srRested = true;                    // 已休息过 → 强制休息不再触发
+    showTimerBar();
+    App.tasks.renderAll();
+    App.ui.toast('☕ 小休 ' + (secs / 60) + ' 分钟，放空 / 闭眼…回来接着把这题做完');
+  }
+  function cancelMicroRest() {
+    if (!cdTimer) return;
+    cdTimer.microRest = false;
+    cdTimer.microEndAt = 0;
+    if (cdTimer.paused) {
+      cdTimer.pausedMs += Date.now() - cdTimer.pauseAt;
+      cdTimer.pauseAt = undefined;
+      cdTimer.paused = false;
+    }
+    showTimerBar();
+    App.tasks.renderAll();
+    App.ui.toast('小休结束，接着把这题做完吧');
+  }
+  function resumeCdAfterRest() {
+    if (!cdTimer) return;
+    cdTimer.microRest = false;
+    cdTimer.microEndAt = 0;
+    if (cdTimer.paused) {
+      cdTimer.pausedMs += Date.now() - cdTimer.pauseAt;
+      cdTimer.pauseAt = undefined;
+      cdTimer.paused = false;
+    }
+    showTimerBar();
+    App.tasks.renderAll();
+  }
+  function srPrompt70() {
+    const s = S().settings();
+    const m = App.ui.openModal('☕ 已用预计 ' + s.srRestAt + '% 时间',
+      '<p class="hint">提前休息、短时休息，比累坏了再休更有效。放空一分钟，回来接着把这题做完，状态不会断。</p>',
+      '<button class="btn btn-primary" data-act="do">☕ 小休 ' + s.srRestMin + ' 分钟</button><button class="btn" data-act="later">我还不累，继续</button>');
+    App.ui.bindActions({
+      do: function () { App.ui.closeModal(); startMicroRest(); },
+      later: App.ui.closeModal
+    });
+  }
+  function srForceRest() {
+    const s = S().settings();
+    const runMin = Math.max(1, Math.round((Date.now() - cdTimer.startedAt - cdTimer.pausedMs) / 60000));
+    const m = App.ui.openModal('💪 强制休息提醒',
+      '<p class="hint">你已连续做 ' + runMin + ' 分钟没休息。高强度用脑不是休息，放空才是。先小休 ' + s.srRestMin + ' 分钟，再回来接着做，状态更稳。</p>',
+      '<button class="btn btn-primary" data-act="do">☕ 好，小休 ' + s.srRestMin + ' 分钟</button><button class="btn" data-act="later">再坚持会儿</button>');
+    App.ui.bindActions({
+      do: function () { App.ui.closeModal(); startMicroRest(); },
+      later: App.ui.closeModal
+    });
+  }
+
   function startCdTimer(taskKey, taskId, subId, groupId) {
     const day = S().getDay(S().todayKey());
     const task = day.tasks[taskKey] && day.tasks[taskKey].find(function (t) { return t.id === taskId; });
@@ -604,7 +722,8 @@
       taskKey: taskKey, taskId: taskId, subId: subId, groupId: groupId || null,
       taskText: task.text, text: sub.text,
       minutes: Math.max(1, sub.minutes || 1), points: sub.points || 0,
-      startedAt: Date.now(), pausedMs: 0, paused: false, finished: false
+      startedAt: Date.now(), pausedMs: 0, paused: false, finished: false,
+      microRest: false, microEndAt: 0, srRested: false, srReminded70: false, srForced: false
     };
     startTick();
     showTimerBar();
@@ -614,6 +733,7 @@
 
   function toggleCdPause() {
     if (!cdTimer) return;
+    if (cdTimer.microRest) { cancelMicroRest(); return; }
     if (!cdTimer.paused) {
       cdTimer.paused = true;
       cdTimer.pauseAt = Date.now();
@@ -655,6 +775,8 @@
         cdTimer.pausedMs = 0;
         cdTimer.paused = false;
         cdTimer.finished = false;
+        cdTimer.microRest = false; cdTimer.microEndAt = 0;
+        cdTimer.srRested = false; cdTimer.srReminded70 = false; cdTimer.srForced = false;
         App.ui.closeModal();
         showTimerBar();
       }
@@ -1036,12 +1158,30 @@
         '<input type="number" class="task-points" data-act="points" min="0" value="' + pts + '"' + (task.done || isThis ? ' disabled' : '') + ' />' +
         '<span class="pts-unit">分</span></span>'
       : '';
+    // 强化休息系统：预计 / 实际 用时统计（有小题的任务才显示）
+    let statLine = '';
+    if (isStrongMode()) {
+      const hasSub = (task.subs && task.subs.length > 0) ||
+        (task.groups && task.groups.reduce(function (a, g) { return a + ((g.subs || []).length > 0 ? 1 : 0); }, 0) > 0);
+      if (hasSub) {
+        const planned = (task.subs || []).reduce(function (a, s) { return a + (s.minutes || 0); }, 0) +
+          (task.groups || []).reduce(function (a, g) { return a + (g.subs || []).reduce(function (b, s) { return b + (s.minutes || 0); }, 0); }, 0);
+        const sess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
+        const actual = sess.reduce(function (a, se) { return a + (se.actualMinutes || 0); }, 0);
+        const pct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
+        statLine = '<div class="task-stat" title="预计用时 vs 实际用时（强化休息系统）">' +
+          '🕑 预计 <b>' + S().fmtDur(planned) + '</b> ｜ 实际 <b>' + S().fmtDur(actual) + '</b>' +
+          (planned ? ' ｜ 进度 <b style="color:' + (pct >= 100 ? 'var(--req)' : '#22a06b') + '">' + pct + '%</b>' : '') +
+          '</div>';
+      }
+    }
     return '<div class="task-row' + (task.done ? ' done' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
       '<span class="task-text" data-act="edit">' + S().esc(task.text) + '</span>' +
       ptsInput +
       btn +
       '</div>' +
+      statLine +
       subBlockHTML(task) +
       groupBlockHTML(task);
   }
@@ -1125,6 +1265,8 @@
         if (act2 === 'sub-edit') { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey()); return; }
         if (act2 === 'sub-del') { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey()); return; }
         if (act2 === 'cd-start') { startCdTimer(listKey, actBtn.dataset.task, actBtn.dataset.sub); return; }
+        if (act2 === 'sub-note') { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey()); return; }
+        if (act2 === 'g-sub-note') { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey(), actBtn.dataset.group); return; }
         if (act2 === 'group-new') { addGroupModal(listKey, actBtn.dataset.task, S().todayKey()); return; }
         if (act2 === 'g-sub-add') { addSubModal(listKey, actBtn.dataset.task, null, S().todayKey(), actBtn.dataset.group); return; }
         if (act2 === 'g-sub-edit') { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey(), actBtn.dataset.group); return; }
@@ -1210,6 +1352,8 @@
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'cd-start' && listKey) { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
+      if (act === 'sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
+      if (act === 'g-sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey(), actBtn.dataset.group); return; }
       if (act === 'group-new' && listKey) { addGroupModal(listKey, actBtn.dataset.task, S().tomorrowKey()); return; }
       if (act === 'g-sub-add' && listKey) { addSubModal(listKey, actBtn.dataset.task, null, S().tomorrowKey(), actBtn.dataset.group); return; }
       if (act === 'g-sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey(), actBtn.dataset.group); return; }

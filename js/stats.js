@@ -95,6 +95,19 @@
         }).join('')
       : '<p class="hint">还没有账目记录。完成理想/拓展任务、触发奖励、兑换积分都会记在这里。</p>';
 
+    // 兑换记录专区（只列花掉积分的兑换）
+    const redeems = S().ledger().filter(function (e) { return e.type === 'redeem' && (e.points || 0) < 0; }).slice().reverse();
+    document.getElementById('redeem-list').innerHTML = redeems.length
+      ? '<div class="redeem-log">' + redeems.map(function (e) {
+          const total = e.date;
+          return '<div class="redeem-log-row"><span class="d-date">' + e.date + '</span>' +
+            '<span style="flex:1">' + S().esc(e.note || '（未写内容）') + '</span>' +
+            '<span style="font-weight:700;color:#e2545d">-' + Math.abs(e.points) + '分</span></div>';
+        }).join('') + '</div>' +
+        '<p class="hint" style="margin-top:8px">共 ' + redeems.length + ' 次兑换，共花了 ' +
+        (-redeems.reduce(function (s, e) { return s + (e.points || 0); }, 0)) + ' 分</p>'
+      : '<p class="hint">还没有兑换过东西。以后点顶部积分数字「兑换」，扣掉的分会都在这里。</p>';
+
     // 按日记录
     const dayKeys = Object.keys(S().data().days).filter(function (k) {
       const day = S().getDay(k);
