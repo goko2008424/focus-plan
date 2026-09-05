@@ -245,7 +245,7 @@
     const text = buildTodayData(S().todayKey());
     if (!text) { App.ui.toast('今天还没有记录，先做点再去复盘 😄'); return; }
     const model = (s.aiModel || 'Qwen/Qwen2.5-7B-Instruct').trim();
-    const sys = '你是极客级的学习"逐题诊断"教练。基于今日记录输出 JSON（不要 markdown 代码块）。硬性要求：1) items 必须按题号/题名逐个列出记录里的每一道题，一题都不能漏、不能只挑几道。2) 对每一题，只根据该题评语的具体内容做诊断，指出这一题具体缺在哪（知识点/审题/计算/思路/时间分配），next 给只属于这一题的下一步注意，不同题的 next 不要写同一句话。3) 某题评语为"未写评语"时：note 写"未写评语"，problem 写"无法判断"，good 与 next 留空，不要硬编造。4) weak 必须是去重后的具体短板（2~4条），禁止情绪类套话（如"心态不稳/情绪不好/时间管理"），同类问题只允许出现一次。5) advice 只写明天最该做的一件具体可执行的事。6) 所有内容只基于记录里的真实内容，不要虚构评分或凭空评价。格式：{"summary":"一两句整体点评","items":[{"name":"题号/题名","status":"完成/未完成/未写评语","note":"评语原文或未写评语","problem":"这题具体短板","good":"亮点(可空)","next":"只属于这题的下步注意"}],"weak":["去重后的具体短板1","具体短板2"],"advice":"明天最该改写的一件具体的事"}。';
+    const sys = '你是极客级的学习"逐题诊断"教练。基于今日记录，只输出一个合法、完整的 JSON 对象字符串（不要任何 markdown 代码块、不要前后缀、不要截断）。硬性要求：1) items 必须按题号/题名逐个列出记录里的每一道题，一题都不能漏。2) 对每一题，只根据该题评语的具体内容诊断，指出这题具体缺在哪个知识点/哪一步，next 给只属于这一题的下一步注意，不同题不写同一句。3) 某题没评语时：note 写"未写评语"，problem 写"无法判断"，good 与 next 留空。4) weak 必须是去重后的具体短板(2~4条)；整个回答禁止出现"情绪管理/心态不稳/时间分配/需要加强"这类没有任何具体做法的空话，一个字都不能有。5) advice 只写明天最该做的一件具体可执行的事。6) 输出要短而密，note 每句不超过20字，确保一次写完不截断。格式：{"summary":"一两句","items":[{"name":"题号/题名","status":"完成/未完成/未写评语","note":"评语原文或未写评语","problem":"这题具体短板","good":"亮点(可空)","next":"只属于这题的下步注意"}],"weak":["具体短板1","具体短板2"],"advice":"明天最该做的一件具体的事"}。';
     const user = '今日记录：\n' + text;
     App.ui.toast('🤖 AI 正在分析…');
     fetch('https://api.siliconflow.cn/v1/chat/completions', {
@@ -254,7 +254,7 @@
       body: JSON.stringify({
         model: model,
         messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
-        temperature: 0.6, max_tokens: 1800, response_format: { type: 'json_object' }
+        temperature: 0.4, max_tokens: 3000, response_format: { type: 'json_object' }
       })
     }).then(function (r) {
       if (!r.ok) { if (r.status === 401) throw new Error('API Key 无效（401）'); if (r.status === 402) throw new Error('余额不足（402）'); throw new Error('HTTP ' + r.status); }
@@ -268,10 +268,19 @@
   }
 
   function renderAiResult(content) {
+    const raw = String(content || '').replace(/^```(json)?\s*/, '').replace(/\s*```$/, '').trim();
     let obj = null;
-    try { obj = JSON.parse(String(content || '').replace(/```json|```/g, '').trim()); } catch (e) { /* fallback */ }
+    try { obj = JSON.parse(raw); } catch (e) { /* try extract */ }
     if (!obj) {
-      const m2 = App.ui.openModal('🤖 AI 今日复盘', '<div class="card"><p style="white-space:pre-wrap">' + S().esc(content || '无内容') + '</p></div>', '<button class="btn btn-primary" data-act="close">知道了</button>');
+      const mm = raw.match(/\{[\s\S]*\}/);
+      if (mm) { try { obj = JSON.parse(mm[0]); } catch (e2) { obj = null; } }
+    }
+    if (!obj) {
+      // 解析失败：不再甩生码，给一个整洁、可滚动的深色原文面板
+      const m2 = App.ui.openModal('🤖 AI 今日复盘',
+        '<p class="hint">这次 AI 返回的内容没整理成表格（可能它偷懒或输出被截断）。下面是它的原文，勉强能看：</p>' +
+        '<div style="max-height:52vh;overflow:auto;background:#0d1526;border:1px solid #22304d;border-radius:10px;padding:12px;font-family:monospace;font-size:12px;color:#cfe0ff;white-space:pre-wrap">' + S().esc(raw || '（空）') + '</div>',
+        '<button class="btn btn-primary" data-act="close">知道了</button>', { wide: true });
       App.ui.bindActions({ close: App.ui.closeModal });
       return;
     }
