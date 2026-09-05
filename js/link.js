@@ -245,7 +245,7 @@
     const text = buildTodayData(S().todayKey());
     if (!text) { App.ui.toast('今天还没有记录，先做点再去复盘 😄'); return; }
     const model = (s.aiModel || 'Qwen/Qwen2.5-7B-Instruct').trim();
-    const sys = '你是一位专注的学习复盘教练。基于今日记录，用中文输出 JSON（不要 markdown 代码块）。必须逐题分析：把记录里每一道题（任务或小题）都列出来，不省略、不只挑一道；没写评语的该题在 note 里写"未写评语"。格式：{"summary":"一两句整体点评","items":[{"name":"题名","status":"完成/未完成/未写评语","note":"该题评语原文或未写评语","problem":"这题暴露的问题(可空)","good":"做得好的地方(可空)"}],"weak":["整体薄弱点1","薄弱点2"],"advice":"明天最该改进的一件事"}。items 必须覆盖记录里的每一题，别漏题；文字口语化、具体、不空洞。';
+    const sys = '你是极客级的学习"逐题诊断"教练。基于今日记录输出 JSON（不要 markdown 代码块）。硬性要求：1) items 必须按题号/题名逐个列出记录里的每一道题，一题都不能漏、不能只挑几道。2) 对每一题，只根据该题评语的具体内容做诊断，指出这一题具体缺在哪（知识点/审题/计算/思路/时间分配），next 给只属于这一题的下一步注意，不同题的 next 不要写同一句话。3) 某题评语为"未写评语"时：note 写"未写评语"，problem 写"无法判断"，good 与 next 留空，不要硬编造。4) weak 必须是去重后的具体短板（2~4条），禁止情绪类套话（如"心态不稳/情绪不好/时间管理"），同类问题只允许出现一次。5) advice 只写明天最该做的一件具体可执行的事。6) 所有内容只基于记录里的真实内容，不要虚构评分或凭空评价。格式：{"summary":"一两句整体点评","items":[{"name":"题号/题名","status":"完成/未完成/未写评语","note":"评语原文或未写评语","problem":"这题具体短板","good":"亮点(可空)","next":"只属于这题的下步注意"}],"weak":["去重后的具体短板1","具体短板2"],"advice":"明天最该改写的一件具体的事"}。';
     const user = '今日记录：\n' + text;
     App.ui.toast('🤖 AI 正在分析…');
     fetch('https://api.siliconflow.cn/v1/chat/completions', {
@@ -276,7 +276,7 @@
       return;
     }
     const itemRows = (obj.items || []).map(function (it) {
-      return '<tr><td>' + S().esc(it.name || '') + '</td><td>' + S().esc(it.status || '') + '</td><td>' + S().esc(it.note || '') + '</td><td style="color:#e2545d">' + S().esc(it.problem || '') + '</td><td style="color:#22a06b">' + S().esc(it.good || '') + '</td></tr>';
+      return '<tr valign="top"><td style="font-weight:700">' + S().esc(it.name || '') + '</td><td>' + S().esc(it.status || '') + '</td><td>' + S().esc(it.note || '') + '</td><td style="color:#e2545d">' + S().esc(it.problem || '') + '</td><td style="color:#22a06b">' + S().esc(it.good || '') + '</td><td>' + S().esc(it.next || '') + '</td></tr>';
     }).join('');
     const rows = (obj.overtime || []).map(function (o) {
       return '<tr><td>' + S().esc(o.item || '') + '</td><td>' + S().esc(o.plan || '') + '</td><td>' + S().esc(o.actual || '') + '</td><td style="color:#e2545d">' + S().esc(o.over || '') + '</td><td>' + S().esc(o.reason || '') + '</td></tr>';
@@ -285,7 +285,7 @@
     const html = '<div class="card">' +
       '<p>' + S().esc(obj.summary || '') + '</p>' +
       (itemRows
-        ? '<h4 style="margin:10px 0 4px;font-size:13.5px">📋 逐题复盘</h4><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">题</th><th>状态</th><th>评语/笔记</th><th>问题</th><th>亮点</th></tr></thead><tbody>' + itemRows + '</tbody></table>'
+        ? '<h4 style="margin:10px 0 4px;font-size:13.5px">📋 逐题诊断</h4><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">题号</th><th>状态</th><th>评语</th><th>这题短板</th><th>亮点</th><th>下步注意</th></tr></thead><tbody>' + itemRows + '</tbody></table>'
         : '') +
       (rows
         ? '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px"><thead><tr><th style="text-align:left">项目</th><th>计划</th><th>实际</th><th>超时</th><th>可能原因</th></tr></thead><tbody>' + rows + '</tbody></table>'

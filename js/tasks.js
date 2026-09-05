@@ -1158,9 +1158,9 @@
         '<input type="number" class="task-points" data-act="points" min="0" value="' + pts + '"' + (task.done || isThis ? ' disabled' : '') + ' />' +
         '<span class="pts-unit">分</span></span>'
       : '';
-    // 强化休息系统：预计 / 实际 用时统计（有小题的任务才显示）
+    // 预计 / 实际 用时统计（有小题的任务，任何模式都显示总时长）
     let statLine = '';
-    if (isStrongMode()) {
+    {
       const hasSub = (task.subs && task.subs.length > 0) ||
         (task.groups && task.groups.reduce(function (a, g) { return a + ((g.subs || []).length > 0 ? 1 : 0); }, 0) > 0);
       if (hasSub) {
@@ -1169,7 +1169,7 @@
         const sess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
         const actual = sess.reduce(function (a, se) { return a + (se.actualMinutes || 0); }, 0);
         const pct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
-        statLine = '<div class="task-stat" title="预计用时 vs 实际用时（强化休息系统）">' +
+        statLine = '<div class="task-stat" title="这块任务你总共安排了这些时间（预计） vs 实际花了多少">' +
           '🕑 预计 <b>' + S().fmtDur(planned) + '</b> ｜ 实际 <b>' + S().fmtDur(actual) + '</b>' +
           (planned ? ' ｜ 进度 <b style="color:' + (pct >= 100 ? 'var(--req)' : '#22a06b') + '">' + pct + '%</b>' : '') +
           '</div>';
