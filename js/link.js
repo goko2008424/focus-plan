@@ -261,13 +261,28 @@
       return r.json();
     }).then(function (data) {
       const c = data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : '';
-      renderAiResult(c);
+      renderAiResult(c, countQuestions());
     }).catch(function (err) {
       App.ui.toast('AI 调用失败：' + err.message + '。浏览器直接调用常被跨域拦，可用桌面插件或代理');
     });
   }
 
-  function renderAiResult(content) {
+  function countQuestions() {
+    const day = S().getDay(S().todayKey());
+    let n = 0;
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      (day.tasks[k] || []).forEach(function (t) {
+        n += (t.subs || []).length;
+        (t.groups || []).forEach(function (g) { n += (g.subs || []).length; });
+      });
+    });
+    if (n === 0) {
+      ['required', 'ideal', 'extra'].forEach(function (k) { n += (day.tasks[k] || []).length; });
+    }
+    return n;
+  }
+
+  function renderAiResult(content, expected) {
     const raw = String(content || '').replace(/^```(json)?\s*/, '').replace(/\s*```$/, '').trim();
     let obj = null;
     try { obj = JSON.parse(raw); } catch (e) { /* try extract */ }
@@ -287,12 +302,18 @@
     const itemRows = (obj.items || []).map(function (it) {
       return '<tr valign="top"><td style="font-weight:700">' + S().esc(it.name || '') + '</td><td>' + S().esc(it.status || '') + '</td><td>' + S().esc(it.note || '') + '</td><td style="color:#e2545d">' + S().esc(it.problem || '') + '</td><td style="color:#22a06b">' + S().esc(it.good || '') + '</td><td>' + S().esc(it.next || '') + '</td></tr>';
     }).join('');
+    const covered = (obj.items || []).length;
+    let warn = '';
+    if (expected > 0 && covered < expected) {
+      warn = '<div style="margin:10px 0;padding:8px 10px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.08);border-radius:8px;font-size:12.5px;color:#fbbf24">⚠️ AI 只整理了 <b>' + covered + '/' + expected + '</b> 题。多半是模型偏弱或输出被截断——建议到「设置 → AI」换更强的模型（如 Qwen2.5-72B 或 deepseek-chat）再生成一次。</div>';
+    }
     const rows = (obj.overtime || []).map(function (o) {
       return '<tr><td>' + S().esc(o.item || '') + '</td><td>' + S().esc(o.plan || '') + '</td><td>' + S().esc(o.actual || '') + '</td><td style="color:#e2545d">' + S().esc(o.over || '') + '</td><td>' + S().esc(o.reason || '') + '</td></tr>';
     }).join('');
     const weak = (obj.weak || []).map(function (w) { return '<li>' + S().esc(w) + '</li>'; }).join('');
     const html = '<div class="card">' +
       '<p>' + S().esc(obj.summary || '') + '</p>' +
+      warn +
       (itemRows
         ? '<h4 style="margin:10px 0 4px;font-size:13.5px">📋 逐题诊断</h4><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">题号</th><th>状态</th><th>评语</th><th>这题短板</th><th>亮点</th><th>下步注意</th></tr></thead><tbody>' + itemRows + '</tbody></table>'
         : '') +

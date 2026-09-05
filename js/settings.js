@@ -7,6 +7,13 @@
   const App = (window.App = window.App || {});
   const S = () => App.store;
 
+  // 常用可选的 AI 模型（硅基流动，OpenAI 兼容命名；小=更省/可能偏弱，强=更好/按量付费）
+  const AI_MODELS = [
+    { id: 'Qwen/Qwen2.5-7B-Instruct',  label: 'Qwen2.5-7B（免费可用 · 基础，做复盘偏弱）' },
+    { id: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen2.5-72B（更强 · 按量计费，推荐做逐题诊断）' },
+    { id: 'deepseek-ai/deepseek-chat', label: 'DeepSeek V3（更强 · 按量计费，逐题诊断很稳）' }
+  ];
+
   function numRow(id, label, value, unit) {
     return '<div class="set-row"><label>' + label + '</label>' +
       '<input type="number" id="' + id + '" min="0" value="' + value + '" />' +
@@ -79,7 +86,14 @@
       '</div>' +
       '<div class="set-group"><h4>🤖 AI 复盘（SiliconFlow · 可选）</h4>' +
       '<div class="set-row"><span class="set-label">API Key</span><input type="password" id="set-ai-key" class="set-input" value="' + S().esc(s.aiKey || '') + '" placeholder="sk-..." /></div>' +
-      '<div class="set-row"><span class="set-label">模型</span><input type="text" id="set-ai-model" class="set-input" value="' + S().esc(s.aiModel || '') + '" placeholder="Qwen/Qwen2.5-7B-Instruct" /></div>' +
+      '<div class="set-row"><span class="set-label">模型（自选）</span>' +
+      '<select id="set-ai-model" class="set-input select-small">' +
+      AI_MODELS.map(function (m) { return '<option value="' + m.id + '"' + (s.aiModel === m.id ? ' selected' : '') + '>' + m.label + '</option>'; }).join('') +
+      '<option value="__custom"' + (AI_MODELS.every(function (m) { return m.id !== s.aiModel; }) ? ' selected' : '') + '>自定义…</option>' +
+      '</select></div>' +
+      '<div class="set-row" id="ai-model-custom-row"' + (AI_MODELS.some(function (m) { return m.id === s.aiModel; }) ? ' style="display:none"' : '') + '>' +
+      '<span class="set-label">自定义模型名</span><input type="text" id="set-ai-model-custom" class="set-input" value="' + S().esc(s.aiModel || '') + '" placeholder="如 Qwen/Qwen2.5-72B-Instruct" /></div>' +
+      '<p class="hint">更强（如 72B / DeepSeek）按量计费、效果更好；7B 通常有免费额度但做逐题诊断偏弱。以硅基流动官网标价为准。</p>' +
       '<p class="hint">到 cloud.siliconflow.cn 申请免费 Key，填好后今天页点「🤖 AI 今日复盘」即可生成超时/弱点总结。Key 只存你浏览器本地，不联网上传。</p>' +
       '</div>';
 
@@ -108,7 +122,21 @@
     bind('set-sr-time', function () { s.srEnableTime = this.checked; S().save(); });
     bind('set-sr-cooldown', function () { s.srCooldownMin = Math.max(1, +this.value || 5); S().save(); });
     bind('set-ai-key', function () { s.aiKey = this.value.trim(); S().save(); });
-    bind('set-ai-model', function () { s.aiModel = this.value.trim(); S().save(); });
+    // AI 模型自选：选预设直接保存；选「自定义…」才显示手填框
+    bind('set-ai-model', function () {
+      const sel = document.getElementById('set-ai-model');
+      const cusRow = document.getElementById('ai-model-custom-row');
+      const cus = document.getElementById('set-ai-model-custom');
+      if (this.value === '__custom') {
+        cusRow.style.display = '';
+        cus.focus();
+        return;
+      }
+      cusRow.style.display = 'none';
+      s.aiModel = this.value;
+      S().save();
+    });
+    bind('set-ai-model-custom', function () { s.aiModel = this.value.trim(); S().save(); });
 
     renderRedeem();
     bindDataButtons();
