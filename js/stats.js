@@ -142,10 +142,12 @@
           const detailHTML = detailLines.length
             ? '<details class="task-details"><summary>查看当天任务明细（' + detailLines.length + ' 条）</summary>' + detailLines.join('') + '</details>'
             : '';
-          // 当日复盘
+          // 当日复盘（可随时补写/修改）
           const reviewHTML = (day.review && day.review.text)
             ? '<div style="margin-top:8px;font-size:13px;color:#374151;background:#f4faf6;border-left:3px solid #22a06b;padding:6px 10px;border-radius:6px">📝 复盘：' + S().esc(day.review.text) + '</div>'
             : '';
+          const reviewBtn = '<button class="btn btn-small" data-reviewday="' + k + '" style="margin-top:8px">' +
+            (day.review && day.review.text ? '✏️ 改这一天的复盘' : '📝 补写这一天的复盘（忘了写的）') + '</button>';
           return '<div class="day-card">' +
             '<div class="day-card-head">' +
             '<button class="d-date" data-day="' + k + '" style="background:none;border:none;font-size:14.5px;font-weight:700;color:var(--primary);cursor:pointer">' + S().fmtDateCN(k) + ' →</button>' +
@@ -160,10 +162,15 @@
             '<span>⭐ 当日积分 ' + (dayPts >= 0 ? '+' : '') + dayPts + '</span>' +
             (dayLei ? '<span>🕐 当日休闲 +' + dayLei + '分钟</span>' : '') +
             '</div>' +
-            detailHTML + reviewHTML +
+            detailHTML + reviewHTML + reviewBtn +
             '</div>';
         }).join('')
       : '<p class="hint">还没有任何一天的任务或记录。</p>';
+
+    // 补写/改复盘
+    document.querySelectorAll('#day-history [data-reviewday]').forEach(function (b) {
+      b.onclick = function () { editReviewModal(b.dataset.reviewday); };
+    });
 
     // 点击日期 → 跳到时间轴那天
     document.querySelectorAll('#day-history [data-day]').forEach(function (b) {
@@ -174,5 +181,26 @@
     });
   }
 
-  App.stats = { render: render };
+  /* ---------- 补写 / 修改一天的复盘 ---------- */
+  function editReviewModal(dayKey) {
+    const day = S().getDay(dayKey);
+    const m = App.ui.openModal('📝 复盘 · ' + S().fmtDateCN(dayKey), '' +
+      '<p class="hint">补写这一天的复盘，写给自己看的总结。忘了写随时能回来补。</p>' +
+      '<div class="field"><label>复盘内容</label>' +
+      '<textarea id="rv-text" style="width:100%;min-height:96px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13.5px;resize:vertical">' + S().esc((day.review && day.review.text) || '') + '</textarea></div>',
+      '<button class="btn btn-primary" data-act="ok">保存复盘</button>' +
+      '<button class="btn" data-act="clear">清空</button>' +
+      '<button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const t = m.querySelector('#rv-text').value.trim();
+        if (t) day.review = { text: t, at: new Date().toISOString() }; else day.review = null;
+        S().save(); App.ui.closeModal(); render();
+      },
+      clear: function () { day.review = null; S().save(); App.ui.closeModal(); render(); },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  App.stats = { render: render, editReviewModal: editReviewModal };
 })();
