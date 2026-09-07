@@ -19,6 +19,7 @@
   let cdTimer = null;   // 倒计时器（小任务限时）
   let tickId = null;
   let activeTab = 'today';
+  let srProgressGroupKey = null; // 已完成"进度休息"提醒的组/任务键（避免每 5 分钟小题都提醒）
 
   // 小任务开始时随机播一句至理名言
   const QUOTES = [
@@ -106,12 +107,13 @@
         const elapsedMin = elapsed / 60000;
         const cooldownMs = Math.max(0, (s.srCooldownMin || 5)) * 60000;
         const cooled = (Date.now() - (cdTimer.srLastPromptAt || 0)) >= cooldownMs;
-        const progressHit = s.srEnableProgress !== false && !cdTimer.srReminded70 && cdTimer.minutes > 0 &&
-          elapsedMin >= cdTimer.minutes * (s.srRestAt || 70) / 100;
+        const gp = groupProgress(cdTimer);
+        // 进度提醒：按整个任务组累计到达 % 才提醒一次，不是每个 5 分钟小题都提醒
+        const progressHit = s.srEnableProgress !== false && gp && gp.pct >= (s.srRestAt || 70) && srProgressGroupKey !== gp.key;
         const timeHit = s.srEnableTime !== false && !cdTimer.srForced && !cdTimer.srRested &&
           (s.srMaxMin > 0) && elapsedMin >= s.srMaxMin;
         if (cooled) {
-          if (progressHit) { cdTimer.srReminded70 = true; cdTimer.srLastPromptAt = Date.now(); srPrompt70(); }
+          if (progressHit) { srProgressGroupKey = gp.key; cdTimer.srLastPromptAt = Date.now(); srPrompt70(gp.pct); }
           else if (timeHit) { cdTimer.srForced = true; cdTimer.srLastPromptAt = Date.now(); srForceRest(); }
         }
       }
@@ -403,7 +405,7 @@
           '<span class="sub-text">' + S().esc(s.text) + '</span>' +
           '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
           (running
-            ? '<span class="sub-meta running-txt">⏳ 倒计时中…</span>'
+            ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="cd-start" data-task="' + task.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="sub-note" data-task="' + task.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn" data-act="sub-edit" data-task="' + task.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
@@ -529,7 +531,7 @@
           '<span class="sub-text">' + S().esc(s.text) + '</span>' +
           '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
           (running
-            ? '<span class="sub-meta running-txt">⏳ 倒计时中…</span>'
+            ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="g-cd-start" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="g-sub-note" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn" data-act="g-sub-edit" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
@@ -655,9 +657,33 @@
 
   /* ---------- 强化休息系统：任务内高频短休 ---------- */
   function isStrongMode() { return S().settings().recordMode === 'strong'; }
+
+  // 计算当前所在「整组/整任务」的累计进度（%），用于进度休息提醒——按整个任务组算，不是每道 5 分钟小题
+  function groupProgress(cd) {
+    const day = S().getDay(S().todayKey());
+    const task = (day.tasks[cd.taskKey] || []).find(function (t) { return t.id === cd.taskId; });
+    if (!task) return null;
+    let planned = 0, used = 0, key = 't' + cd.taskId;
+    if (cd.groupId) {
+      const g = (task.groups || []).find(function (g2) { return g2.id === cd.groupId; });
+      if (!g) return null;
+      key = 'g' + cd.groupId;
+      planned = (g.subs || []).reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
+      (day.sessions || []).forEach(function (se) {
+        if (se.taskId === cd.taskId && g.subs.some(function (s) { return s.text === se.planContent; })) used += se.actualMinutes || 0;
+      });
+    } else {
+      planned = (task.subs || []).reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
+      (day.sessions || []).forEach(function (se) {
+        if (se.taskId === cd.taskId && task.subs.some(function (s) { return s.text === se.planContent; })) used += se.actualMinutes || 0;
+      });
+    }
+    if (!planned) return null;
+    used += Math.min(cd.minutes || 0, Math.max(0, (Date.now() - cd.startedAt - cd.pausedMs) / 60000)); // 加上正在做这题的时间
+    return { pct: Math.min(100, (used / planned) * 100), key: key };
+  }
   function startMicroRest() {
-    if (!cdTimer) { App.ui.toast('先开始一个小题的倒计时，才能小休'); return; }
-    if (!isStrongMode()) { App.ui.toast('「☕ 小休」只在「强化休息系统」模式下开启（设置里切换）'); return; }
+    if (!cdTimer) { App.ui.toast('先开始一个小题/任务的倒计时，才能小休'); return; }
     if (cdTimer.microRest) { App.ui.toast('正在小休中…'); return; }
     const secs = Math.max(60, (S().settings().srRestMin || 2) * 60);
     cdTimer.paused = true;                      // 原题倒计时暂停（休息不计入用时）
@@ -695,10 +721,10 @@
     showTimerBar();
     App.tasks.renderAll();
   }
-  function srPrompt70() {
+  function srPrompt70(pct) {
     const s = S().settings();
-    const m = App.ui.openModal('☕ 已用预计 ' + s.srRestAt + '% 时间',
-      '<p class="hint">提前休息、短时休息，比累坏了再休更有效。放空一分钟，回来接着把这题做完，状态不会断。</p>',
+    const m = App.ui.openModal('☕ 这一组已完成 ' + (pct == null ? Math.round(s.srRestAt || 70) : Math.round(pct)) + '%',
+      '<p class="hint">整个任务组做到预计的 ' + (s.srRestAt || 70) + '% 了。提前、短时休息比累坏了再休更有效，放空一下回来接着做，状态不会断。</p>',
       '<button class="btn btn-primary" data-act="do">☕ 小休 ' + s.srRestMin + ' 分钟</button><button class="btn" data-act="later">我还不累，继续</button>');
     App.ui.bindActions({
       do: function () { App.ui.closeModal(); startMicroRest(); },

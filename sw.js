@@ -1,5 +1,5 @@
 /* Service Worker：离线可用 + 缓存本应用静态资源 */
-const CACHE = 'focus-plan-v4';
+const CACHE = 'focus-plan-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -13,7 +13,10 @@ const ASSETS = [
   './js/link.js',
   './js/app.js',
   './manifest.webmanifest',
-  './icon.svg'
+  './icon.svg',
+  './assets/honor/sumneu.jpg',
+  './assets/honor/aisi.jpg',
+  './assets/honor/xinxin.jpg'
 ];
 
 self.addEventListener('install', function (e) {

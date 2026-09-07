@@ -66,7 +66,7 @@
       '</select></div>' +
       numRow('set-rest-points', '休息奖励积分（好好休息才有）', s.restRewardPoints, '分') +
       '<p class="hint">「强化休息系统」：完成任务不休息、直接无缝切下一个；休息放在任务进行中（打断未完成任务）。高频·短时·放空才是真休息，玩手机不算。下面三个数值都只对这个模式生效。</p>' +
-      '<div class="set-row"><span class="set-label">到预计时间提醒</span>' +
+      '<div class="set-row"><span class="set-label">整组进度提醒</span>' +
       '<input type="number" id="set-sr-rest-at" class="set-input" min="1" max="100" value="' + s.srRestAt + '" />' +
       '<span class="unit">% 时提醒小休</span></div>' +
       '<div class="set-row"><span class="set-label">每次小休</span>' +
@@ -76,7 +76,7 @@
       '<input type="number" id="set-sr-max-min" class="set-input" min="1" value="' + s.srMaxMin + '" />' +
       '<span class="unit">分钟就提醒休息（定时提醒，可关）</span></div>' +
       '<div class="set-row"><span class="set-label">自动提醒开关</span></div>' +
-      switchRow('set-sr-progress', '按进度提醒（做到预计的 % 就提醒小休）', s.srEnableProgress) +
+      switchRow('set-sr-progress', '按进度提醒（整个任务组累积做到预计的 % 才提醒）', s.srEnableProgress) +
       switchRow('set-sr-time', '按时间提醒（连续做满设定分钟就提醒）', s.srEnableTime) +
       '<div class="set-row"><span class="set-label">提醒间隔</span>' +
       '<input type="number" id="set-sr-cooldown" class="set-input" min="1" value="' + s.srCooldownMin + '" />' +
