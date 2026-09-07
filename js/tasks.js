@@ -36,8 +36,9 @@
 
   function elapsedMs() {
     if (!timer) return 0;
-    let ms = Date.now() - timer.startedAt - timer.pausedMs;
-    return timer.paused ? ms : ms;
+    const now = timer.paused && timer.pauseAt ? timer.pauseAt : Date.now(); // 暂停时冻结计时
+    let ms = now - timer.startedAt - timer.pausedMs;
+    return ms;
   }
 
   function startTick() {
@@ -50,8 +51,9 @@
 
   function cdElapsedMs() {
     if (!cdTimer) return 0;
-    let ms = Date.now() - cdTimer.startedAt - cdTimer.pausedMs;
-    return cdTimer.paused ? ms : ms;
+    const now = cdTimer.paused && cdTimer.pauseAt ? cdTimer.pauseAt : Date.now(); // 暂停时冻结倒计时
+    let ms = now - cdTimer.startedAt - cdTimer.pausedMs;
+    return ms;
   }
   function cdRemainingMs() {
     if (!cdTimer) return 0;
@@ -786,6 +788,9 @@
     const cd = cdTimer;
     const elapsed = Date.now() - cd.startedAt - cd.pausedMs;
     const over = elapsed - cd.minutes * 60000;
+    // 超时 → 奖励减半（保留动力，不让超时变"无所谓"）
+    const earn = (over > 0 && cd.points > 0) ? Math.floor((cd.points || 0) / 2) : (cd.points || 0);
+    cd.earnPoints = earn;
     const timeLine = '实际用时 ' + S().fmtClock(elapsed) + ' / 目标 ' + S().fmtDur(cd.minutes) +
       (over > 0 ? '  <span style="color:#e2545d">（超时 ' + S().fmtClock(over).replace(/^00:/, '') + '）</span>' : '  <span style="color:#22a06b">（在目标内）</span>');
     const noteEl = '<div class="field"><label>小总结（超时可写一句为什么超时）</label>' +
@@ -795,7 +800,7 @@
       '<p style="font-size:12.5px;color:#8a919c;margin-bottom:8px">所属任务：' + S().esc(cd.taskText) + '</p>' +
       '<div class="field"><label>用时对比</label><p style="font-size:13px">' + timeLine + '</p></div>' +
       (cd.points > 0
-        ? '<div class="field"><label>完成可得</label><p style="font-weight:700;color:#22a06b">+' + cd.points + ' 分</p></div>'
+        ? '<div class="field"><label>完成可得</label><p style="font-weight:700;color:' + (over > 0 ? '#e2545d' : '#22a06b') + '">+' + earn + ' 分' + (over > 0 ? ' <span style="font-size:11px;color:#e2545d">（超时，奖励减半）</span>' : '') + '</p></div>'
         : '') +
       noteEl,
       '<button class="btn btn-primary" data-act="sub-done">✅ 完成了，领取积分</button>' +
@@ -812,6 +817,7 @@
         cdTimer.microRest = false; cdTimer.microEndAt = 0;
         cdTimer.srRested = false; cdTimer.srReminded70 = false; cdTimer.srForced = false;
         cdTimer.srLastPromptAt = 0;
+        cdTimer.earnPoints = undefined;
         App.ui.closeModal();
         showTimerBar();
       }
@@ -836,9 +842,10 @@
     if (sub) {
       sub.done = doneFlag;
       if (summary) sub.summary = summary;
-      if (doneFlag && cd.points > 0) {
-        S().addLedger(S().todayKey(), 'earn-sub', { points: cd.points, note: '小任务：' + cd.text + '（' + task.text + '）', taskId: cd.taskId });
-        App.ui.floatAt(document.getElementById('stat-points'), '+' + cd.points + '分');
+      const pts = (cd.earnPoints != null ? cd.earnPoints : cd.points) || 0; // 超时则已减半
+      if (doneFlag && pts > 0) {
+        S().addLedger(S().todayKey(), 'earn-sub', { points: pts, note: '小任务：' + cd.text + '（' + task.text + '）' + (pts !== (cd.points || 0) ? '（超时减半）' : ''), taskId: cd.taskId });
+        App.ui.floatAt(document.getElementById('stat-points'), '+' + pts + '分');
       }
     }
     // 整组全部完成后自动弹出组奖励
