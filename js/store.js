@@ -78,6 +78,7 @@
       srEnableProgress: true, // 强化休息系统：进度自动提醒开关（用户可关）
       srEnableTime: true,     // 强化休息系统：定时自动提醒开关（用户可关）
       srCooldownMin: 5,       // 强化休息系统：两次自动提醒的最小间隔（避免冲突连推）
+      splitEnabled: true,     // 🧭 逐题拆解工具开关（语音/文字引导式做题，复用小题倒计时与三档积分）
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },

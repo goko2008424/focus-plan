@@ -65,24 +65,16 @@
       '<option value="strong"' + (s.recordMode === 'strong' ? ' selected' : '') + '>💪 强化休息系统（任务内高频短休）</option>' +
       '</select></div>' +
       numRow('set-rest-points', '休息奖励积分（好好休息才有）', s.restRewardPoints, '分') +
-      '<p class="hint">「强化休息系统」：完成任务不休息、直接无缝切下一个；休息放在任务进行中（打断未完成任务）。高频·短时·放空才是真休息，玩手机不算。下面三个数值都只对这个模式生效。</p>' +
-      '<div class="set-row"><span class="set-label">整组进度提醒</span>' +
-      '<input type="number" id="set-sr-rest-at" class="set-input" min="1" max="100" value="' + s.srRestAt + '" />' +
-      '<span class="unit">% 时提醒小休</span></div>' +
+      '<p class="hint">「强化休息系统」：完成任务不休息、直接无缝切下一个；休息放在任务进行中。高频·短时·放空才是真休息，玩手机不算。系统不再自动弹休息提醒，什么时候休息完全由你自己决定——点计时悬浮窗里的「☕ 小休」。</p>' +
       '<div class="set-row"><span class="set-label">每次小休</span>' +
       '<input type="number" id="set-sr-rest-min" class="set-input" min="1" value="' + s.srRestMin + '" />' +
-      '<span class="unit">分钟（短时）</span></div>' +
-      '<div class="set-row"><span class="set-label">连续做满</span>' +
-      '<input type="number" id="set-sr-max-min" class="set-input" min="1" value="' + s.srMaxMin + '" />' +
-      '<span class="unit">分钟就提醒休息（定时提醒，可关）</span></div>' +
-      '<div class="set-row"><span class="set-label">自动提醒开关</span></div>' +
-      switchRow('set-sr-progress', '按进度提醒（整个任务组累积做到预计的 % 才提醒）', s.srEnableProgress) +
-      switchRow('set-sr-time', '按时间提醒（连续做满设定分钟就提醒）', s.srEnableTime) +
-      '<div class="set-row"><span class="set-label">提醒间隔</span>' +
-      '<input type="number" id="set-sr-cooldown" class="set-input" min="1" value="' + s.srCooldownMin + '" />' +
-      '<span class="unit">分钟（两个提醒不连推、不冲突）</span></div>' +
-      '<p class="hint">两个自动提醒可以各自关掉，也可以都关掉——只保留你自己随时点的「☕ 主动小休」，完全由你决定什么时候休息。收到自动提醒时你也可以选「继续」拒绝。</p>' +
-      '<p class="hint">原理见「📖 指南」里新增的《强化休息系统》：完成任务不安排休息、休息放在任务内；最有效的是提前、高频、短时、放空的休息。</p>' +
+      '<span class="unit">分钟（你主动小休一次休多久）</span></div>' +
+      '<p class="hint">原理见「📖 指南」里的《强化休息系统》：完成任务不安排休息、休息放在任务内；最有效的是提前、高频、短时、放空的休息。</p>' +
+      '</div>' +
+      '<div class="set-group"><h4>🧭 逐题拆解（可扩展小工具 · 独立开关）</h4>' +
+      switchRow('set-split', '开启「🧭 逐题拆解」语音引导工具', s.splitEnabled) +
+      '<p class="hint">这是为我自己效率做的可扩展小功能，跟上面三个模式互不干扰。订正一道题时：先出声思考这道题的思路（可语音转文字）→ 判断思路「明确/不明确」→ 明确了就自己写步骤、对答案；不明确就先看答案、复述、回忆串通。它<b>复用每个小题自己的倒计时和三档积分</b>（提前×2 / 按时×1.5 / 超时×1），不另搞一套积分。</p>' +
+      '<p class="hint">语音转文字是浏览器原生功能，Chrome / Edge 最好用；其它浏览器（Firefox / Safari）会<b>自动降级成手动输入文字</b>，照常能用。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🤖 AI 复盘（SiliconFlow · 可选）</h4>' +
       '<div class="set-row"><span class="set-label">API Key</span><input type="password" id="set-ai-key" class="set-input" value="' + S().esc(s.aiKey || '') + '" placeholder="sk-..." /></div>' +
@@ -115,12 +107,8 @@
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
     bind('set-mode', function () { s.recordMode = this.value; S().save(); });
     bind('set-rest-points', function () { s.restRewardPoints = Math.max(0, +this.value || 0); S().save(); });
-    bind('set-sr-rest-at', function () { s.srRestAt = Math.min(100, Math.max(1, +this.value || 70)); S().save(); });
     bind('set-sr-rest-min', function () { s.srRestMin = Math.max(1, +this.value || 2); S().save(); });
-    bind('set-sr-max-min', function () { s.srMaxMin = Math.max(1, +this.value || 40); S().save(); });
-    bind('set-sr-progress', function () { s.srEnableProgress = this.checked; S().save(); });
-    bind('set-sr-time', function () { s.srEnableTime = this.checked; S().save(); });
-    bind('set-sr-cooldown', function () { s.srCooldownMin = Math.max(1, +this.value || 5); S().save(); });
+    bind('set-split', function () { s.splitEnabled = this.checked; S().save(); });
     bind('set-ai-key', function () { s.aiKey = this.value.trim(); S().save(); });
     // AI 模型自选：选预设直接保存；选「自定义…」才显示手填框
     bind('set-ai-model', function () {

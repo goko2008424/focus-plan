@@ -103,22 +103,7 @@
           document.getElementById('tf-cd-over').textContent = '';
         }
       }
-      // 强化休息系统：进度提醒 / 定时提醒 —— 可各自开关，且之间不冲突（冷却间隔内只推一条）
-      if (isStrongMode() && !cdTimer.paused && !cdTimer.microRest) {
-        const s = S().settings();
-        const elapsedMin = elapsed / 60000;
-        const cooldownMs = Math.max(0, (s.srCooldownMin || 5)) * 60000;
-        const cooled = (Date.now() - (cdTimer.srLastPromptAt || 0)) >= cooldownMs;
-        const gp = groupProgress(cdTimer);
-        // 进度提醒：按整个任务组累计到达 % 才提醒一次，不是每个 5 分钟小题都提醒
-        const progressHit = s.srEnableProgress !== false && gp && gp.pct >= (s.srRestAt || 70) && srProgressGroupKey !== gp.key;
-        const timeHit = s.srEnableTime !== false && !cdTimer.srForced && !cdTimer.srRested &&
-          (s.srMaxMin > 0) && elapsedMin >= s.srMaxMin;
-        if (cooled) {
-          if (progressHit) { srProgressGroupKey = gp.key; cdTimer.srLastPromptAt = Date.now(); srPrompt70(gp.pct); }
-          else if (timeHit) { cdTimer.srForced = true; cdTimer.srLastPromptAt = Date.now(); srForceRest(); }
-        }
-      }
+      // 系统自动休息提醒已全部砍掉：什么时候休息完全由用户自己决定（点悬浮窗「☕ 小休」）
       const pct = total > 0 ? Math.max(0, Math.min(100, (Math.max(0, total - elapsed) / total) * 100)) : 0;
       const prog2 = document.getElementById('tf-cd-progress');
       prog2.style.width = pct + '%';
@@ -410,9 +395,11 @@
             ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="cd-start" data-task="' + task.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="sub-note" data-task="' + task.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
+          '<button class="task-timer-btn" data-act="sub-split" data-task="' + task.id + '" data-sub="' + s.id + '" title="🧭 逐题拆解（语音/文字引导）">🧭</button>' +
           '<button class="task-timer-btn" data-act="sub-edit" data-task="' + task.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="sub-del" data-task="' + task.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
-          (s.summary ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
+          (s.summary && s.summary.text ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
+          (s.splitlog && s.splitlog.length ? '<span class="sub-meta noted-tag">🧭 已拆解</span>' : '') +
           '</div>';
       }).join('') +
       '<button class="sub-add" data-act="sub-add" data-task="' + task.id + '">＋ 添加小任务</button>' +
@@ -524,6 +511,8 @@
       const gPlanned = subs.reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
       const gSess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
       const gActual = gSess.reduce(function (a, se) { return subs.some(function (s) { return s.text === se.planContent; }) ? a + (se.actualMinutes || 0) : a; }, 0);
+      // 连续工作 = 正在做本组当前小题的"未歇"时长（暂停/小休不计入）
+      const gCont = (cdTimer && cdTimer.taskId === task.id && cdTimer.groupId === g.id) ? Math.max(0, (cdElapsedMs() || 0) / 60000) : 0;
       const allDone = subs.length > 0 && subs.every(function (s) { return s.done === true; });
       const items = subs.map(function (s) {
         const running = cdTimer && cdTimer.groupId === g.id && cdTimer.subId === s.id;
@@ -536,9 +525,11 @@
             ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="g-cd-start" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="g-sub-note" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
+          '<button class="task-timer-btn" data-act="g-sub-split" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🧭 逐题拆解（语音/文字引导）">🧭</button>' +
           '<button class="task-timer-btn" data-act="g-sub-edit" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="g-sub-del" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
-          (s.summary ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
+          (s.summary && s.summary.text ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
+          (s.splitlog && s.splitlog.length ? '<span class="sub-meta noted-tag">🧭 已拆解</span>' : '') +
           '</div>';
       }).join('');
       const rewardTxt = allDone
@@ -548,7 +539,7 @@
         : '<span class="group-reward">整组做完 · 奖励休息</span>';
       return '<div class="group-card" data-group="' + g.id + '">' +
         '<div class="group-head"><span class="group-name">🎯 ' + S().esc(g.name) + '</span>' +
-        '<span class="group-time">本组 ' + subs.length + ' 题 · 预计 <b>' + S().fmtDur(gPlanned) + '</b> · 实际 <b>' + S().fmtDur(gActual) + '</b></span>' +
+        '<span class="group-time">本组 ' + subs.length + ' 题 · 预计 <b>' + S().fmtDur(gPlanned) + '</b> · 实际 <b>' + S().fmtDur(gActual) + '</b>' + (gCont > 0 ? ' · 连续 <b>' + S().fmtDur(gCont) + '</b>' : '') + '</span>' +
         '<span class="group-progress">' + prog + '</span>' +
         rewardTxt +
         '<button class="task-timer-btn" data-act="g-sub-add" data-task="' + task.id + '" data-group="' + g.id + '" title="加小题">＋</button>' +
@@ -788,9 +779,23 @@
     const cd = cdTimer;
     const elapsed = Date.now() - cd.startedAt - cd.pausedMs;
     const over = elapsed - cd.minutes * 60000;
-    // 超时 → 奖励减半（保留动力，不让超时变"无所谓"）
-    const earn = (over > 0 && cd.points > 0) ? Math.floor((cd.points || 0) / 2) : (cd.points || 0);
+    // 奖励三档（只奖提前/按时，不罚超时）：提前≤70%用时×2 · 按时×1.5 · 超时×1
+    let earnTier = '超时完成';
+    let factor = 1;
+    if (over > 0) {
+      earnTier = '超时完成';
+      factor = 1;
+    } else if (elapsed <= cd.minutes * 60000 * 0.7) {
+      earnTier = '提前完成';
+      factor = 2;
+    } else {
+      earnTier = '按时完成';
+      factor = 1.5;
+    }
+    const earn = (cd.points || 0) > 0 ? Math.round((cd.points || 0) * factor) : 0;
     cd.earnPoints = earn;
+    cd.earnTier = earnTier;
+    cd.earnFactor = factor;
     const timeLine = '实际用时 ' + S().fmtClock(elapsed) + ' / 目标 ' + S().fmtDur(cd.minutes) +
       (over > 0 ? '  <span style="color:#e2545d">（超时 ' + S().fmtClock(over).replace(/^00:/, '') + '）</span>' : '  <span style="color:#22a06b">（在目标内）</span>');
     const noteEl = '<div class="field"><label>小总结（超时可写一句为什么超时）</label>' +
@@ -800,7 +805,7 @@
       '<p style="font-size:12.5px;color:#8a919c;margin-bottom:8px">所属任务：' + S().esc(cd.taskText) + '</p>' +
       '<div class="field"><label>用时对比</label><p style="font-size:13px">' + timeLine + '</p></div>' +
       (cd.points > 0
-        ? '<div class="field"><label>完成可得</label><p style="font-weight:700;color:' + (over > 0 ? '#e2545d' : '#22a06b') + '">+' + earn + ' 分' + (over > 0 ? ' <span style="font-size:11px;color:#e2545d">（超时，奖励减半）</span>' : '') + '</p></div>'
+        ? '<div class="field"><label>完成可得（按用时三档）</label><p style="font-weight:700;color:' + (cd.earnFactor === 2 ? '#22a06b' : cd.earnFactor === 1.5 ? '#f59e0b' : '#8a919c') + '">+' + earn + ' 分 ' + (cd.earnFactor > 1 ? '（' + cd.earnTier + '，×' + cd.earnFactor + ' 加成）' : '（' + cd.earnTier + '）') + '</p></div>'
         : '') +
       noteEl,
       '<button class="btn btn-primary" data-act="sub-done">✅ 完成了，领取积分</button>' +
@@ -842,9 +847,10 @@
     if (sub) {
       sub.done = doneFlag;
       if (summary) sub.summary = summary;
-      const pts = (cd.earnPoints != null ? cd.earnPoints : cd.points) || 0; // 超时则已减半
+      const pts = (cd.earnPoints != null ? cd.earnPoints : cd.points) || 0;
       if (doneFlag && pts > 0) {
-        S().addLedger(S().todayKey(), 'earn-sub', { points: pts, note: '小任务：' + cd.text + '（' + task.text + '）' + (pts !== (cd.points || 0) ? '（超时减半）' : ''), taskId: cd.taskId });
+        const tierMark = cd.earnFactor > 1 ? cd.earnTier + '，×' + cd.earnFactor : cd.earnTier;
+        S().addLedger(S().todayKey(), 'earn-sub', { points: pts, note: '小任务：' + cd.text + '（' + task.text + '）·' + tierMark, taskId: cd.taskId });
         App.ui.floatAt(document.getElementById('stat-points'), '+' + pts + '分');
       }
     }
@@ -904,6 +910,164 @@
       });
     }
     reopen();
+  }
+
+  /* ============================================================
+   * 🧭 逐题拆解：语音/文字引导式步骤，复用小题倒计时与三档积分
+   * （独立小工具，跟三种记录模式互不干扰；浏览器没语音则自动降级为手打）
+   * ============================================================ */
+  let splitLiveTimer = null; // 🧭 拆解弹窗内倒计时实时刷新
+  function splitVoiceSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+  function splitListen(onFinalText, onState) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { if (onState) onState('unsupported'); return null; }
+    const rec = new SR();
+    rec.lang = 'zh-CN';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    let final = '';
+    rec.onresult = function (e) {
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) final += ' ' + r[0].transcript;
+      }
+    };
+    rec.onerror = function (e) { if (onState) onState('error:' + (e && e.error)); };
+    rec.onend = function () { if (onFinalText) onFinalText(final); };
+    rec.start();
+    if (onState) onState('listening');
+    return function () { try { rec.stop(); } catch (e) {} };
+  }
+
+  function openSplit(taskKey, taskId, subId, groupId) {
+    if (S().settings().splitEnabled === false) { App.ui.toast('🧭 逐题拆解没开，去 设置 → 🧭 打开'); return; }
+    startCdTimer(taskKey, taskId, subId, groupId); // 复用同一套倒计时 + 三档积分
+    const day = S().getDay(S().todayKey());
+    const task = day.tasks[taskKey] && day.tasks[taskKey].find(function (t) { return t.id === taskId; });
+    const found = findSubInTask(task, subId);
+    const sub = found && found.sub;
+    if (!sub) return;
+    if (!sub.splitlog) sub.splitlog = [];
+    if (splitLiveTimer) clearInterval(splitLiveTimer);
+
+    let path = null;                    // 'A' 明确 / 'B' 不明确
+    let stopRec = null;                 // 当前录音的停止函数
+    const voice = splitVoiceSupported();
+    const metaMain = '<p style="font-size:12.5px;color:#8a919c;margin-bottom:6px">正在拆解：<b>' + S().esc(sub.text) + '</b> · 限时 ' + sub.minutes + ' 分钟 · 完成按三档给分（提前×2 / 按时×1.5 / 超时×1）</p>';
+
+    function logTxt(stepName, t) {
+      if (t && t.trim()) { sub.splitlog.push({ step: stepName, text: t.trim(), at: new Date().toISOString() }); S().save(); }
+    }
+    // 单一委托：所有步骤的按钮都由这里按 id 分发（避免监听叠加）
+    function renderStage(bodyHtml, handlers) {
+      const body = document.querySelector('#split-body');
+      if (body) body.innerHTML = metaMain + bodyHtml;
+      window._splitHandlers = handlers;
+      renderLive();
+    }
+    function recOn() {
+      if (stopRec) { stopRec(); stopRec = null; return; }
+      const ta = document.getElementById('split-txt');
+      if (!ta) return;
+      stopRec = splitListen(function (finalTxt) {
+        if (ta) ta.value = (ta.value ? ta.value.trim() + '\n' : '') + (finalTxt || '').trim();
+        stopRec = null;
+      }, function (st) {
+        if (st === 'unsupported' && ta) ta.placeholder = '浏览器不支持语音，改用手打';
+      });
+    }
+    // —— 通用：可录音/输入的步骤 ——
+    function stepRecord(stepName, label, desc, nextLabel, nextFn) {
+      const recordArea = voice
+        ? '<button class="btn btn-small" id="split-rec" style="margin-right:6px">' + (stopRec ? '⏹ 停止录音' : '🎙 开始录音') + '</button>' +
+          '<button class="btn btn-small" id="split-clear">🧹 重来/清空</button>' +
+          '<textarea id="split-txt" style="width:100%;min-height:60px;margin:8px 0;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical" placeholder="语音会实时转成文字出现在这里，也可直接手打"></textarea>'
+        : '<textarea id="split-txt" style="width:100%;min-height:60px;margin:8px 0;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical" placeholder="你的浏览器不支持语音，改用手打（其它浏览器照常能用）"></textarea>';
+      renderStage(
+        '<h4 style="margin:6px 0 4px">' + label + '</h4><p class="hint">' + desc + '</p>' +
+        recordArea +
+        '<div><button class="btn btn-primary" id="split-next">' + nextLabel + '</button>' +
+        '<button class="btn" id="split-close">结束拆解</button></div>',
+        {
+          'split-rec': function () { recOn(); document.getElementById('split-rec').textContent = stopRec ? '⏹ 停止录音' : '🎙 开始录音'; },
+          'split-clear': function () { if (stopRec) { stopRec(); stopRec = null; } const t = document.getElementById('split-txt'); if (t) t.value = ''; },
+          'split-next': function () { logTxt(stepName, document.getElementById('split-txt').value); nextFn(); },
+          'split-close': closeSplit
+        });
+    }
+    // —— 判定门 ——
+    function stepGate() {
+      renderStage(
+        '<p class="hint">第一步你的思路已经记下来了。现在判断：这道题你搭得出完整框架吗？</p>' +
+        '<div><button class="btn btn-primary" id="split-a">✅ 思路明确，自己写步骤</button>' +
+        '<button class="btn" id="split-b">❌ 搭不出，先看答案</button>' +
+        '<button class="btn" id="split-close">结束拆解</button></div>',
+        {
+          'split-a': function () { path = 'A'; stepRecord('自己写步骤', '② 自己写步骤', '把式子列出来（数字摆好），具体计算按需。写完点下一步。', '✅ 写好了，对答案', stepCheck); },
+          'split-b': function () { path = 'B'; stepRead(); },
+          'split-close': closeSplit
+        });
+    }
+    function stepCheck() { stepRecord('对答案', '③ 对答案', '对着答案核对这题。看完点下一步结束整题。', '✅ 对完答案，结束整题', finishA); }
+    function stepRead() {
+      renderStage(
+        '<h4 style="margin:6px 0 4px">② 看答案速览</h4><p class="hint">直接花一分钟看整题答案，读懂它的完整思路。</p>' +
+        '<button class="btn btn-primary" id="split-next">✅ 看完答案，录音复述</button><button class="btn" id="split-close">结束拆解</button>',
+        { 'split-next': function () { stepRecord('复述', '③ 复述答案', '用自己的话把答案思路复述一遍（可语音/手打），说到你能讲顺为止。', '✅ 复述完了，检验', stepRecall); }, 'split-close': closeSplit });
+    }
+    function stepRecall() { stepRecord('回忆检验', '④ 回忆串通', '在脑海里过一遍整题思路（可在本子上顺手写点演算），确保自己能讲通。', '✅ 串通了，结束整题', finishB); }
+    function logFinal(tipMsg) {
+      sub.splitlog.push({ step: '完成', text: tipMsg, at: new Date().toISOString() });
+      S().save();
+      renderStage(
+        '<p style="color:#22a06b;font-weight:700">🎉 整题拆解完成！</p>' +
+        '<p class="hint">你每一步的思考/复述已存进这题的「🧭 拆解记录」。现在点计时悬浮窗的「结束」，就会按三档给这题积分。</p>' +
+        '<button class="btn btn-primary" id="split-done">好的，去领积分</button>',
+        { 'split-done': closeSplit });
+    }
+    function finishA() { logFinal('已按「思路明确」路径完成整题拆解'); }
+    function finishB() { logFinal('已按「看答案复述」路径完成整题拆解'); }
+    function renderLive() {
+      const el = document.querySelector('#split-cd');
+      if (!el || !cdTimer) return;
+      const ms = Math.max(0, cdElapsedMs());
+      const over = ms - cdTimer.minutes * 60000;
+      let line = '🕑 已用 <b>' + S().fmtClock(ms) + '</b> / 目标 <b>' + S().fmtDur(cdTimer.minutes) + '</b>';
+      line += over > 0
+        ? ' <span style="color:#e2545d">（超时）</span>'
+        : ' <span style="color:#8a919c">（还剩 ' + S().fmtClock(Math.max(0, cdTimer.minutes * 60000 - ms)) + '）</span>';
+      el.innerHTML = line;
+    }
+    function closeSplit() {
+      if (stopRec) { try { stopRec(); } catch (e) {} stopRec = null; }
+      if (splitLiveTimer) { clearInterval(splitLiveTimer); splitLiveTimer = null; }
+      App.ui.closeModal();
+      App.tasks.renderAll();
+    }
+
+    App.ui.openModal('🧭 逐题拆解',
+      '<div id="split-stage">' +
+        '<p id="split-cd" style="font-size:13px;font-weight:700;color:#2d3a4a;margin-bottom:6px"></p>' +
+        '<div id="split-body"></div>' +
+        '</div>',
+      '<button class="btn" data-act="close">关闭</button>', { wide: true });
+    const box = document.querySelector('#split-stage');
+    box.addEventListener('click', function (e) {
+      const t = e.target && e.target.closest && e.target.closest('[id]');
+      const id = t && t.id;
+      if (!id) return;
+      const h = window._splitHandlers || {};
+      if (h[id]) h[id]();
+      else if (id === 'split-close') closeSplit();
+    });
+    App.ui.bindActions({ close: closeSplit });
+    renderStageStep1();
+    function renderStageStep1() {
+      stepRecord('出声思考', '① 出声思考思路', '只看题目，一边想一边说你大概的思路，不用写不用算。说错/不满意可以重来。', '✅ 思路记下了', stepGate);
+    }
+    splitLiveTimer = setInterval(function () { renderLive(); }, 1000);
   }
 
   /* ---------- 打勾 / 取消打勾（含积分记账与奖励触发） ---------- */
@@ -1207,8 +1371,11 @@
       const sess = ((S().getDay(S().todayKey()).sessions) || []).filter(function (se) { return se.taskId === task.id; });
       const actual = sess.reduce(function (a, se) { return task.subs.some(function (s) { return s.text === se.planContent; }) ? a + (se.actualMinutes || 0) : a; }, 0);
       const pct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
-      statLine = '<div class="task-stat" title="这道任务下的直接小题总时长：预计 vs 实际">' +
+      // 连续工作 = 正在做这道任务当前小题的"未歇"时长（暂停/小休不计入，小休后会重置）
+      const cont = (cdTimer && cdTimer.taskId === task.id) ? Math.max(0, (cdElapsedMs() || 0) / 60000) : 0;
+      statLine = '<div class="task-stat" title="预计=你设的总时长；实际=今天真花了多少；连续=上次休息后一直没歇的工作时长">' +
         '🕑 预计 <b>' + S().fmtDur(planned) + '</b> ｜ 实际 <b>' + S().fmtDur(actual) + '</b>' +
+        (cont > 0 ? ' ｜ 连续 <b>' + S().fmtDur(cont) + '</b>' : '') +
         (planned ? ' ｜ 进度 <b style="color:' + (pct >= 100 ? 'var(--req)' : '#22a06b') + '">' + pct + '%</b>' : '') +
         '</div>';
     }
@@ -1309,6 +1476,8 @@
         if (act2 === 'g-sub-edit') { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().todayKey(), actBtn.dataset.group); return; }
         if (act2 === 'g-sub-del') { delGroupSub(listKey, actBtn.dataset.task, actBtn.dataset.group, actBtn.dataset.sub, S().todayKey()); return; }
         if (act2 === 'g-cd-start') { startCdTimer(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
+        if (act2 === 'sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, null); return; }
+        if (act2 === 'g-sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
         if (act2 === 'g-claim') { groupClaim(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         if (act2 === 'g-edit') { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         if (act2 === 'g-del') { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
@@ -1398,6 +1567,8 @@
       if (act === 'g-edit' && listKey) { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().tomorrowKey()); return; }
       if (act === 'g-del' && listKey) { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().tomorrowKey()); return; }
       if (act === 'g-cd-start') { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
+      if (act === 'sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
+      if (act === 'g-sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
       if (act === 'g-claim') { App.ui.toast('明天还没开始用，等哪天完成了再领休息'); return; }
       if (!row) return;
       const taskId = row.dataset.id;
