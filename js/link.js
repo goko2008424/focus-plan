@@ -330,13 +330,10 @@
   function init() {
     const btn = document.getElementById('btn-link');
     if (btn) btn.onclick = open;
-    const aiBtn = document.getElementById('btn-ai');
-    if (aiBtn) aiBtn.onclick = summarizeToday;
   }
 
   App.link = {
     init: init, open: open, render: render, endDayGuard: endDayGuard,
-    isPausing: function () { return !!pause; },
-    summarizeToday: summarizeToday
+    isPausing: function () { return !!pause; }
   };
 })();

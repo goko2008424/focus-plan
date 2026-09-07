@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>专注计划 · 版本更新史</title>
+<link rel="stylesheet" href="css/style.css" />
+<style>
+  :root{
+    --bg0:#0b1020; --bg1:#111a33; --bg2:#172246;
+    --ink:#eaf0ff; --muted:#9fb0d0; --line:rgba(255,255,255,.09);
+    --c1:#3b82f6; --c2:#22a06b; --c3:#f59e0b; --c4:#e2545d; --c5:#a855f7;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+    color:var(--ink);overflow:hidden;background:var(--bg0);
+  }
+  .bg{position:fixed;inset:0;z-index:0;background:radial-gradient(1200px 800px at 20% -10%,#1c2b55 0%,transparent 55%),radial-gradient(1000px 700px at 110% 110%,#152041 0%,transparent 55%);}
+  .blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.28;z-index:0;animation:drift 14s ease-in-out infinite}
+  .b1{width:420px;height:420px;background:var(--c1);top:-60px;left:-60px}
+  .b2{width:360px;height:360px;background:var(--c5);bottom:-80px;right:-40px;animation-delay:-6s}
+  .b3{width:260px;height:260px;background:var(--c2);top:55%;left:45%;animation-delay:-3s}
+  @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-25px)}}
+  .stage{position:relative;z-index:2;height:100%;width:100%}
+  .slide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6vh 8vw;opacity:0;transform:translateY(24px) scale(.98);pointer-events:none;transition:opacity .5s,transform .5s}
+  .slide.on{opacity:1;transform:none;pointer-events:auto}
+  .card{max-width:1080px;width:100%;max-height:86vh;overflow:auto;background:linear-gradient(160deg,rgba(255,255,255,.085),rgba(255,255,255,.035));border:1px solid var(--line);border-radius:26px;padding:44px 52px;backdrop-filter:blur(14px);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:13px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin-bottom:14px;border:1px solid var(--line);padding:5px 12px;border-radius:999px}
+  h1{font-size:58px;line-height:1.05;font-weight:800;background:linear-gradient(90deg,#7dd3fc,#22a06b 60%,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:8px}
+  .sub{font-size:18px;color:var(--muted);margin-bottom:26px}
+  .big{font-size:clamp(52px,9vw,120px);font-weight:900;line-height:1;background:linear-gradient(120deg,#22a06b,#f59e0b,#e2545d,#a855f7);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 6px 30px rgba(34,160,107,.35))}
+  .badge{display:inline-block;font-size:15px;font-weight:800;padding:7px 16px;border-radius:12px;margin-bottom:16px}
+  .tag{font-size:30px;font-weight:800;margin-bottom:18px}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:22px}
+  .col{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+  .col h4{font-size:14px;letter-spacing:.04em;color:var(--muted);margin-bottom:10px}
+  .col ul{list-style:none}
+  .col li{font-size:15px;line-height:1.7;padding-left:22px;position:relative;margin-bottom:6px;color:var(--ink)}
+  .col li::before{content:"◆";position:absolute;left:0;top:1px;font-size:10px;color:var(--cc,#22a06b)}
+  .single{font-size:16px;line-height:1.85;color:var(--ink);margin-top:20px}
+  .single b{color:#7dd3fc}
+  .nav{position:fixed;z-index:5;left:0;right:0;bottom:18px;display:flex;align-items:center;justify-content:center;gap:18px}
+  .arrow{width:52px;height:52px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font-size:22px;cursor:pointer;transition:.2s;display:grid;place-items:center}
+  .arrow:hover{background:rgba(255,255,255,.16);transform:scale(1.05)}
+  .dots{display:flex;gap:9px;align-items:center}
+  .dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18);cursor:pointer;transition:.2s}
+  .dot.on{width:26px;border-radius:6px;background:linear-gradient(90deg,#3b82f6,#22a06b)}
+  .count{font-size:13px;color:var(--muted);letter-spacing:.08em}
+  .hint{position:fixed;z-index:5;top:16px;right:20px;font-size:12px;color:var(--muted);letter-spacing:.05em}
+  .back{position:fixed;z-index:5;top:16px;left:20px;font-size:12px;color:var(--muted);letter-spacing:.05em;cursor:pointer;border:1px solid var(--line);padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.05)}
+  .back:hover{background:rgba(255,255,255,.14)}
+  em.glow{color:#22a06b;font-style:normal;font-weight:700}
+  .timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:26px}
+  .tl{text-align:center;padding:16px 8px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.04);cursor:pointer;transition:.2s}
+  .tl:hover{background:rgba(255,255,255,.09)}
+  .tl .n{font-size:26px;font-weight:900;background:linear-gradient(90deg,#7dd3fc,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tl .t{font-size:12px;color:var(--muted);margin-top:4px}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:8px}
+  @media (max-width:700px){ .slide{padding:4vh 5vw} .card{padding:26px 22px} h1{font-size:38px} .tag{font-size:24px} .big{font-size:64px} }
+</style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  <div class="back" id="back">‹ 返回专注计划</div>
+  <div class="hint">← → 翻页 · 圆点跳转</div>
+  <div class="stage" id="stage"></div>
+  <div class="nav">
+    <button class="arrow" id="prev">‹</button>
+    <div class="dots" id="dots"></div>
+    <button class="arrow" id="next">›</button>
+  </div>
+
+<script>
+const SLIDES = [
+  {
+    name:"封面", cls:"cover",
+    html:function(){
+      return '<div style="text-align:center">'+
+        '<span class="kicker" style="margin-bottom:22px">FOCUS-PLAN · 版本更新史</span>'+
+        '<div class="big">专注计划</div>'+
+        '<h1 style="font-size:34px;margin:18px 0 6px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 6.0 的每一次进化</h1>'+
+        '<p class="sub" style="margin-top:14px">你的个人学习账本 · 系统是账本，你是会计</p>'+
+        '<div class="timeline" id="timeline">'+
+          '<div class="tl" data-i="1"><div class="n">v1</div><div class="t">基础版</div></div>'+
+          '<div class="tl" data-i="2"><div class="n">v2</div><div class="t">离线部署</div></div>'+
+          '<div class="tl" data-i="3"><div class="n">v3</div><div class="t">衔接与拆分</div></div>'+
+          '<div class="tl" data-i="4"><div class="n">v4</div><div class="t">休息体系</div></div>'+
+          '<div class="tl" data-i="5"><div class="n">v5</div><div class="t">强化休息</div></div>'+
+          '<div class="tl" data-i="6"><div class="n">v6</div><div class="t">精简自选</div></div>'+
+        '</div>'+
+        '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
+      '</div>';
+    }
+  },
+  {
+    name:"v1 · 基础版", badge:{t:"v1 · 基础版",c:"#3b82f6"},
+    tag:"一套能跑起来的学习账本",
+    cols:[
+      {t:"🗂 三栏任务", c:"#3b82f6", items:[
+        "✅ 必须任务——无论如何都要完成的核心",
+        "⭐ 理想任务——状态好时额外做，完成得积分",
+        "🌱 拓展任务——兴趣/技能，每日推进一点"]},
+      {t:"⏱ 正向计时器", c:"#22a06b", items:[
+        "开始前填「预计内容 + 预计用时」",
+        "完成后对比 预计 vs 实际，写一句总结",
+        "悬浮窗可按住拖动到任意位置"]},
+      {t:"🎉 奖惩机制", c:"#f59e0b", items:[
+        "保底奖励：必须任务全完成",
+        "完美额外奖励：三类全完成",
+        "休闲时间 + 积分可同时加"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#a855f7"><h4>⭐ 积分体系</h4><ul><li>每条理想/拓展任务独立定价（如弹琴30分钟=8分）</li><li>兑换表由你自定义：多少分换什么</li><li>兑换即扣分，自己记账、自己清楚</li></ul></div>'+
+      '<div class="col" style="--cc:#e2545d"><h4>📅 柳比歇夫时间轴</h4><ul><li>任务计时自动生成带起止时间的记录</li><li>吃饭/睡觉/游戏等手动点空白或拖动添加</li><li>让每一个小时都有据可查</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>💾 数据 & 统计</h4><ul><li>历史页：周柱状图 / 月折线 / 积分流水 / 按日</li><li>设置全部可自定义：时段/奖励/积分/顺延</li><li>数据只存浏览器本地，双备份 + 可导出</li></ul></div></div>'
+  },
+  {
+    name:"v2 · 离线部署", badge:{t:"v2 · 离线部署",c:"#22a06b"},
+    tag:"从本地文件，变成随身的网页应用",
+    note:'<div class="cols">'+
+      '<div class="col" style="--cc:#22a06b"><h4>🌍 上线 GitHub Pages</h4><ul><li>正式网址，电脑/手机同一个链接</li><li>不用再打开本地文件</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>📦 Service Worker 离线缓存</h4><ul><li>没网也能打开、秒开</li><li>用「缓存版本号」控制更新</li></ul></div>'+
+      '<div class="col" style="--cc:#f59e0b"><h4>📱 PWA 化</h4><ul><li>manifest + 图标</li><li>可「添加到主屏幕」，像 App 一样用</li></ul></div></div>'
+  },
+  {
+    name:"v3 · 衔接与拆分", badge:{t:"v3 · 衔接与拆分",c:"#f59e0b"},
+    tag:"一整天连贯起来，任务能拆能计时",
+    cols:[
+      {t:"🔄 时段衔接器", c:"#3b82f6", items:[
+        "学完一段 → 选 休息/杂事/娱乐",
+        "填开始 + 结束 + 感想",
+        "自动进时间轴，全天连贯"]},
+      {t:"🧩 小任务拆分", c:"#22a06b", items:[
+        "总任务下拆小题（如「第3题 5分钟」）",
+        "▶ 倒计时到点提醒你完成没",
+        "限时做题更容易进入心流"]},
+      {t:"🎛 记录模式", c:"#a855f7", items:[
+        "严格监管：休息要填状态、好好休息得积分",
+        "平常心：只记学习时长、休息不拷问"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#3b82f6"><h4>⏱ 时间轴自动补记</h4><ul><li>小任务用时自动写入时间轴 + 今日总时长</li><li>休息/杂事/娱乐自动记入，不用手点</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>🧘 好好休息奖励积分</h4><ul><li>严格模式下「好好休息」得奖励积分</li></ul></div></div>'
+  },
+  {
+    name:"v4 · 休息体系", badge:{t:"v4 · 休息体系",c:"#e2545d"},
+    tag:"把「回来」这一步，做得更懂人",
+    cols:[
+      {t:"🙂 好好休息了", c:"#22a06b", items:[
+        "得积分奖励，也可写自洽感慨",
+        "能写想到的点子，方便以后复盘"]},
+      {t:"🧭 中途去干别的了", c:"#f59e0b", items:[
+        "不得积分，必须写原因 + 解决办法"]},
+      {t:"😞 没休息好", c:"#e2545d", items:[
+        "不得积分，必须写消耗了什么"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#22a06b"><h4>⏭ 跳过这段</h4><ul><li>这段不记录、不进时间轴</li><li>给喜欢连着学的人一个选择</li></ul></div>'+
+      '<div class="col" style="--cc:#a855f7"><h4>🎯 任务组 SmartGoal</h4><ul><li>把几个关联小题打包成一组</li><li>整组做完算完成，专治大任务沉</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>🎁 兑换记录专区</h4><ul><li>历史页单独汇总你花过的积分</li></ul></div></div>'
+  },
+  {
+    name:"v5 · 强化休息系统", badge:{t:"v5 · 强化休息系统",c:"#a855f7"},
+    tag:"完成任务不休息，休息藏在任务里",
+    note:'<div class="cols">'+
+      '<div class="col" style="--cc:#22a06b"><h4>💪 新模式</h4><ul><li>完成任务 → 直接无缝切下一个任务</li><li>休息放在任务进行中（打断未完成的任务）</li><li>高频·短时·放空才是真休息，玩手机不算</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>⏱ 任务内短休</h4><ul><li>做到预计 70% → 提醒小休（百分比可改）</li><li>随时点「☕ 小休」主动短休</li><li>整组进度提醒（不是每个小题都弹）</li></ul></div>'+
+      '<div class="col" style="--cc:#f59e0b"><h4>✍️ 评语体系</h4><ul><li>每道小题随时 ✍️ 补写/改评语</li><li>写过的题标「已写评语」，一眼分清</li></ul></div></div>'+
+    '<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#e2545d"><h4>🔧 关键修复</h4><ul><li>「今天已结束却无法休息」→ 一键重开今天</li></ul></div>'+
+      '<div class="col" style="--cc:#a855f7"><h4>🎁 兑换记录专区</h4><ul><li>历史页单独汇总花过的积分</li><li>自动算总花费</li></ul></div></div>'
+  },
+  {
+    name:"v6 · 精简自选 + 逐题拆解", badge:{t:"v6 · 精简自选 + 🧭 逐题拆解",c:"#e2545d"},
+    tag:"更精简、更自主，奖励只给积分",
+    cols:[
+      {t:"🧭 逐题拆解", c:"#22a06b", items:[
+        "① 出声思考思路（🎙 语音实时转文字，Chrome/Edge 最佳，其它浏览器自动降级手打）",
+        "判断「思路明确 / 不明确」→ 明确就自己写步骤、对答案；不明确就看答案、复述、回忆串通",
+        "每步倒计时锚点、说错可 🧹 重来；复用小题倒计时，整题完成按三档领分",
+        "可扩展小工具，独立开关，不另设积分体系"]},
+      {t:"💰 三档积分", c:"#f59e0b", items:[
+        "只奖提前、不罚超时",
+        "提前（≤预计70%）×2 · 按时 ×1.5 · 超时 ×1",
+        "奖励只剩积分，数值可自定义"]},
+      {t:"🕑 三个时间分开", c:"#3b82f6", items:[
+        "预计 / 实际 / 连续",
+        "连续=上次休息后一直没歇的时长，小休后重置"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#a855f7"><h4>🚫 砍掉休息/休闲奖励</h4><ul><li>整组「领取休息」、保底休闲、完美休闲 全移除</li><li>休息回归自主：想歇自己点「☕ 小休」，系统不催</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>⏱ 暂停彻底冻结</h4><ul><li>按 ⏸ 就真的停住，不再偷偷继续走</li></ul></div>'+
+      '<div class="col" style="--cc:#f59e0b"><h4>🎖 名人堂致谢</h4><ul><li>∑neu、艾斯、鑫鑫（圆形头像自适应）</li><li>感谢帮我省平台费用的同学</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>📝 补写复盘 & 移除 AI</h4><ul><li>补写任意一天复盘（历史页）</li><li>移除 AI 复盘（没有题目数据可总结）</li></ul></div></div>'
+  },
+  {
+    name:"收尾", cls:"cover",
+    html:function(){
+      return '<div style="text-align:center">'+
+        '<div class="big" style="font-size:70px">🚀</div>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 6.0</h1>'+
+        '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
+        '<div class="single" style="max-width:640px;margin:0 auto;">'+
+          '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+
+          '<p style="margin-top:10px">版本是脚步，原理才是方向——<b>精简自选</b>让休息回归你自己，<b>三档积分</b>只奖励提前、不惩罚超时。</p>'+
+        '</div>'+
+        '<p class="hint" style="position:static;margin-top:30px;color:var(--muted)">下个版本，等你来定 —— Goko</p>'+
+      '</div>';
+    }
+  }
+];
+
+const stage=document.getElementById('stage'), dots=document.getElementById('dots');
+let i=0;
+function paint(){
+  stage.innerHTML='';
+  const s=SLIDES[i];
+  const el=document.createElement('div'); el.className='slide';
+  const c=document.createElement('div'); c.className='card';
+  if(s.badge){ c.innerHTML='<span class="badge" style="background:linear-gradient(120deg,'+s.badge.c+'22,'+s.badge.c+'11);color:'+s.badge.c+';border:1px solid '+s.badge.c+'55">'+s.badge.t+'</span>'; }
+  c.innerHTML += (s.html? s.html() : '<div class="tag">'+s.tag+'</div>' + (s.cols? '<div class="cols">'+s.cols.map(co=>'<div class="col" style="--cc:'+(co.c||'#22a06b')+'"><h4>'+co.t+'</h4><ul>'+co.items.map(x=>'<li>'+x+'</li>').join('')+'</ul></div>').join('')+'</div>':'') + (s.note||''));
+  el.appendChild(c); stage.appendChild(el);
+  requestAnimationFrame(()=>setTimeout(()=>el.classList.add('on'),20));
+  dots.innerHTML='';
+  SLIDES.forEach((_,k)=>{const d=document.createElement('span');d.className='dot'+(k===i?' on':'');d.onclick=()=>{i=k;paint()};dots.appendChild(d);});
+  const tl=document.getElementById('timeline');
+  if(tl){ tl.querySelectorAll('[data-i]').forEach(function(x){ x.onclick=function(){ i=+x.dataset.i; paint(); }; }); }
+}
+function go(n){i=(i+n+SLIDES.length)%SLIDES.length;paint();}
+document.getElementById('next').onclick=()=>go(1);
+document.getElementById('prev').onclick=()=>go(-1);
+document.getElementById('back').onclick=()=>window.close();
+window.addEventListener('keydown',e=>{if(e.key==='ArrowRight')go(1);if(e.key==='ArrowLeft')go(-1);});
+paint();
+</script>
+</body>
+</html>

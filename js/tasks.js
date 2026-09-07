@@ -533,10 +533,8 @@
           '</div>';
       }).join('');
       const rewardTxt = allDone
-        ? (g.awarded
-            ? '<span class="group-reward done">✅ 已领休息</span>'
-            : '<button class="btn btn-small btn-primary" data-act="g-claim" data-task="' + task.id + '" data-group="' + g.id + '" title="整组做完，领取休息">🎁 领取休息 +' + (g.rewardRest || 10) + '分钟</button>')
-        : '<span class="group-reward">整组做完 · 奖励休息</span>';
+        ? '<span class="group-reward done">✅ 全部做完</span>'
+        : '<span class="group-reward">整组做完 · 再对答案收尾</span>';
       return '<div class="group-card" data-group="' + g.id + '">' +
         '<div class="group-head"><span class="group-name">🎯 ' + S().esc(g.name) + '</span>' +
         '<span class="group-time">本组 ' + subs.length + ' 题 · 预计 <b>' + S().fmtDur(gPlanned) + '</b> · 实际 <b>' + S().fmtDur(gActual) + '</b>' + (gCont > 0 ? ' · 连续 <b>' + S().fmtDur(gCont) + '</b>' : '') + '</span>' +
@@ -551,24 +549,23 @@
         '</div>';
     }).join('');
     return '<div class="group-block">' + body +
-      '<div class="extra-append"><button class="btn btn-small btn-primary" data-act="group-new" data-task="' + task.id + '">🎯 建一个任务组（打包小题，整组做完奖励休息）</button></div>' +
+      '<div class="extra-append"><button class="btn btn-small btn-primary" data-act="group-new" data-task="' + task.id + '">🎯 建一个任务组（打包小题，整组做完就收尾对答案）</button></div>' +
       '</div>';
   }
 
   function addGroupModal(taskKey, taskId, dayKey) {
     const task = S().getDay(dayKey || S().todayKey()).tasks[taskKey].find(function (t) { return t.id === taskId; });
     if (!task) return;
-    const m = App.ui.openModal('🎯 新建任务组（SmartGoal）', '' +
-      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把几个关联的小题打包成一组，整组都做完就奖励一段休息（自动进时间轴），专治“大任务太沉、开不了头”</p>' +
-      '<div class="field"><label>任务组名称</label><input type="text" id="g-name" placeholder="如：搞定第三章" /></div>' +
-      '<div class="field"><label>整组奖励休息（分钟）</label><input type="number" id="g-rest" min="1" value="10" /></div>',
+    const m = App.ui.openModal('🎯 新建任务组', '' +
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把几个关联的小题打包成一组，整组都做完就算完成，专治“大任务太沉、开不了头”</p>' +
+      '<div class="field"><label>任务组名称</label><input type="text" id="g-name" placeholder="如：搞定第三章" /></div>',
       '<button class="btn btn-primary" data-act="ok">创建</button><button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
       ok: function () {
         const name = m.querySelector('#g-name').value.trim();
         if (!name) { App.ui.toast('请填写组名称'); return; }
         task.groups = task.groups || [];
-        task.groups.push({ id: S().uid(), name: name, rewardRest: Math.max(1, +m.querySelector('#g-rest').value || 10), subs: [], awarded: false });
+        task.groups.push({ id: S().uid(), name: name, subs: [] });
         S().save(); App.ui.closeModal(); App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
@@ -580,13 +577,12 @@
     const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
     if (!g) return;
     const m = App.ui.openModal('✎ 任务组', '' +
-      '<div class="field"><label>组名称</label><input type="text" id="g-name" value="' + S().esc(g.name) + '" /></div>' +
-      '<div class="field"><label>整组奖励休息（分钟）</label><input type="number" id="g-rest" min="1" value="' + (g.rewardRest || 10) + '" /></div>',
+      '<div class="field"><label>组名称</label><input type="text" id="g-name" value="' + S().esc(g.name) + '" /></div>',
       '<button class="btn btn-primary" data-act="ok">保存</button><button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
       ok: function () {
         g.name = m.querySelector('#g-name').value.trim() || g.name;
-        g.rewardRest = Math.max(1, +m.querySelector('#g-rest').value || 10);
+        delete g.rewardRest; delete g.awarded;
         S().save(); App.ui.closeModal(); App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
@@ -619,34 +615,7 @@
     });
   }
 
-  /* 领取组奖励：填休息时长 + 备注 → 休闲累计 + 时间轴（fun 类） */
-  function groupClaim(taskKey, taskId, groupId, dayKey) {
-    const day = S().getDay(dayKey || S().todayKey());
-    const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
-    const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
-    if (!g || g.awarded) return;
-    const m = App.ui.openModal('🎁 整组达成，奖励休息！', '' +
-      '<p style="font-size:14px">「' + S().esc(g.name) + '」全部做完，犒劳一下自己</p>' +
-      '<div class="field"><label>休息时长（分钟）</label><input type="number" id="g-rest" min="1" value="' + (g.rewardRest || 10) + '" /></div>' +
-      '<div class="field"><label>备注 / 感想（可选）</label><input type="text" id="g-note" placeholder="如：看会儿窗外的云" /></div>',
-      '<button class="btn btn-primary" data-act="ok">记录休息</button><button class="btn" data-act="cancel">跳过</button>');
-    App.ui.bindActions({
-      ok: function () {
-        const rest = Math.max(1, +m.querySelector('#g-rest').value || 10);
-        const note = m.querySelector('#g-note').value.trim();
-        const now = new Date();
-        let sm = now.getHours() * 60 + now.getMinutes();
-        let em = sm + rest; if (em > 1440) em = 1440;
-        day.timeline.push({ id: S().uid(), start: sm, end: em, minutes: Math.max(1, em - sm), content: '组奖励休息：' + g.name + (note ? '（' + note + '）' : ''), category: 'fun', countAsStudy: false, auto: true, source: 'group', note: note || '' });
-        S().addLedger(dayKey, 'rest', { leisure: rest, note: '组奖励休息：' + g.name });
-        g.awarded = true;
-        S().save(); App.ui.closeModal(); App.tasks.renderAll();
-        if (App.app && App.app.refreshStats) App.app.refreshStats();
-        App.ui.toast('🕐 休闲 +' + rest + '分钟，好好歇会儿');
-      },
-      cancel: App.ui.closeModal
-    });
-  }
+
 
   /* ---------- 强化休息系统：任务内高频短休 ---------- */
   function isStrongMode() { return S().settings().recordMode === 'strong'; }
@@ -853,10 +822,6 @@
         S().addLedger(S().todayKey(), 'earn-sub', { points: pts, note: '小任务：' + cd.text + '（' + task.text + '）·' + tierMark, taskId: cd.taskId });
         App.ui.floatAt(document.getElementById('stat-points'), '+' + pts + '分');
       }
-    }
-    // 整组全部完成后自动弹出组奖励
-    if (sub && group && group.subs.length > 0 && group.subs.every(function (s) { return s.done === true; }) && !group.awarded) {
-      groupClaim(cd.taskKey, cd.taskId, group.id, S().todayKey());
     }
     // 时间轴记录
     day.timeline.push({
@@ -1134,14 +1099,11 @@
         '<div class="field"><label>当前休闲时间累计</label><p style="font-weight:700;color:#f59e0b">' + S().fmtDur(S().leisureTotal()) + '</p></div>' +
         '<div class="field"><label>当前积分累计</label><p style="font-weight:700;color:#22a06b">' + S().pointsTotal() + ' 分</p></div>' +
         (granted
-          ? '<div class="field"><label>已领取奖励</label><p>🕐 休闲 +' + granted.leisure + '分钟 · ⭐ 积分 +' + granted.points + '分</p></div>'
-          : '<div class="field"><label>本次奖励（休闲和积分可同时加，数值可改）</label>' +
-            '<div class="field-row">' +
-            '<div class="field"><input type="number" id="rw-time" min="0" value="' + settings.baseRewardTime + '" /><label>休闲分钟</label></div>' +
-            '<div class="field"><input type="number" id="rw-pts" min="0" value="' + settings.baseRewardPoints + '" /><label>积分</label></div>' +
-            '</div>' +
+          ? '<div class="field"><label>已领取奖励</label><p>⭐ 积分 +' + granted.points + '分</p></div>'
+          : '<div class="field"><label>本次奖励积分（可自定义）</label>' +
+            '<input type="number" id="rw-pts" min="0" value="' + settings.baseRewardPoints + '" style="width:100%;padding:8px" />' +
             '<div class="btn-row" style="margin-top:8px">' +
-            '<button class="btn btn-primary" data-act="rw-grant">🎁 确认领取（两块一起加）</button>' +
+            '<button class="btn btn-primary" data-act="rw-grant">🎁 确认领取</button>' +
             '</div></div>') +
         '<div class="field"><label>接下来你想</label>' +
         '<div class="btn-row">' +
@@ -1155,17 +1117,16 @@
       const m = App.ui.openModal('🎉 保底完成！', body(), '', { rechoose: true, lock: false });
       App.ui.bindActions({
         'rw-grant': function () {
-          const tv = Math.max(0, +m.querySelector('#rw-time').value || 0);
           const pv = Math.max(0, +m.querySelector('#rw-pts').value || 0);
-          if (tv <= 0 && pv <= 0) { App.ui.toast('至少加一项（休闲或积分）'); return; }
+          if (pv <= 0) { App.ui.toast('填一个大于 0 的积分奖励'); return; }
           if (granted) { App.store.undoLastLedger(granted.ledgerId); }
           const idx = day.rewards.findIndex(function (r) { return r.kind === 'base'; });
           if (idx >= 0) day.rewards.splice(idx, 1);
           const lId = S().uid();
-          S().data().ledger.push({ id: lId, date: dayKey, type: 'reward-base', points: pv, leisure: tv, note: '保底奖励：休闲+' + tv + '分钟 积分+' + pv + '分', at: new Date().toISOString() });
-          day.rewards.push({ kind: 'base', leisure: tv, points: pv, at: new Date().toISOString() });
+          S().data().ledger.push({ id: lId, date: dayKey, type: 'reward-base', points: pv, note: '保底奖励：积分+' + pv + '分', at: new Date().toISOString() });
+          day.rewards.push({ kind: 'base', points: pv, at: new Date().toISOString() });
           S().save();
-          granted = { ledgerId: lId, leisure: tv, points: pv };
+          granted = { ledgerId: lId, points: pv };
           App.ui.closeModal(); reopen();
           App.app.refreshStats();
         },
@@ -1199,14 +1160,11 @@
       return '' +
         '<p style="font-size:14px">必须 + 理想 + 拓展全部完成，完美的一天！</p>' +
         (granted
-          ? '<div class="field"><label>已领取额外奖励</label><p>🕐 休闲 +' + granted.leisure + '分钟 · ⭐ 积分 +' + granted.points + '分</p></div>'
-          : '<div class="field"><label>额外奖励（休闲和积分可同时加，数值可改）</label>' +
-            '<div class="field-row">' +
-            '<div class="field"><input type="number" id="pf-time" min="0" value="' + settings.perfectRewardTime + '" /><label>休闲分钟</label></div>' +
-            '<div class="field"><input type="number" id="pf-pts" min="0" value="' + settings.perfectRewardPoints + '" /><label>积分</label></div>' +
-            '</div>' +
+          ? '<div class="field"><label>已领取额外奖励</label><p>⭐ 积分 +' + granted.points + '分</p></div>'
+          : '<div class="field"><label>额外奖励积分（可自定义）</label>' +
+            '<input type="number" id="pf-pts" min="0" value="' + settings.perfectRewardPoints + '" style="width:100%;padding:8px" />' +
             '<div class="btn-row" style="margin-top:8px">' +
-            '<button class="btn btn-primary" data-act="pf-grant">🎁 确认领取（两块一起加）</button>' +
+            '<button class="btn btn-primary" data-act="pf-grant">🎁 确认领取</button>' +
             '</div></div>');
     };
 
@@ -1214,17 +1172,16 @@
       const m = App.ui.openModal('🏆 完美！今日全部任务完成！', body(), '', { rechoose: true });
       App.ui.bindActions({
         'pf-grant': function () {
-          const tv = Math.max(0, +m.querySelector('#pf-time').value || 0);
           const pv = Math.max(0, +m.querySelector('#pf-pts').value || 0);
-          if (tv <= 0 && pv <= 0) { App.ui.toast('至少加一项（休闲或积分）'); return; }
+          if (pv <= 0) { App.ui.toast('填一个大于 0 的积分奖励'); return; }
           if (granted) { App.store.undoLastLedger(granted.ledgerId); }
           const idx = day.rewards.findIndex(function (r) { return r.kind === 'perfect'; });
           if (idx >= 0) day.rewards.splice(idx, 1);
           const lId = S().uid();
-          S().data().ledger.push({ id: lId, date: dayKey, type: 'reward-perfect', points: pv, leisure: tv, note: '100%额外奖励：休闲+' + tv + '分钟 积分+' + pv + '分', at: new Date().toISOString() });
-          day.rewards.push({ kind: 'perfect', leisure: tv, points: pv, at: new Date().toISOString() });
+          S().data().ledger.push({ id: lId, date: dayKey, type: 'reward-perfect', points: pv, note: '100%额外奖励：积分+' + pv + '分', at: new Date().toISOString() });
+          day.rewards.push({ kind: 'perfect', points: pv, at: new Date().toISOString() });
           S().save();
-          granted = { ledgerId: lId, leisure: tv, points: pv };
+          granted = { ledgerId: lId, points: pv };
           App.ui.closeModal(); reopen();
           App.app.refreshStats();
         },
@@ -1478,7 +1435,7 @@
         if (act2 === 'g-cd-start') { startCdTimer(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
         if (act2 === 'sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, null); return; }
         if (act2 === 'g-sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
-        if (act2 === 'g-claim') { groupClaim(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
+
         if (act2 === 'g-edit') { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         if (act2 === 'g-del') { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         return;
@@ -1569,7 +1526,7 @@
       if (act === 'g-cd-start') { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
       if (act === 'sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
       if (act === 'g-sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
-      if (act === 'g-claim') { App.ui.toast('明天还没开始用，等哪天完成了再领休息'); return; }
+      if (act === 'g-claim') { return; }
       if (!row) return;
       const taskId = row.dataset.id;
       if (act === 'edit') editTaskModal(listKey, taskId, S().tomorrowKey(), false);
