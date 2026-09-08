@@ -419,7 +419,7 @@
       '<div class="field"><label>小任务内容（如：第3题）</label><input type="text" id="sub-text" value="' + (existing ? S().esc(existing.text) : '') + '" placeholder="" /></div>' +
       '<div class="field-row">' +
       '<div class="field"><label>限时（分钟）</label><input type="number" id="sub-min" min="1" value="' + (existing ? existing.minutes : 5) + '" /></div>' +
-      '<div class="field"><label>完成积分</label><input type="number" id="sub-pts" min="0" value="' + (existing ? (existing.points || 0) : 1) + '" /></div>' +
+      '<div class="field"><label>完成积分</label><input type="number" id="sub-pts" min="0" value="' + (existing ? (existing.points || 0) : (S().settings().subDefaultPoints || 10)) + '" /></div>' +
       '</div>',
       '<button class="btn btn-primary" data-act="ok">' + (existing ? '保存' : '添加') + '</button><button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
@@ -1353,7 +1353,9 @@
     const box = document.getElementById('task-columns');
     // 日期显示
     document.getElementById('today-date').textContent = '📅 今天：' + S().fmtDateCN(dayKey);
-    box.innerHTML = COLS.map(function (col) {
+    box.innerHTML = '<div class="day-toolbar"><button class="btn btn-small" data-act="paste">📋 从往日粘贴任务</button>' +
+      '<span class="day-toolbar-hint">把某天整批任务（含小题/任务组）复制过来，再叉掉已做的</span></div>' +
+      COLS.map(function (col) {
       const list = day.tasks[col.key];
       const doneN = list.filter(function (t) { return t.done; }).length;
       const rows = list.map(function (t) { return taskRowHTML(col.key, t); }).join('');
@@ -1418,6 +1420,7 @@
         const actBtn = e.target.closest('[data-act]');
         if (!actBtn) return;
         const act2 = actBtn.dataset.act;
+        if (act2 === 'paste') { pasteTasksModal(S().todayKey()); return; }
         const colEl = actBtn.closest('.task-col');
         const listKey = colEl ? colEl.dataset.col : null;
         if (!listKey) { App.ui.toast('无法识别任务栏'); return; }
@@ -1552,7 +1555,12 @@
     const modal = App.ui.openModal('＋ 添加' + names[listKey], '' +
       '<div class="field"><label>任务内容（支持多行，一行一条）</label>' +
       '<textarea id="add-text" placeholder=""></textarea></div>' +
-      ptsField,
+      ptsField +
+      '<div class="field"><label>推进类型</label>' +
+      '<select id="add-kind" class="select-small">' +
+      '<option value="main">主线推进（直接推进课程，纯学习，计入「有效学习」）</option>' +
+      '<option value="aux">辅助推进（复盘 / 整理 / 写计划等，计入「辅助」）</option>' +
+      '</select></div>',
       '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
     const ta = modal.querySelector('#add-text');
     ta.focus();
@@ -1562,8 +1570,10 @@
         if (!lines.length) { App.ui.toast('请至少输入一条任务'); return; }
         const ptsInput = modal.querySelector('#add-points');
         const pts = ptsInput ? Math.max(0, +ptsInput.value || 0) : null;
+        const kind = modal.querySelector('#add-kind');
+        const aux = kind ? kind.value === 'aux' : false;
         lines.forEach(function (text) {
-          const t = { id: S().uid(), text: text };
+          const t = { id: S().uid(), text: text, aux: aux };
           if (pts != null) t.points = pts;
           day.tasks[listKey].push(t);
         });
@@ -1587,7 +1597,20 @@
     const modal = App.ui.openModal('✎ 编辑任务', '' +
       '<div class="field"><label>任务内容</label>' +
       '<textarea id="edit-text">' + S().esc(task.text) + '</textarea></div>' +
-      ptsField,
+      ptsField +
+      '<div class="field-row">' +
+      '<div class="field"><label>任务分类（可移到别栏）</label>' +
+      '<select id="edit-list" class="select-small">' +
+      '<option value="required"' + (listKey === 'required' ? ' selected' : '') + '>必须完成任务</option>' +
+      '<option value="ideal"' + (listKey === 'ideal' ? ' selected' : '') + '>理想任务（选做）</option>' +
+      '<option value="extra"' + (listKey === 'extra' ? ' selected' : '') + '>长期拓展任务</option>' +
+      '</select></div>' +
+      '<div class="field"><label>推进类型</label>' +
+      '<select id="edit-kind" class="select-small">' +
+      '<option value="main"' + (task.aux ? '' : ' selected') + '>主线推进（纯学习）</option>' +
+      '<option value="aux"' + (task.aux ? ' selected' : '') + '>辅助推进（复盘/整理等）</option>' +
+      '</select></div>' +
+      '</div>',
       '<button class="btn btn-primary" data-act="save">保存</button>' +
       '<button class="btn btn-danger" data-act="del">删除任务</button>' +
       '<button class="btn" data-act="cancel">取消</button>');
@@ -1600,6 +1623,18 @@
         task.text = text;
         const ptsInput = modal.querySelector('#edit-points');
         if (ptsInput) task.points = Math.max(0, +ptsInput.value || 0);
+        const kindEl = modal.querySelector('#edit-kind');
+        if (kindEl) task.aux = kindEl.value === 'aux';
+        const listEl = modal.querySelector('#edit-list');
+        if (listEl && listEl.value !== listKey) {
+          const from = day.tasks[listKey];
+          const idx = from.findIndex(function (t) { return t.id === taskId; });
+          if (idx >= 0) {
+            from.splice(idx, 1);
+            if (!day.tasks[listEl.value]) day.tasks[listEl.value] = [];
+            day.tasks[listEl.value].push(task);
+          }
+        }
         S().save();
         App.ui.closeModal();
         App.tasks.renderAll();
@@ -1611,6 +1646,75 @@
           App.ui.closeModal();
           App.tasks.renderAll();
         });
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  /* ---------- 从往日粘贴任务（整批复制，含小题/任务组，再叉掉已做） ---------- */
+  function deepCloneTask(t) {
+    const c = JSON.parse(JSON.stringify(t));
+    c.id = S().uid();
+    if (c.subs) c.subs = c.subs.map(function (x) { x.id = S().uid(); return x; });
+    if (c.groups) c.groups = c.groups.map(function (g) {
+      g.id = S().uid();
+      if (g.subs) g.subs = g.subs.map(function (x) { x.id = S().uid(); return x; });
+      return g;
+    });
+    return c;
+  }
+  function pasteTasksModal(targetDayKey) {
+    const data = S().data();
+    const target = S().getDay(targetDayKey);
+    const todayK = S().todayKey(), tomorrowK = S().tomorrowKey();
+    const days = Object.keys(data.days || {}).filter(function (k) {
+      return k !== todayK && k !== tomorrowK && k !== targetDayKey;
+    }).sort();
+    if (!days.length) { App.ui.toast('还没有可粘贴的往日'); return; }
+    const modal = App.ui.openModal('📋 从往日粘贴任务',
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把某一天整批任务（含小题/任务组）复制到「今天」，任务保持原分类栏；粘贴后按自己的完成情况把做过的 ❌ 掉即可。</p>' +
+      '<div class="field"><label>选择要粘贴的日期</label><select id="paste-date">' +
+      days.map(function (k) {
+        const n = ((data.days[k].tasks || {}).required || []).length;
+        return '<option value="' + k + '">' + S().fmtDateCN(k) + '（必须 ' + n + ' 条）</option>';
+      }).join('') + '</select></div>' +
+      '<div id="paste-list" style="max-height:46vh;overflow:auto;border:1px solid #e5e8ec;border-radius:8px;padding:10px;margin-top:8px"></div>',
+      '<button class="btn btn-primary" data-act="ok">📋 粘贴勾选任务</button><button class="btn" data-act="cancel">取消</button>');
+    function colBlock(col, name) {
+      const list = (data.days[modal.querySelector('#paste-date').value].tasks[col] || []);
+      if (!list.length) return '';
+      return '<div style="margin-bottom:10px"><div style="font-weight:600;margin-bottom:4px">' + name + '（' + list.length + '）</div>' +
+        list.map(function (t, idx) {
+          const extra = (t.subs && t.subs.length ? ' <span style="color:#8a919c">(小题' + t.subs.length + ')</span>' : '') +
+            (t.groups && t.groups.length ? ' <span style="color:#8a919c">(组' + t.groups.length + ')</span>' : '');
+          return '<label style="display:flex;gap:6px;align-items:center;font-size:13px;line-height:1.8"><input type="checkbox" value="' + col + ':' + idx + '" data-check />' + S().esc(t.text) + extra + '</label>';
+        }).join('') + '</div>';
+    }
+    function renderPaste() {
+      const box = modal.querySelector('#paste-list');
+      const html = colBlock('required', '✅ 必须') + colBlock('ideal', '⭐ 理想') + colBlock('extra', '🌱 拓展');
+      box.innerHTML = html || '<p style="color:#8a919c;text-align:center">这一天没有任务</p>';
+    }
+    modal.querySelector('#paste-date').onchange = renderPaste;
+    renderPaste();
+    App.ui.bindActions({
+      ok: function () {
+        const checks = modal.querySelectorAll('input[data-check]:checked');
+        if (!checks.length) { App.ui.toast('先勾选要粘贴的任务'); return; }
+        const srcDay = data.days[modal.querySelector('#paste-date').value];
+        let n = 0;
+        checks.forEach(function (ch) {
+          const p = ch.value.split(':');
+          const t = (srcDay.tasks[p[0]] || [])[+p[1]];
+          if (!t) return;
+          if (!target.tasks[p[0]]) target.tasks[p[0]] = [];
+          target.tasks[p[0]].push(deepCloneTask(t));
+          n++;
+        });
+        S().save();
+        App.ui.closeModal();
+        App.ui.toast('已粘贴 ' + n + ' 条任务');
+        App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
     });

@@ -91,6 +91,7 @@ const SLIDES = [
           '<div class="tl" data-i="4"><div class="n">v4</div><div class="t">休息体系</div></div>'+
           '<div class="tl" data-i="5"><div class="n">v5</div><div class="t">强化休息</div></div>'+
           '<div class="tl" data-i="6"><div class="n">v6</div><div class="t">精简自选</div></div>'+
+          '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">主线/辅助+粘贴</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -196,6 +197,22 @@ const SLIDES = [
       '<div class="col" style="--cc:#3b82f6"><h4>⏱ 暂停彻底冻结</h4><ul><li>按 ⏸ 就真的停住，不再偷偷继续走</li></ul></div>'+
       '<div class="col" style="--cc:#f59e0b"><h4>🎖 名人堂致谢</h4><ul><li>∑neu、艾斯、鑫鑫（圆形头像自适应）</li><li>感谢帮我省平台费用的同学</li></ul></div>'+
       '<div class="col" style="--cc:#22a06b"><h4>📝 补写复盘 & 移除 AI</h4><ul><li>补写任意一天复盘（历史页）</li><li>移除 AI 复盘（没有题目数据可总结）</li></ul></div></div>'
+  },
+  {
+    name:"v7 · 主线/辅助 + 粘贴", badge:{t:"v7 · 主线/辅助 + 粘贴",c:"#3b82f6"},
+    tag:"把时间分开看，把任务一次拷来",
+    cols:[
+      {t:"🧭 主线推进 / 辅助推进", c:"#3b82f6", items:[
+        "加任务时可选：主线推进（直接推进课程 → 计入「有效学习」）", "辅助推进（复盘 / 整理 / 写计划等 → 计入「辅助」）", "都是高考应试准备，但一个推进主线、一个服务于主线"]},
+      {t:"🕑 三段时间分开", c:"#22a06b", items:[
+        "顶部改为 有效学习 / 扩展 / 辅助 三段", "休闲时间体系整个移除（不再有「休闲20分钟」）"]},
+      {t:"📋 从往日粘贴任务", c:"#f59e0b", items:[
+        "选某一天，整批复制它的任务（含小题 / 任务组）到今天对应栏", "粘贴后把已做的叉掉即可，不用每天重输一遍（订正十几道题超省力）"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#3b82f6"><h4>🗂 任务可移动分类</h4><ul><li>编辑任务时可把任务在 必须 / 理想 / 拓展 之间移动</li><li>设太多做不完，直接挪到理想，不用删</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>💰 小题默认分 = 10</h4><ul><li>新小题默认完成积分改为 10（可逐条改）</li><li>可在设置里改默认值</li></ul></div>'+
+      '<div class="col" style="--cc:#e2545d"><h4>🧹 删掉时段设置</h4><ul><li>「任务执行时段 / 拓展时段 开始-结束」设置移除</li><li>不再用时间窗卡任务，更自由</li></ul></div></div>'
   },
   {
     name:"收尾", cls:"cover",

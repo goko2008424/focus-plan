@@ -27,18 +27,13 @@
     const s = S().settings();
     const box = document.getElementById('settings-form');
     box.innerHTML =
-      '<div class="set-group"><h4>⏰ 时间设置（完全自定义）</h4>' +
-      timeRow('set-task-start', '任务执行时段 · 开始', s.taskStart) +
-      timeRow('set-task-end', '任务执行时段 · 结束', s.taskEnd) +
-      timeRow('set-ext-start', '拓展任务时段 · 开始', s.extStart) +
-      timeRow('set-ext-end', '拓展任务时段 · 结束', s.extEnd) +
-      '</div>' +
       '<div class="set-group"><h4>🎉 保底奖励（必须任务全部完成时）</h4>' +
       numRow('set-base-points', '累积积分', s.baseRewardPoints, '分') +
       '</div>' +
       '<div class="set-group"><h4>⭐ 积分规则（每条任务可单独定价）</h4>' +
       numRow('set-ideal-points', '新理想任务默认积分', s.idealPoints, '分/条') +
       numRow('set-ext-points', '新拓展任务默认积分', s.extPoints, '分/条') +
+      numRow('set-sub-points', '新小题默认积分', s.subDefaultPoints, '分/题') +
       '<p class="hint">每条任务的积分现在直接写在任务后面（任务行上的数字框），随时可单独修改：完成这条给多少分由你定。这里的数值只是新任务的默认值。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🏆 完美额外奖励（三类全部完成时）</h4>' +
@@ -73,13 +68,10 @@
     function bind(id, fn) {
       document.getElementById(id).addEventListener('change', fn);
     }
-    bind('set-task-start', function () { s.taskStart = this.value; S().save(); });
-    bind('set-task-end', function () { s.taskEnd = this.value; S().save(); });
-    bind('set-ext-start', function () { s.extStart = this.value; S().save(); });
-    bind('set-ext-end', function () { s.extEnd = this.value; S().save(); });
     bind('set-base-points', function () { s.baseRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ideal-points', function () { s.idealPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ext-points', function () { s.extPoints = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-sub-points', function () { s.subDefaultPoints = Math.max(1, +this.value || 10); S().save(); });
     bind('set-perfect-points', function () { s.perfectRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });

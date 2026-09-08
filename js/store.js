@@ -64,6 +64,7 @@
       baseRewardPoints: 10, // 保底奖励：积分
       idealPoints: 10,      // 每条理想任务积分
       extPoints: 5,         // 每条拓展任务积分
+      subDefaultPoints: 10, // 每个新小题的默认积分（可自定义）
       perfectRewardTime: 30,  // 100% 额外奖励：休闲分钟
       perfectRewardPoints: 20, // 100% 额外奖励：积分
       extAppendable: true,  // 拓展任务可追加

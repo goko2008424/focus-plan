@@ -121,7 +121,6 @@
           const done = function (list) { return list.filter(function (t) { return t.done; }).length; };
           const focusMin = day.sessions.reduce(function (s, x) { return s + (x.actualMinutes || 0); }, 0);
           const dayPts = S().ledger().filter(function (e) { return e.date === k; }).reduce(function (s, e) { return s + (e.points || 0); }, 0);
-          const dayLei = S().ledger().filter(function (e) { return e.date === k; }).reduce(function (s, e) { return s + (e.leisure || 0); }, 0);
           // 当天任务明细（每条：完成状态 + 文本 + 积分）
           const detailLines = [];
           ['required', 'ideal', 'extra'].forEach(function (lk) {
@@ -160,7 +159,6 @@
             '<span>📚 学习 ' + S().fmtDur(c.study) + '</span>' +
             '<span>⏱ 计时专注 ' + S().fmtDur(focusMin) + '</span>' +
             '<span>⭐ 当日积分 ' + (dayPts >= 0 ? '+' : '') + dayPts + '</span>' +
-            (dayLei ? '<span>🕐 当日休闲 +' + dayLei + '分钟</span>' : '') +
             '</div>' +
             detailHTML + reviewHTML + reviewBtn +
             '</div>';

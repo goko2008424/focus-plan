@@ -28,9 +28,25 @@
     }
     lastPoints = pts;
 
-    document.getElementById('stat-leisure').textContent = S().fmtDur(S().leisureTotal());
-    const used = day.sessions.reduce(function (s, x) { return s + (x.actualMinutes || 0); }, 0);
-    document.getElementById('stat-used').textContent = S().fmtDur(used);
+    // 三段时间：有效学习（主线）/ 扩展（拓展）/ 辅助（辅助推进）
+    var mainMs = 0, extMs = 0, auxMs = 0;
+    day.sessions.forEach(function (se) {
+      if (!se.taskId) return; // 非任务会话（休息/生活等）不计入学习时间
+      var tm = (se.actualMinutes || 0) * 60000;
+      var taskKey = null, task = null;
+      ['required', 'ideal', 'extra'].forEach(function (k) {
+        if (task) return;
+        var f = (day.tasks[k] || []).find(function (t) { return t.id === se.taskId; });
+        if (f) { taskKey = k; task = f; }
+      });
+      if (!task) return;
+      if (taskKey === 'extra') extMs += tm;
+      else if (task.aux) auxMs += tm;
+      else mainMs += tm;
+    });
+    document.getElementById('stat-main').textContent = S().fmtDur(mainMs / 60000);
+    document.getElementById('stat-extend').textContent = S().fmtDur(extMs / 60000);
+    document.getElementById('stat-aux').textContent = S().fmtDur(auxMs / 60000);
   }
 
   /* ---------- 公告 / 使用指南 ---------- */
@@ -44,13 +60,14 @@
       '<p style="font-size:13.5px">作者在自我反思中发现：白天状态不错，但晚间状态很难保证；原计划要求晚 11 点前不浏览信息（信息节食），可学习枯燥，理智脑不在线时难免会刷手机，意志力被反复消耗，状态越来越差。核心矛盾是——<b>任务设置与状态形成是冲突的</b>。</p>' +
 
       '<h4 style="margin:14px 0 6px;color:#2d3a4a">💡 为什么这个方法有用？</h4>' +
-      '<p style="font-size:13.5px"><b>① 任务降档（70%~80%）</b>：望不到头的任务会削减动力、导致懈怠和效率下降。把任务定成原来能完成的 70%~80%，同样的时间能完成、甚至因为轻松还多做一些，休闲时间也更长。</p>' +
-      '<p style="font-size:13.5px"><b>② 奖惩机制</b>：更快完成任务 = 更快收获成果 = 更多休闲时间（不用死等 22:00 才结束）。用「完成就收工」的盼头抑制中途刷手机的冲动，而不是靠硬忍。</p>' +
+      '<p style="font-size:13.5px"><b>① 任务降档（70%~80%）</b>：望不到头的任务会削减动力、导致懈怠和效率下降。把任务定成原来能完成的 70%~80%，同样的时间能完成、甚至因为轻松还多做一些，自由可支配的时间也更多。</p>' +
+      '<p style="font-size:13.5px"><b>② 奖惩机制</b>：更快完成任务 = 更快收获成果 = 更多自由时间。用「完成就收工」的盼头抑制中途刷手机的冲动，而不是靠硬忍。</p>' +
       '<p style="font-size:13.5px"><b>③ 降低决策成本（附带结果）</b>：不再需要时刻调用意志力对抗「想玩手机」的念头，意志力不被持续消耗，专注力自然更稳。</p>' +
 
       '<h4 style="margin:14px 0 6px;color:#2d3a4a">🗂 所有功能是干什么的？</h4>' +
       '<ul style="font-size:13.5px;padding-left:20px;line-height:1.9">' +
-      '<li><b>任务</b>：三栏目标——✅必须完成（核心任务）/ ⭐理想（状态好时额外做，得积分）/ 🌱拓展（兴趣技能类每日推进，得积分）。提前一天填写。</li>' +
+      '<li><b>任务</b>：三栏目标——✅必须完成（核心任务）/ ⭐理想（状态好时额外做，得积分）/ 🌱拓展（兴趣技能类每日推进，得积分）。每条任务可选「主线推进 / 辅助推进」，编辑时可在三栏之间移动。顶部用 <b>有效学习 / 扩展 / 辅助</b> 三段时间分开记账（不复原已删的休闲体系）。</li>' +
+      '<li><b>📋 从往日粘贴任务</b>：把某一天整批任务（含小题 / 任务组）一键复制到今天对应栏，再叉掉已做的——订正十几道题时不用每天重输。</li>' +
       '<li><b>⏱ 计时</b>：每次开始前填写「预计完成内容 + 预计用时」，完成后对比预计 vs 实际并写一句总结（做完了吗/心得），暂停不计时。悬浮窗可按住拖到任意位置。</li>' +
       '<li><b>🧩 小任务</b>：总任务下可以再拆小任务（如「第3题 5分钟」），按 ▶ 开始倒计时，到点提醒你完成没——完成得积分、没完成也知道卡在哪，限时做题更容易进入心流。</li>' +
       '<li><b>🎯 任务组</b>：把几个关联的小题打包成一组，整组都做完就算完成——专治「大任务太沉、开不了头」，比如「搞定第三章」拆成3题一组。</li>' +
@@ -85,7 +102,7 @@
       '</ol>' +
 
       '<h4 style="margin:14px 0 6px;color:#2d3a4a">📋 默认规则（全部可在设置里改）</h4>' +
-      '<p style="font-size:13.5px">任务时段 08:00–22:00 · 拓展时段 22:00–23:00 · 保底奖励 积分+10 · 理想每条 +10 分 · 拓展每条 +5 分 · 完美奖励 积分+20 · 未完成顺延无惩罚 · 拓展可追加</p>' +
+      '<p style="font-size:13.5px">理想每条 +10 分 · 拓展每条 +5 分 · 小题默认 +10 分 · 保底奖励 积分+10 · 完美奖励 积分+20 · 未完成顺延无惩罚 · 拓展可追加</p>' +
 
       '<h4 style="margin:14px 0 6px;color:#2d3a4a">📜 版本历史</h4>' +
       '<button class="btn btn-small btn-primary" id="btn-versions">📜 打开版本更新史（独立精美页）</button>' +

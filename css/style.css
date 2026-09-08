@@ -231,6 +231,8 @@ details.task-details summary:hover { text-decoration: underline; }
 .task-points:disabled { opacity: .45; background: #f0f2f5; color: #6b7280; }
 .pts-unit { font-size: 11px; color: var(--muted); }
 .extra-append { margin-top: 10px; }
+.day-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.day-toolbar-hint { font-size: 12px; color: var(--muted); }
 
 /* 子任务（小任务限时倒计时） */
 .sub-block { border-top: 1px dashed var(--line); padding: 6px 4px 2px 26px; }
