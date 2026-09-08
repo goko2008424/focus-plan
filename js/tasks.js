@@ -442,6 +442,14 @@
     });
   }
 
+  /* ---------- 回收站：误删可恢复（所有删除走「软删除」先进回收站） ---------- */
+  function trashPush(entry) {
+    const t = (S().data().trash = S().data().trash || []);
+    entry.id = S().uid();
+    entry.at = new Date().toISOString();
+    t.push(entry);
+  }
+
   function delSub(taskKey, taskId, subId, dayKey) {
     const day = S().getDay(dayKey || S().todayKey());
     const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
@@ -449,6 +457,7 @@
     const sub = subs.find(function (s) { return s.id === subId; });
     if (!sub) return;
     App.ui.confirm('删除小任务「' + sub.text + '」？', '删除', function () {
+      trashPush({ kind: 'sub', dayKey: dayKey || S().todayKey(), col: taskKey, taskId: taskId, payload: JSON.parse(JSON.stringify(sub)) });
       const idx = subs.findIndex(function (s) { return s.id === subId; });
       if (idx >= 0) subs.splice(idx, 1);
       if (cdTimer && cdTimer.subId === subId) {
@@ -457,6 +466,7 @@
         showTimerBar();
       }
       S().save();
+      App.ui.toast('已删除 · 可到回收站恢复');
       App.tasks.renderAll();
     });
   }
@@ -594,10 +604,11 @@
     const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
     if (!g) return;
     App.ui.confirm('删除任务组「' + g.name + '」及其所有小题？', '删除', function () {
+      trashPush({ kind: 'group', dayKey: dayKey || S().todayKey(), col: taskKey, taskId: taskId, payload: JSON.parse(JSON.stringify(g)) });
       const idx = task.groups.findIndex(function (x) { return x.id === groupId; });
       task.groups.splice(idx, 1);
       if (cdTimer && cdTimer.groupId === groupId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
-      S().save(); App.tasks.renderAll();
+      S().save(); App.ui.toast('已删除 · 可到回收站恢复'); App.tasks.renderAll();
     });
   }
 
@@ -608,10 +619,11 @@
     const sub = subs.find(function (s) { return s.id === subId; });
     if (!sub) return;
     App.ui.confirm('删除小题「' + sub.text + '」？', '删除', function () {
+      trashPush({ kind: 'sub', dayKey: dayKey || S().todayKey(), col: taskKey, taskId: taskId, groupId: groupId, payload: JSON.parse(JSON.stringify(sub)) });
       const idx = subs.findIndex(function (s) { return s.id === subId; });
       subs.splice(idx, 1);
       if (cdTimer && cdTimer.groupId === groupId && cdTimer.subId === subId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
-      S().save(); App.tasks.renderAll();
+      S().save(); App.ui.toast('已删除 · 可到回收站恢复'); App.tasks.renderAll();
     });
   }
 
@@ -1353,8 +1365,10 @@
     const box = document.getElementById('task-columns');
     // 日期显示
     document.getElementById('today-date').textContent = '📅 今天：' + S().fmtDateCN(dayKey);
-    box.innerHTML = '<div class="day-toolbar"><button class="btn btn-small" data-act="paste">📋 从往日粘贴任务</button>' +
-      '<span class="day-toolbar-hint">把某天整批任务（含小题/任务组）复制过来，再叉掉已做的</span></div>' +
+    box.innerHTML = '<div class="day-toolbar">' +
+      '<button class="btn btn-small" data-act="paste">📋 从往日粘贴任务</button>' +
+      '<button class="btn btn-small" data-act="trash">🗑 回收站（误删恢复）</button>' +
+      '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务</span></div>' +
       COLS.map(function (col) {
       const list = day.tasks[col.key];
       const doneN = list.filter(function (t) { return t.done; }).length;
@@ -1421,6 +1435,7 @@
         if (!actBtn) return;
         const act2 = actBtn.dataset.act;
         if (act2 === 'paste') { pasteTasksModal(S().todayKey()); return; }
+        if (act2 === 'trash') { trashModal(); return; }
         const colEl = actBtn.closest('.task-col');
         const listKey = colEl ? colEl.dataset.col : null;
         if (!listKey) { App.ui.toast('无法识别任务栏'); return; }
@@ -1534,10 +1549,12 @@
       const taskId = row.dataset.id;
       if (act === 'edit') editTaskModal(listKey, taskId, S().tomorrowKey(), false);
       else if (act === 'del') {
-        App.ui.confirm('删除这条任务？', '删除', function () {
+        App.ui.confirm('删除这条任务？（先进回收站，可恢复）', '删除', function () {
           const list = S().getDay(S().tomorrowKey()).tasks[listKey];
           const idx = list.findIndex(function (t) { return t.id === taskId; });
-          if (idx >= 0) { list.splice(idx, 1); S().save(); App.tasks.renderAll(); }
+          if (idx >= 0) { trashPush({ kind: 'task', dayKey: S().tomorrowKey(), col: listKey, payload: JSON.parse(JSON.stringify(list[idx])) }); list.splice(idx, 1); S().save(); }
+          App.ui.toast('已删除 · 可到回收站恢复');
+          App.tasks.renderAll();
         });
       }
     };
@@ -1640,9 +1657,11 @@
         App.tasks.renderAll();
       },
       del: function () {
-        App.ui.confirm('删除这条任务？', '删除', function () {
+        App.ui.confirm('删除这条任务？（先进回收站，可恢复）', '删除', function () {
+          trashPush({ kind: 'task', dayKey: dayKey, col: listKey, payload: JSON.parse(JSON.stringify(task)) });
           const idx = day.tasks[listKey].findIndex(function (t) { return t.id === taskId; });
           if (idx >= 0) { day.tasks[listKey].splice(idx, 1); S().save(); }
+          App.ui.toast('已删除 · 可到回收站恢复');
           App.ui.closeModal();
           App.tasks.renderAll();
         });
@@ -1718,6 +1737,68 @@
       },
       cancel: App.ui.closeModal
     });
+  }
+
+  /* ---------- 回收站弹窗：误删的任务/小题/任务组可一键恢复 ---------- */
+  function trashModal() {
+    const trash = (S().data().trash = S().data().trash || []);
+    const modal = App.ui.openModal('🗑 回收站（误删恢复）', '' +
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">删除的任务 / 小题 / 任务组都会先进这里，点「♻ 恢复」放回原处；「彻底删除」才会真正清掉。</p>' +
+      '<div id="trash-list" style="max-height:52vh;overflow:auto;border:1px solid #e5e8ec;border-radius:8px;padding:6px 10px"></div>',
+      '<button class="btn" data-act="cancel">关闭</button>');
+    const box = modal.querySelector('#trash-list');
+    const colName = function (c) { return { required: '必须', ideal: '理想', extra: '拓展' }[c] || ''; };
+    function render() {
+      box.innerHTML = trash.length
+        ? trash.slice().reverse().map(function (entry) {
+            const kind = entry.kind === 'task' ? '任务' : entry.kind === 'group' ? '任务组' : '小题';
+            const text = entry.payload && entry.payload.text ? S().esc(entry.payload.text) : (entry.payload && entry.payload.name ? S().esc(entry.payload.name) : '');
+            const when = new Date(entry.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #eceff3;font-size:13px">' +
+              '<span style="flex:1">[' + kind + ' · ' + colName(entry.col) + '] <b>' + text + '</b>' +
+              '<div style="color:#8a919c;font-size:11.5px">' + S().fmtDateCN(entry.dayKey) + ' · 删于 ' + when + '</div></span>' +
+              '<button class="btn btn-small btn-primary" data-trash-id="' + entry.id + '">♻ 恢复</button>' +
+              '<button class="btn btn-small btn-danger" data-trash-del="' + entry.id + '">彻底删除</button></div>';
+          }).join('')
+        : '<p style="color:#8a919c;text-align:center;padding:18px 0">回收站是空的，以后删除都会有保险～</p>';
+    }
+    function restore(id) {
+      const i = trash.findIndex(function (x) { return x.id === id; });
+      if (i < 0) return;
+      const entry = trash[i];
+      const day = S().getDay(entry.dayKey);
+      day.tasks[entry.col] = day.tasks[entry.col] || [];
+      if (entry.kind === 'task') {
+        day.tasks[entry.col].push(entry.payload);
+      } else if (entry.kind === 'group') {
+        const task = day.tasks[entry.col].find(function (t) { return t.id === entry.taskId; });
+        if (task) { task.groups = task.groups || []; task.groups.push(entry.payload); }
+      } else {
+        const task = day.tasks[entry.col].find(function (t) { return t.id === entry.taskId; });
+        if (task) {
+          if (entry.groupId) {
+            const g = (task.groups || []).find(function (x) { return x.id === entry.groupId; });
+            if (g) { g.subs = g.subs || []; g.subs.push(entry.payload); }
+          } else { task.subs = task.subs || []; task.subs.push(entry.payload); }
+        }
+      }
+      trash.splice(i, 1);
+      S().save();
+      render();
+      App.ui.toast('已恢复');
+      App.tasks.renderAll();
+    }
+    box.onclick = function (e) {
+      const r = e.target.closest('[data-trash-id]');
+      const d = e.target.closest('[data-trash-del]');
+      if (r) { restore(r.dataset.trashId); return; }
+      if (d) {
+        const i = trash.findIndex(function (x) { return x.id === d.dataset.trashDel; });
+        if (i >= 0) { trash.splice(i, 1); S().save(); render(); }
+      }
+    };
+    render();
+    App.ui.bindActions({ cancel: App.ui.closeModal });
   }
 
   /* ---------- Tab 切换 ---------- */

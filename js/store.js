@@ -103,7 +103,8 @@
       createdAt: nowIso(),
       settings: defaultSettings(),
       days: {},
-      ledger: [] // 账本事件 [{id, date, type, points, leisure, note, at}]
+      ledger: [], // 账本事件 [{id, date, type, points, leisure, note, at}]
+      trash: []   // 回收站 [{id, kind, dayKey, col, taskId, groupId, payload, at}]
     };
   }
 
