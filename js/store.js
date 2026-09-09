@@ -94,6 +94,8 @@
       sessions: [],   // 计时会话 [{id, taskId, taskText, planContent, planMinutes, actualMinutes, startAt, endAt, pausedMs}]
       timeline: [],   // 时间轴记录 [{id, start, end, minutes, content, category, taskId, auto, countAsStudy}]
       rewards: [],    // 当日触发奖励 [{kind:'base'|'perfect', choice:'time'|'points', value, at}]
+      hourPlans: [],        // ⏱ 小时计划已结算记录 [{id,startAt,endAt,targets,actual,met,rewardPoints,duration}]
+      activeHourPlan: null, // ⏱ 当前进行中的小时计划 {id,startAt,targets:{required,ideal,extra}}
       ended: false
     };
   }

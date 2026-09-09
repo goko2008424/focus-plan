@@ -191,6 +191,9 @@
       document.getElementById('tf-cd-text').textContent = cdTimer.text;
       document.getElementById('tf-cd-target').textContent = S().fmtDur(cdTimer.minutes);
       document.getElementById('cd-pause').textContent = cdTimer.microRest ? '🔚 结束小休' : (cdTimer.paused ? '▶ 继续' : '⏸ 暂停');
+      // 来自逐题拆解的倒计时 → 显示「🧭 回拆解」按钮，方便回到拆解互动界面
+      const spEl = document.getElementById('cd-split');
+      if (spEl) spEl.style.display = cdTimer.fromSplit ? '' : 'none';
     } else {
       cd.classList.add('hidden');
     }
@@ -897,18 +900,20 @@
   function splitVoiceSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
-  function splitListen(onFinalText, onState) {
+  function splitListen(onFinalText, onState, onInterim) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { if (onState) onState('unsupported'); return null; }
     const rec = new SR();
     rec.lang = 'zh-CN';
-    rec.interimResults = false;
+    rec.continuous = true;   // 持续识别：说一句话停顿后不自动结束，可连着录一整段
+    rec.interimResults = true; // 实时出字，语音一边说一边上屏
     rec.maxAlternatives = 1;
     let final = '';
     rec.onresult = function (e) {
-      for (let i = 0; i < e.results.length; i++) {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
-        if (r.isFinal) final += ' ' + r[0].transcript;
+        if (r.isFinal) final = (final ? final + ' ' : '') + r[0].transcript;
+        else if (onInterim) onInterim(r[0].transcript); // 未说完的实时预览
       }
     };
     rec.onerror = function (e) { if (onState) onState('error:' + (e && e.error)); };
@@ -920,7 +925,10 @@
 
   function openSplit(taskKey, taskId, subId, groupId) {
     if (S().settings().splitEnabled === false) { App.ui.toast('🧭 逐题拆解没开，去 设置 → 🧭 打开'); return; }
-    startCdTimer(taskKey, taskId, subId, groupId); // 复用同一套倒计时 + 三档积分
+    // 同一题已在倒计时中（如从计时悬浮窗「🧭 回拆解」进来）→ 不重置计时，直接回到拆解界面
+    const sameCd = cdTimer && cdTimer.taskId === taskId && cdTimer.subId === subId;
+    if (!sameCd) startCdTimer(taskKey, taskId, subId, groupId); // 复用同一套倒计时 + 三档积分
+    if (cdTimer) cdTimer.fromSplit = true; // 标记：这个倒计时来自逐题拆解，悬浮窗就显示「🧭 回拆解」
     const day = S().getDay(S().todayKey());
     const task = day.tasks[taskKey] && day.tasks[taskKey].find(function (t) { return t.id === taskId; });
     const found = findSubInTask(task, subId);
@@ -948,11 +956,25 @@
       if (stopRec) { stopRec(); stopRec = null; return; }
       const ta = document.getElementById('split-txt');
       if (!ta) return;
+      let done = ta.value ? ta.value.trim() : '';  // 已确认的文本（含之前手打的）
+      let live = '';                               // 实时预览片段
+      function paint() {
+        const v = live.trim() ? (done && done.trim() ? done.trim() + '\n' : '') + live.trim() : done;
+        ta.value = v;
+      }
       stopRec = splitListen(function (finalTxt) {
-        if (ta) ta.value = (ta.value ? ta.value.trim() + '\n' : '') + (finalTxt || '').trim();
+        // 一句话说完 → 固化进 done，继续监听下一句（continuous）
+        if (finalTxt && finalTxt.trim()) done = (done && done.trim() ? done.trim() + '\n' : '') + finalTxt.trim();
+        live = '';
+        paint();
         stopRec = null;
+        const b = document.getElementById('split-rec');
+        if (b) b.textContent = '🎙 开始录音';
       }, function (st) {
         if (st === 'unsupported' && ta) ta.placeholder = '浏览器不支持语音，改用手打';
+      }, function (interim) {
+        live = interim || '';
+        paint();
       });
     }
     // —— 通用：可录音/输入的步骤 ——
@@ -1098,17 +1120,16 @@
     }
   }
 
-  /* ---------- 保底奖励弹窗（必须任务全部完成；休闲+积分可同时加、数量自选） ---------- */
+  /* ---------- 保底奖励弹窗（必须任务全部完成；只奖积分，数量自选） ---------- */
   function baseRewardModal() {
     const dayKey = S().todayKey();
     const day = S().getDay(dayKey);
     const settings = S().settings();
-    let granted = null; // {ledgerId, leisure, points}
+    let granted = null; // {ledgerId, points}
 
     const body = function () {
       return '' +
         '<p style="font-size:14px">必须完成的任务全部完成！</p>' +
-        '<div class="field"><label>当前休闲时间累计</label><p style="font-weight:700;color:#f59e0b">' + S().fmtDur(S().leisureTotal()) + '</p></div>' +
         '<div class="field"><label>当前积分累计</label><p style="font-weight:700;color:#22a06b">' + S().pointsTotal() + ' 分</p></div>' +
         (granted
           ? '<div class="field"><label>已领取奖励</label><p>⭐ 积分 +' + granted.points + '分</p></div>'
@@ -1161,7 +1182,7 @@
     reopen();
   }
 
-  /* ---------- 完美奖励弹窗（三类全部完成；休闲+积分可同时加） ---------- */
+  /* ---------- 完美奖励弹窗（三类全部完成；只奖积分） ---------- */
   function perfectRewardModal() {
     const dayKey = S().todayKey();
     const day = S().getDay(dayKey);
@@ -1387,6 +1408,7 @@
     }).join('');
     bindTodayEvents();
     renderReview(dayKey);
+    renderHourPlan(dayKey);
   }
 
   /* ---------- 今日复盘（随时可写，结束今天时也能写） ---------- */
@@ -1412,6 +1434,161 @@
       App.ui.toast('复盘已保存');
       renderReview(dayKey);
     };
+  }
+
+  /* ============================================================
+   * ⏱ 小时计划：手动起止一段"小时"窗口，给 必须/理想/拓展 三类
+   *   分别定目标学习分钟；用任务计时器正常执行，实际用时自动累计；
+   *   结束结算看是否达到总目标，达标自填奖励积分（入账本）。
+   * ============================================================ */
+  const HOUR_COLS = [
+    { k: 'required', n: '✅ 必须' },
+    { k: 'ideal', n: '⭐ 理想' },
+    { k: 'extra', n: '🌱 拓展' }
+  ];
+  // 任务 id → 所属栏（必须/理想/拓展）
+  function hourPlanBucket(taskId) {
+    const day = S().getDay(S().todayKey());
+    for (let i = 0; i < HOUR_COLS.length; i++) {
+      const c = HOUR_COLS[i];
+      if ((day.tasks[c.k] || []).some(function (t) { return t.id === taskId; })) return c.k;
+    }
+    return null;
+  }
+  // 统计当前小时计划某类（或全部）已完成的实际分钟
+  function hourPlanActual(plan, colKey) {
+    if (!plan || !plan.startAt) return 0;
+    const day = S().getDay(S().todayKey());
+    const start = new Date(plan.startAt).getTime();
+    const now = Date.now();
+    let ms = 0;
+    (day.sessions || []).forEach(function (s) {
+      if (!s.startAt) return;
+      const t = new Date(s.startAt).getTime();
+      if (t < start || t > now) return; // 只计这个窗口内开始的任务
+      if (colKey && hourPlanBucket(s.taskId) !== colKey) return;
+      ms += (s.actualMinutes || 0);
+    });
+    return ms;
+  }
+  function hourPlanSummary(plan) {
+    const tg = (plan && plan.targets) || {};
+    const req = tg.required || 0, ide = tg.ideal || 0, ext = tg.extra || 0;
+    const ar = hourPlanActual(plan, 'required'), ai = hourPlanActual(plan, 'ideal'), ae = hourPlanActual(plan, 'extra');
+    return {
+      targets: { required: req, ideal: ide, extra: ext },
+      actual: { required: ar, ideal: ai, extra: ae },
+      tTotal: req + ide + ext,
+      aTotal: ar + ai + ae
+    };
+  }
+  // 开始一个小时代：弹窗定三类目标
+  function startHourPlanModal() {
+    const day = S().getDay(S().todayKey());
+    if (day.activeHourPlan) { App.ui.toast('已有一个小时计划在进行中，先「⏹ 结束」结算'); return; }
+    const modal = App.ui.openModal('⏱ 开始这个小时代',
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">给这一段定个学习指标：三类任务各打算做多久（分钟）。执行时用任务计时器正常计时，实际用时会自动记进来。</p>' +
+      '<div class="field"><label>✅ 必须任务（分钟）</label><input type="number" id="hp-req" min="0" value="30" /></div>' +
+      '<div class="field"><label>⭐ 理想任务（分钟）</label><input type="number" id="hp-ide" min="0" value="10" /></div>' +
+      '<div class="field"><label>🌱 拓展任务（分钟）</label><input type="number" id="hp-ext" min="0" value="5" /></div>',
+      '<button class="btn btn-primary" data-act="ok">🎯 开始</button><button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const req = Math.max(0, +modal.querySelector('#hp-req').value || 0);
+        const ide = Math.max(0, +modal.querySelector('#hp-ide').value || 0);
+        const ext = Math.max(0, +modal.querySelector('#hp-ext').value || 0);
+        if (!req && !ide && !ext) { App.ui.toast('至少给一类定个目标分钟'); return; }
+        day.activeHourPlan = { id: S().uid(), startAt: new Date().toISOString(), targets: { required: req, ideal: ide, extra: ext } };
+        S().save();
+        App.ui.closeModal();
+        App.tasks.renderToday();
+        App.ui.toast('🎯 这个小时代已开始：总目标 ' + (req + ide + ext) + ' 分钟，去执行吧！');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+  // 结束结算：判定达标 → 达标弹奖励（积分自填）
+  function endHourPlan() {
+    const day = S().getDay(S().todayKey());
+    const plan = day.activeHourPlan;
+    if (!plan) { App.ui.toast('当前没有进行中的小时计划'); return; }
+    const sum = hourPlanSummary(plan);
+    const met = sum.tTotal > 0 && sum.aTotal >= sum.tTotal;
+    plan.endAt = new Date().toISOString();
+    plan.actual = sum.actual;
+    plan.met = met;
+    plan.duration = sum.aTotal;
+    day.hourPlans = day.hourPlans || [];
+    day.hourPlans.push(plan);
+    day.activeHourPlan = null;
+    S().save();
+    App.tasks.renderToday();
+    if (met) { hourRewardModal(plan, sum); }
+    else { App.ui.toast('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'); }
+  }
+  // 达标奖励弹窗：积分自填入账
+  function hourRewardModal(plan, sum) {
+    const dayKey = S().todayKey();
+    const modal = App.ui.openModal('🎉 这个小时代达标了！',
+      '<p style="font-size:14px">总目标 <b>' + sum.tTotal + '</b> 分钟，你做了 <b style="color:#22a06b">' + sum.aTotal + '</b> 分钟，达成了！</p>' +
+      '<p style="font-size:12.5px;color:#8a919c;margin:4px 0 8px">给自己一点奖励：加多少积分你自己填（也可以 0）。</p>' +
+      '<div class="field"><label>奖励积分（自填）</label><input type="number" id="hp-pts" min="0" value="0" /></div>',
+      '<button class="btn btn-primary" data-act="ok">🎁 确认领取</button><button class="btn" data-act="skip">跳过（不领）</button>');
+    function patchReward(pts) {
+      const day = S().getDay(dayKey);
+      const last = (day.hourPlans || []).slice(-1)[0];
+      if (last) last.rewardPoints = pts;
+      S().save();
+    }
+    App.ui.bindActions({
+      ok: function () {
+        const pv = Math.max(0, +modal.querySelector('#hp-pts').value || 0);
+        if (pv > 0) App.store.addLedger(dayKey, 'hour-reward', { points: pv, note: '小时计划达标奖励：积分+' + pv + '分' });
+        patchReward(pv);
+        App.ui.closeModal();
+        App.tasks.renderToday();
+        if (App.app && App.app.refreshStats) App.app.refreshStats();
+        App.ui.toast(pv > 0 ? ('🎁 已入账 +' + pv + ' 分，辛苦啦！') : '干得漂亮，这小时没白过！');
+      },
+      skip: function () {
+        patchReward(0);
+        App.ui.closeModal();
+        App.ui.toast('达标就是胜利，这小时很棒！');
+      }
+    });
+  }
+  // 渲染小时计划卡片（今天页顶部 #hour-card）
+  function renderHourPlan(dayKey) {
+    const box = document.getElementById('hour-card');
+    if (!box) return;
+    const day = S().getDay(dayKey);
+    const plan = day.activeHourPlan || null;
+    if (!plan) {
+      box.innerHTML = '<div class="hour-card idle">' +
+        '<div style="flex:1"><h3 style="margin:0">⏱ 小时计划</h3>' +
+        '<p style="margin:2px 0 0;font-size:12.5px;color:#8a919c">给每一段定个学习指标，别让没有目标的时间悄悄溜走。</p></div>' +
+        '<button class="btn btn-primary btn-small" id="hp-start">🎯 开始这小时代</button></div>';
+      const b = box.querySelector('#hp-start');
+      if (b) b.onclick = startHourPlanModal;
+      return;
+    }
+    const sum = hourPlanSummary(plan);
+    const pct = sum.tTotal > 0 ? Math.min(100, Math.round(sum.aTotal / sum.tTotal * 100)) : 0;
+    const met = sum.tTotal > 0 && sum.aTotal >= sum.tTotal;
+    const rows = HOUR_COLS.map(function (c) {
+      const tg = sum.targets[c.k], ac = sum.actual[c.k];
+      const pp = tg > 0 ? Math.min(100, Math.round(ac / tg * 100)) : 0;
+      return '<div class="hp-row"><span class="hp-name">' + c.n + '</span>' +
+        '<span class="hp-bar"><i style="width:' + pp + '%"></i></span>' +
+        '<span class="hp-num">' + ac + '/' + tg + '分</span></div>';
+    }).join('');
+    box.innerHTML = '<div class="hour-card active">' +
+      '<h3 style="margin:0">⏱ 当前小时计划</h3>' +
+      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 6px">总目标 <b>' + sum.tTotal + '</b> 分 · 已执行 <b style="color:' + (met ? '#22a06b' : '#3b82f6') + '">' + sum.aTotal + '</b> 分 · ' + (met ? '🎉 已达标！' : '达成率 ' + pct + '%') + '</div>' +
+      rows +
+      '<div class="hp-actions"><button class="btn btn-small btn-primary" id="hp-end">⏹ 结束这小时代（结算）</button></div></div>';
+    const e = box.querySelector('#hp-end');
+    if (e) e.onclick = function () { endHourPlan(); };
   }
 
   function bindTodayEvents() {
@@ -1577,6 +1754,7 @@
       '<select id="add-kind" class="select-small">' +
       '<option value="main">主线推进（直接推进课程，纯学习，计入「有效学习」）</option>' +
       '<option value="aux">辅助推进（复盘 / 整理 / 写计划等，计入「辅助」）</option>' +
+      '<option value="long">长期推进（长期自我提升，如兴趣/技能，计入「扩展」）</option>' +
       '</select></div>',
       '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
     const ta = modal.querySelector('#add-text');
@@ -1588,9 +1766,9 @@
         const ptsInput = modal.querySelector('#add-points');
         const pts = ptsInput ? Math.max(0, +ptsInput.value || 0) : null;
         const kind = modal.querySelector('#add-kind');
-        const aux = kind ? kind.value === 'aux' : false;
+        const kv = kind ? kind.value : 'main';
         lines.forEach(function (text) {
-          const t = { id: S().uid(), text: text, aux: aux };
+          const t = { id: S().uid(), text: text, aux: kv === 'aux', long: kv === 'long' };
           if (pts != null) t.points = pts;
           day.tasks[listKey].push(t);
         });
@@ -1624,8 +1802,9 @@
       '</select></div>' +
       '<div class="field"><label>推进类型</label>' +
       '<select id="edit-kind" class="select-small">' +
-      '<option value="main"' + (task.aux ? '' : ' selected') + '>主线推进（纯学习）</option>' +
+      '<option value="main"' + (!task.aux && !task.long ? ' selected' : '') + '>主线推进（纯学习）</option>' +
       '<option value="aux"' + (task.aux ? ' selected' : '') + '>辅助推进（复盘/整理等）</option>' +
+      '<option value="long"' + (task.long ? ' selected' : '') + '>长期推进（自我提升，计入「扩展」）</option>' +
       '</select></div>' +
       '</div>',
       '<button class="btn btn-primary" data-act="save">保存</button>' +
@@ -1641,7 +1820,10 @@
         const ptsInput = modal.querySelector('#edit-points');
         if (ptsInput) task.points = Math.max(0, +ptsInput.value || 0);
         const kindEl = modal.querySelector('#edit-kind');
-        if (kindEl) task.aux = kindEl.value === 'aux';
+        if (kindEl) {
+          task.aux = kindEl.value === 'aux';
+          task.long = kindEl.value === 'long';
+        }
         const listEl = modal.querySelector('#edit-list');
         if (listEl && listEl.value !== listKey) {
           const from = day.tasks[listKey];
@@ -1674,10 +1856,28 @@
   function deepCloneTask(t) {
     const c = JSON.parse(JSON.stringify(t));
     c.id = S().uid();
-    if (c.subs) c.subs = c.subs.map(function (x) { x.id = S().uid(); return x; });
+    // 粘贴的是"一天一开始"的任务：恢复为未完成状态，不带旧日的完成记录/拆解过程
+    c.done = false;
+    delete c.summary;
+    if (c.subs) c.subs = c.subs.map(function (x) {
+      x.id = S().uid();
+      x.done = false;
+      delete x.summary;
+      delete x.splitlog;
+      if (x.sessions) x.sessions = [];
+      return x;
+    });
     if (c.groups) c.groups = c.groups.map(function (g) {
       g.id = S().uid();
-      if (g.subs) g.subs = g.subs.map(function (x) { x.id = S().uid(); return x; });
+      g.done = false;
+      if (g.subs) g.subs = g.subs.map(function (x) {
+        x.id = S().uid();
+        x.done = false;
+        delete x.summary;
+        delete x.splitlog;
+        if (x.sessions) x.sessions = [];
+        return x;
+      });
       return g;
     });
     return c;
@@ -1832,7 +2032,13 @@
     getCdTimer: function () { return cdTimer; },
     isRunning: isRunning, elapsedMs: elapsedMs,
     toggleCdPause: toggleCdPause, cdFinish: cdFinish,
-    startCdTimer: startCdTimer
+    startCdTimer: startCdTimer,
+    // 从计时悬浮窗「🧭 回拆解」按钮回来：用当前倒计时的上下文重开拆解界面（不重置计时）
+    reopenSplit: function () {
+      if (!cdTimer) { App.ui.toast('当前没有在拆解的题'); return; }
+      if (!cdTimer.fromSplit) { App.ui.toast('这个倒计时不是逐题拆解'); return; }
+      openSplit(cdTimer.taskKey, cdTimer.taskId, cdTimer.subId, cdTimer.groupId || null);
+    }
   };
 
   initFloatDrag();

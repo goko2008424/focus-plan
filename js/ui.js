@@ -95,7 +95,7 @@
   const CATS = {
     study: { label: '学习', color: '#3b82f6' },
     extend: { label: '拓展', color: '#22a06b' },
-    fun: { label: '休闲', color: '#f59e0b' },
+    fun: { label: '辅助', color: '#0ea5e9' },
     life: { label: '生活', color: '#8b5cf6' },
     other: { label: '其他', color: '#94a3b8' }
   };

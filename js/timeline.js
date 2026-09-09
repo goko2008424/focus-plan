@@ -67,7 +67,7 @@
     const sum = function (f) { return recs.reduce(function (s, r) { return s + (f(r) ? (r.minutes || 0) : 0); }, 0); };
     const studyMin = sum(function (r) { return r.category === 'study' && r.countAsStudy; });
     const extMin = sum(function (r) { return r.category === 'extend'; });
-    const funMin = sum(function (r) { return r.category === 'fun'; });
+    const funMin = sum(function (r) { return r.category === 'fun'; }); // 原「休闲」分类现更名为「辅助」
     const linked = recs.filter(function (r) { return r.taskId; }).length;
     const totalMin = recs.reduce(function (s, r) { return s + (r.minutes || 0); }, 0);
     const req = day.tasks.required;
@@ -77,10 +77,9 @@
       '<div class="sum-item"><b>' + S().fmtDur(totalMin) + '</b>总记录时间</div>' +
       '<div class="sum-item"><b style="color:#3b82f6">' + S().fmtDur(studyMin) + '</b>有效学习</div>' +
       '<div class="sum-item"><b style="color:#22a06b">' + S().fmtDur(extMin) + '</b>拓展时间</div>' +
-      '<div class="sum-item"><b style="color:#f59e0b">' + S().fmtDur(funMin) + '</b>休闲时间</div>' +
+      '<div class="sum-item"><b style="color:#0ea5e9">' + S().fmtDur(funMin) + '</b>辅助时间</div>' +
       '<div class="sum-item"><b>' + (recs.length ? Math.round(linked / recs.length * 100) + '%' : '--') + '</b>任务关联率</div>' +
       '<div class="sum-item"><b>' + reqRate + '</b>必须任务完成率</div>' +
-      '<div class="sum-item"><b>' + S().fmtDur(S().leisureTotal()) + '</b>休闲累计</div>' +
       '<div class="sum-item"><b>' + S().pointsTotal() + ' 分</b>积分累计</div>';
   }
 

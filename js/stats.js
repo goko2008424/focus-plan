@@ -14,6 +14,7 @@
     'rest': '🧘 好好休息奖励',
     'reward-base': '🎉 保底奖励',
     'reward-perfect': '🏆 完美奖励',
+    'hour-reward': '⏱ 小时计划达标奖励',
     'redeem': '🎁 积分兑换',
     'adjust': '✏ 调整'
   };
@@ -81,14 +82,11 @@
       ? ledger.map(function (e) {
           const name = LEDGER_NAMES[e.type] || e.type;
           const pts = e.points || 0;
-          const lei = e.leisure || 0;
           const sign = pts > 0 ? '+' + pts + '分' : pts < 0 ? pts + '分' : '';
-          const leiStr = lei > 0 ? '🕐+' + lei + '分钟' : '';
           return '<div class="day-card">' +
             '<div class="day-card-head"><span class="d-date">' + e.date + '</span>' +
             '<span>' + name + '</span>' +
             '<span style="font-weight:700;color:' + (pts < 0 ? '#e2545d' : '#22a06b') + '">' + sign + '</span>' +
-            '<span style="font-weight:700;color:#f59e0b">' + leiStr + '</span>' +
             '</div>' +
             (e.note ? '<div class="day-card-body"><span>' + S().esc(e.note) + '</span></div>' : '') +
             '</div>';
