@@ -1499,7 +1499,8 @@
       '<div class="field"><label>✅ 必须任务（分钟）</label><input type="number" id="hp-req" min="0" value="' + req0 + '" /></div>' +
       '<div class="field"><label>⭐ 理想任务（分钟）</label><input type="number" id="hp-ide" min="0" value="' + ide0 + '" /></div>' +
       '<div class="field"><label>🌱 拓展任务（分钟）</label><input type="number" id="hp-ext" min="0" value="' + ext0 + '" /></div>' +
-      '<p class="hint">三类合计建议约等于这一段时长（' + dflt + ' 分钟），可按需改。</p>',
+      '<div class="field"><label>🎁 这一段完成奖励积分（提前定好，达标就发）</label><input type="number" id="hp-pts" min="0" value="10" /></div>' +
+      '<p class="hint">三类合计建议约等于这一段时长（' + dflt + ' 分钟）；达标后这段的奖励积分自动入账。</p>',
       '<button class="btn btn-primary" data-act="ok">🎯 开始</button><button class="btn" data-act="cancel">取消</button>');
     const dEl = modal.querySelector('#hp-dur');
     if (dEl) dEl.onchange = function () {
@@ -1515,9 +1516,10 @@
         const ext = Math.max(0, +modal.querySelector('#hp-ext').value || 0);
         const dur = Math.max(1, +modal.querySelector('#hp-dur').value || dflt);
         if (!req && !ide && !ext) { App.ui.toast('至少给一类定个目标分钟'); return; }
+        const pts = Math.max(0, +modal.querySelector('#hp-pts').value || 0);
         const tv = modal.querySelector('#hp-start').value || hhmm;
         const sd = new Date(); sd.setHours(+tv.split(':')[0] || 0, +tv.split(':')[1] || 0, 0, 0);
-        day.activeHourPlan = { id: S().uid(), startAt: sd.toISOString(), duration: dur, targets: { required: req, ideal: ide, extra: ext } };
+        day.activeHourPlan = { id: S().uid(), startAt: sd.toISOString(), duration: dur, reward: pts, targets: { required: req, ideal: ide, extra: ext } };
         S().save();
         App.ui.closeModal();
         App.tasks.renderToday();
@@ -1542,39 +1544,17 @@
     day.activeHourPlan = null;
     S().save();
     App.tasks.renderToday();
-    if (met) { hourRewardModal(plan, sum); }
-    else { App.ui.toast('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'); }
-  }
-  // 达标奖励弹窗：积分自填入账
-  function hourRewardModal(plan, sum) {
-    const dayKey = S().todayKey();
-    const modal = App.ui.openModal('🎉 这个小时代达标了！',
-      '<p style="font-size:14px">总目标 <b>' + sum.tTotal + '</b> 分钟，你做了 <b style="color:#22a06b">' + sum.aTotal + '</b> 分钟，达成了！</p>' +
-      '<p style="font-size:12.5px;color:#8a919c;margin:4px 0 8px">给自己一点奖励：加多少积分你自己填（也可以 0）。</p>' +
-      '<div class="field"><label>奖励积分（自填）</label><input type="number" id="hp-pts" min="0" value="0" /></div>',
-      '<button class="btn btn-primary" data-act="ok">🎁 确认领取</button><button class="btn" data-act="skip">跳过（不领）</button>');
-    function patchReward(pts) {
-      const day = S().getDay(dayKey);
-      const last = (day.hourPlans || []).slice(-1)[0];
-      if (last) last.rewardPoints = pts;
+    if (met) {
+      // 达标直接发「提前填好的」奖励积分，不再补填
+      const rw = plan.reward || 0;
+      plan.rewardPoints = rw;
+      if (rw > 0) { App.store.addLedger(S().todayKey(), 'hour-reward', { points: rw, note: '小时计划达标奖励：积分+' + rw + '分' }); }
       S().save();
+      if (App.app && App.app.refreshStats) App.app.refreshStats();
+      App.tasks.renderToday();
+      App.ui.toast(rw > 0 ? ('🎉 这段达标！已入账 +' + rw + ' 分，辛苦啦！') : '🎉 这段达标了！');
     }
-    App.ui.bindActions({
-      ok: function () {
-        const pv = Math.max(0, +modal.querySelector('#hp-pts').value || 0);
-        if (pv > 0) App.store.addLedger(dayKey, 'hour-reward', { points: pv, note: '小时计划达标奖励：积分+' + pv + '分' });
-        patchReward(pv);
-        App.ui.closeModal();
-        App.tasks.renderToday();
-        if (App.app && App.app.refreshStats) App.app.refreshStats();
-        App.ui.toast(pv > 0 ? ('🎁 已入账 +' + pv + ' 分，辛苦啦！') : '干得漂亮，这小时没白过！');
-      },
-      skip: function () {
-        patchReward(0);
-        App.ui.closeModal();
-        App.ui.toast('达标就是胜利，这小时很棒！');
-      }
-    });
+    else { App.ui.toast('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'); }
   }
   // 渲染小时计划卡片（今天页顶部 #hour-card）
   function renderHourPlan(dayKey) {
