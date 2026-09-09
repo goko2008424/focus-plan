@@ -1482,27 +1482,46 @@
       aTotal: ar + ai + ae
     };
   }
-  // 开始一个小时代：弹窗定三类目标
+  // 开始一个小时代：标起点 + 定这一段多长 + 在时长内分配三类
   function startHourPlanModal() {
     const day = S().getDay(S().todayKey());
     if (day.activeHourPlan) { App.ui.toast('已有一个小时计划在进行中，先「⏹ 结束」结算'); return; }
+    const dflt = S().settings().hourPlanDefaultMin || 30;
+    const now = new Date();
+    const hhmm = S().pad2(now.getHours()) + ':' + S().pad2(now.getMinutes());
+    const req0 = Math.round(dflt * 0.5), ide0 = Math.round(dflt * 0.3), ext0 = Math.max(1, dflt - req0 - ide0);
     const modal = App.ui.openModal('⏱ 开始这个小时代',
-      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">给这一段定个学习指标：三类任务各打算做多久（分钟）。执行时用任务计时器正常计时，实际用时会自动记进来。</p>' +
-      '<div class="field"><label>✅ 必须任务（分钟）</label><input type="number" id="hp-req" min="0" value="30" /></div>' +
-      '<div class="field"><label>⭐ 理想任务（分钟）</label><input type="number" id="hp-ide" min="0" value="10" /></div>' +
-      '<div class="field"><label>🌱 拓展任务（分钟）</label><input type="number" id="hp-ext" min="0" value="5" /></div>',
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">先标注这一段从几点开始、一共多长，再分配 必须/理想/拓展 各学多久。执行时用任务计时器正常计时，实际用时自动统计。</p>' +
+      '<div class="field-row">' +
+      '<div class="field"><label>开始时间（几点）</label><input type="time" id="hp-start" value="' + hhmm + '" /></div>' +
+      '<div class="field"><label>这一段多长（分钟）</label><input type="number" id="hp-dur" min="1" value="' + dflt + '" /></div>' +
+      '</div>' +
+      '<div class="field"><label>✅ 必须任务（分钟）</label><input type="number" id="hp-req" min="0" value="' + req0 + '" /></div>' +
+      '<div class="field"><label>⭐ 理想任务（分钟）</label><input type="number" id="hp-ide" min="0" value="' + ide0 + '" /></div>' +
+      '<div class="field"><label>🌱 拓展任务（分钟）</label><input type="number" id="hp-ext" min="0" value="' + ext0 + '" /></div>' +
+      '<p class="hint">三类合计建议约等于这一段时长（' + dflt + ' 分钟），可按需改。</p>',
       '<button class="btn btn-primary" data-act="ok">🎯 开始</button><button class="btn" data-act="cancel">取消</button>');
+    const dEl = modal.querySelector('#hp-dur');
+    if (dEl) dEl.onchange = function () {
+      const d = Math.max(1, +dEl.value || dflt);
+      modal.querySelector('#hp-req').value = Math.round(d * 0.5);
+      modal.querySelector('#hp-ide').value = Math.round(d * 0.3);
+      modal.querySelector('#hp-ext').value = Math.max(1, d - Math.round(d * 0.5) - Math.round(d * 0.3));
+    };
     App.ui.bindActions({
       ok: function () {
         const req = Math.max(0, +modal.querySelector('#hp-req').value || 0);
         const ide = Math.max(0, +modal.querySelector('#hp-ide').value || 0);
         const ext = Math.max(0, +modal.querySelector('#hp-ext').value || 0);
+        const dur = Math.max(1, +modal.querySelector('#hp-dur').value || dflt);
         if (!req && !ide && !ext) { App.ui.toast('至少给一类定个目标分钟'); return; }
-        day.activeHourPlan = { id: S().uid(), startAt: new Date().toISOString(), targets: { required: req, ideal: ide, extra: ext } };
+        const tv = modal.querySelector('#hp-start').value || hhmm;
+        const sd = new Date(); sd.setHours(+tv.split(':')[0] || 0, +tv.split(':')[1] || 0, 0, 0);
+        day.activeHourPlan = { id: S().uid(), startAt: sd.toISOString(), duration: dur, targets: { required: req, ideal: ide, extra: ext } };
         S().save();
         App.ui.closeModal();
         App.tasks.renderToday();
-        App.ui.toast('🎯 这个小时代已开始：总目标 ' + (req + ide + ext) + ' 分钟，去执行吧！');
+        App.ui.toast('🎯 已开始：从 ' + tv + ' 起 · ' + dur + ' 分钟（必' + req + '/理' + ide + '/拓' + ext + '），去执行！');
       },
       cancel: App.ui.closeModal
     });
@@ -1517,7 +1536,7 @@
     plan.endAt = new Date().toISOString();
     plan.actual = sum.actual;
     plan.met = met;
-    plan.duration = sum.aTotal;
+    plan.usedMin = sum.aTotal;
     day.hourPlans = day.hourPlans || [];
     day.hourPlans.push(plan);
     day.activeHourPlan = null;
@@ -1582,9 +1601,13 @@
         '<span class="hp-bar"><i style="width:' + pp + '%"></i></span>' +
         '<span class="hp-num">' + ac + '/' + tg + '分</span></div>';
     }).join('');
+    var startMinTxt = '--';
+    if (plan.startAt) { var d0 = new Date(plan.startAt); startMinTxt = S().hhmmOf(d0.getHours() * 60 + d0.getMinutes()); }
+    var durTxt = plan.duration ? plan.duration + ' 分' : (sum.tTotal + ' 分（目标）');
     box.innerHTML = '<div class="hour-card active">' +
       '<h3 style="margin:0">⏱ 当前小时计划</h3>' +
-      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 6px">总目标 <b>' + sum.tTotal + '</b> 分 · 已执行 <b style="color:' + (met ? '#22a06b' : '#3b82f6') + '">' + sum.aTotal + '</b> 分 · ' + (met ? '🎉 已达标！' : '达成率 ' + pct + '%') + '</div>' +
+      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">从 <b>' + startMinTxt + '</b> 开始 · 这一段 <b>' + durTxt + '</b> · 目标合计 <b>' + sum.tTotal + '</b> 分</div>' +
+      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 6px">已执行 <b style="color:' + (met ? '#22a06b' : '#3b82f6') + '">' + sum.aTotal + '</b> 分 · ' + (met ? '🎉 已达标！' : '达成率 ' + pct + '%') + '</div>' +
       rows +
       '<div class="hp-actions"><button class="btn btn-small btn-primary" id="hp-end">⏹ 结束这小时代（结算）</button></div></div>';
     const e = box.querySelector('#hp-end');

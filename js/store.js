@@ -80,6 +80,7 @@
       srEnableTime: true,     // 强化休息系统：定时自动提醒开关（用户可关）
       srCooldownMin: 5,       // 强化休息系统：两次自动提醒的最小间隔（避免冲突连推）
       splitEnabled: true,     // 🧭 逐题拆解工具开关（语音/文字引导式做题，复用小题倒计时与三档积分）
+      hourPlanDefaultMin: 30, // ⏱ 小时计划：每段的默认时长（分钟），开始时可临时改
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },
