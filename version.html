@@ -92,8 +92,7 @@ const SLIDES = [
           '<div class="tl" data-i="5"><div class="n">v5</div><div class="t">强化休息</div></div>'+
           '<div class="tl" data-i="6"><div class="n">v6</div><div class="t">精简自选</div></div>'+
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">主线/辅助+粘贴</div></div>'+
-          '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">辅助/小时计划</div></div>'+
-          '<div class="tl" data-i="9"><div class="n">今天</div><div class="t">小时计划完善</div></div>'+
+          '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">小时计划 7 项完善</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -218,8 +217,8 @@ const SLIDES = [
       '<div class="col" style="--cc:#a855f7"><h4>🗑 回收站（误删恢复）</h4><ul><li>删任务 / 小题 / 任务组都先进回收站</li><li>误删了点「♻ 恢复」放回原处，不怕手滑</li></ul></div></div>'
   },
   {
-    name:"v8 · 辅助/多修 + 小时计划", badge:{t:"v8 · 辅助/多修 + 小时计划",c:"#0ea5e9"},
-    tag:"时间轴更贴第三段，小时计划上线",
+    name:"v8 · 辅助/多修 + 小时计划 7 项", badge:{t:"v8 · 辅助/多修 + 小时计划(7项)",c:"#0ea5e9"},
+    tag:"时间轴更贴第三段，小时计划 7 项改造上线",
     cols:[
       {t:"🕑 时间轴「辅助」", c:"#0ea5e9", items:[
         "活动分类把「休闲」改为「辅助」（复盘 / 整理 / 写计划等）",
@@ -234,35 +233,10 @@ const SLIDES = [
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#f59e0b"><h4>📋 粘贴变回「一天开始」</h4><ul><li>从往日粘贴的任务 / 小题 / 组恢复为未完成</li><li>不再带旧日的完成记录 / 拆解过程</li></ul></div>'+
       '<div class="col" style="--cc:#a855f7"><h4>🌱 长期推进类型</h4><ul><li>任务「推进类型」新增「长期推进」</li><li>长期自我提升的任务计入「扩展」时间</li></ul></div>'+
-      '<div class="col" style="--cc:#22a06b"><h4>⏱ 小时计划（上线）</h4><ul><li>今天页顶部小时计划卡片，给 必须/理想/拓展 各定目标分钟</li><li>对应 Goko 的感悟：没给每小时定「学多久」指标，就容易休息太久、中途跑去做别的</li></ul></div></div>'
-  },
-  {
-    name:"今天 · 小时计划完善", badge:{t:"今天 · 小时计划 7 项改造",c:"#22a06b"},
-    tag:"一段定死：到点结算 · 自查扣 · 休息衔接 · 秒级 · 复盘",
-    cols:[
-      {t:"⏱ 计时权威（到点封顶）", c:"#3b82f6", items:[
-        "标「从几点」起 + 这一段多长（默认可在设置改）",
-        "到点自动结算；只把 [开始→到点] 窗口内的实际学习计入",
-        "超时补做不算，未达标 = 0 积分",
-        "卡片每秒倒计时"]},
-      {t:"🎁 奖励提前填 + 自查扣", c:"#f59e0b", items:[
-        "开始就提前定好这一段完成给多少积分，达标自动入账",
-        "达标先自查：中途有没有看手机/刷屏（消耗性的事）",
-        "有 → 按设置% 扣这段奖励（默认100%＝扣光，可调）"]},
-      {t:"☕ 休息系统 + 衔接", c:"#22a06b", items:[
-        "段结束强制弹「继续做 / 去休息」，不给你闲着的空档",
-        "休息可定 类型（纯休息/吃饭/睡觉）+ 时长",
-        "提前填「好好休息」积分 → 自动入账（type rest-reward）",
-        "可提前结束、到点自动结束 → 强制立刻开下一段"]},
-      {t:"⏱ 秒级 + 复盘 + 导出", c:"#a855f7", items:[
-        "小任务计时记到秒（actualSeconds）、可累加不丢时间",
-        "开始段可关联任务；历史页每条可点开写感想（复盘）",
-        "📤 导出复盘给AI：纯文本提取 小时代/休息/感想 整天整年",
-        "📌 预定明天的段 → 第二天一键用预定段开跑"]}
-    ],
-    note:'<div class="cols" style="margin-top:10px">'+
-      '<div class="col" style="--cc:#f59e0b"><h4>📊 实时进度</h4><ul><li>卡片显示从几点开始、这一段多长、三类实际/目标</li><li>已结算记录存在当天 hourPlans</li></ul></div>'+
-      '<div class="col" style="--cc:#22a06b"><h4>🛌 好好休息也入账</h4><ul><li>认真休息有分拿，类型 纯休息/吃饭/睡觉 三选</li><li>迟到权威由「到点封顶」自动覆盖：晚开始不罚，但到点没达标＝0分</li></ul></div></div>'
+      '<div class="col" style="--cc:#22a06b"><h4>⏱ 小时计划 · 计时权威</h4><ul><li>标「从几点」起 + 这一段多长，到点自动结算；只把 [开始→到点] 窗口内的实际学习计入</li><li>超时补做不算，未达标＝0积分；卡片每秒倒计时；开始就提前填好这一段奖励积分，达标自动入账</li></ul></div>'+
+      '<div class="col" style="--cc:#f59e0b"><h4>🧐 中途消耗自查</h4><ul><li>达标先自查：中途有没有看手机/刷屏（消耗性的事）</li><li>有 → 按设置% 扣这段奖励（默认100％＝扣光，可调）</li></ul></div>'+
+      '<div class="col" style="--cc:#e2545d"><h4>☕ 休息系统 + 衔接</h4><ul><li>段结束强制弹「继续做 / 去休息」；休息可定 类型（纯休息/吃饭/睡觉）+ 时长</li><li>提前填「好好休息」积分自动入账（type rest-reward）；可提前结束、到点自动结束，结束强制开下一段</li></ul></div>'+
+      '<div class="col" style="--cc:#a855f7"><h4>⏱ 秒级 + 复盘 + 导出</h4><ul><li>小任务计时记到秒（actualSeconds）可累加不丢时间；开始段可关联任务，历史页每段可写感想</li><li>📤 导出复盘给AI（txt/复制）· 📌 预定明天的段 → 第二天一键开跑</li></ul></div></div>'
   },
   {
     name:"收尾", cls:"cover",
