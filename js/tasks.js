@@ -339,6 +339,7 @@
     const stDate = new Date(timer.startedAt);
     const dayKey = S().dateKey(stDate);
     const day = S().getDay(dayKey);
+    const actSec = Math.round((Date.now() - timer.startedAt - (timer.pausedMs || 0)) / 1000);
     const session = {
       id: S().uid(),
       taskId: timer.taskId,
@@ -346,6 +347,7 @@
       planContent: timer.planContent,
       planMinutes: timer.planMinutes,
       actualMinutes: actualMin,
+      actualSeconds: actSec,
       startAt: stDate.toISOString(),
       endAt: new Date().toISOString(),
       pausedMs: timer.pausedMs || 0,
@@ -849,7 +851,9 @@
     day.sessions.push({
       id: S().uid(), taskId: cd.taskId, taskText: cd.taskText,
       planContent: cd.text, planMinutes: cd.minutes,
-      actualMinutes: mins, sub: true, done: doneFlag, note: summary || '',
+      actualMinutes: mins,
+      actualSeconds: Math.round((Date.now() - cd.startedAt - (cd.pausedMs || 0)) / 1000),
+      sub: true, done: doneFlag, note: summary || '',
       startAt: stDate.toISOString(), endAt: endDate.toISOString(), pausedMs: cd.pausedMs || 0
     });
     cdTimer = null;
@@ -1456,25 +1460,26 @@
     return null;
   }
   // 统计当前小时计划某类（或全部）已完成的实际分钟
-  function hourPlanActual(plan, colKey) {
+  // 统计某类(或全部)实际分钟；upper 缺省=现在。到点结算时传"到点时刻"，超时补做不再计入
+  function hourPlanActual(plan, colKey, upper) {
     if (!plan || !plan.startAt) return 0;
     const day = S().getDay(S().todayKey());
     const start = new Date(plan.startAt).getTime();
-    const now = Date.now();
+    const up = upper ? upper.getTime() : Date.now();
     let ms = 0;
     (day.sessions || []).forEach(function (s) {
       if (!s.startAt) return;
       const t = new Date(s.startAt).getTime();
-      if (t < start || t > now) return; // 只计这个窗口内开始的任务
+      if (t < start || t > up) return; // 只计 [start, upper] 窗口内开始的任务
       if (colKey && hourPlanBucket(s.taskId) !== colKey) return;
-      ms += (s.actualMinutes || 0);
+      ms += (s.actualSeconds != null ? s.actualSeconds / 60 : (s.actualMinutes || 0)); // 秒级精确累加，不丢时间
     });
     return ms;
   }
-  function hourPlanSummary(plan) {
+  function hourPlanSummary(plan, upper) {
     const tg = (plan && plan.targets) || {};
     const req = tg.required || 0, ide = tg.ideal || 0, ext = tg.extra || 0;
-    const ar = hourPlanActual(plan, 'required'), ai = hourPlanActual(plan, 'ideal'), ae = hourPlanActual(plan, 'extra');
+    const ar = hourPlanActual(plan, 'required', upper), ai = hourPlanActual(plan, 'ideal', upper), ae = hourPlanActual(plan, 'extra', upper);
     return {
       targets: { required: req, ideal: ide, extra: ext },
       actual: { required: ar, ideal: ai, extra: ae },
@@ -1486,10 +1491,17 @@
   function startHourPlanModal() {
     const day = S().getDay(S().todayKey());
     if (day.activeHourPlan) { App.ui.toast('已有一个小时计划在进行中，先「⏹ 结束」结算'); return; }
+    if (day.activeRest) { App.ui.toast('正在休息中，先结束休息再开新的一段'); return; }
     const dflt = S().settings().hourPlanDefaultMin || 30;
     const now = new Date();
     const hhmm = S().pad2(now.getHours()) + ':' + S().pad2(now.getMinutes());
     const req0 = Math.round(dflt * 0.5), ide0 = Math.round(dflt * 0.3), ext0 = Math.max(1, dflt - req0 - ide0);
+    let taskOpts = '<option value="">（不关联具体任务）</option>';
+    ['required', 'ideal', 'extra'].forEach(function (lk) {
+      (day.tasks[lk] || []).forEach(function (t) {
+        taskOpts += '<option value="' + lk + ':' + t.id + '">[' + COL_NAMES[lk] + '] ' + S().esc(t.text) + '</option>';
+      });
+    });
     const modal = App.ui.openModal('⏱ 开始这个小时代',
       '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">先标注这一段从几点开始、一共多长，再分配 必须/理想/拓展 各学多久。执行时用任务计时器正常计时，实际用时自动统计。</p>' +
       '<div class="field-row">' +
@@ -1500,6 +1512,7 @@
       '<div class="field"><label>⭐ 理想任务（分钟）</label><input type="number" id="hp-ide" min="0" value="' + ide0 + '" /></div>' +
       '<div class="field"><label>🌱 拓展任务（分钟）</label><input type="number" id="hp-ext" min="0" value="' + ext0 + '" /></div>' +
       '<div class="field"><label>🎁 这一段完成奖励积分（提前定好，达标就发）</label><input type="number" id="hp-pts" min="0" value="10" /></div>' +
+      '<div class="field"><label>🔗 关联任务（本段主要做哪一项，可选）</label><select id="hp-task">' + taskOpts + '</select></div>' +
       '<p class="hint">三类合计建议约等于这一段时长（' + dflt + ' 分钟）；达标后这段的奖励积分自动入账。</p>',
       '<button class="btn btn-primary" data-act="ok">🎯 开始</button><button class="btn" data-act="cancel">取消</button>');
     const dEl = modal.querySelector('#hp-dur');
@@ -1519,7 +1532,15 @@
         const pts = Math.max(0, +modal.querySelector('#hp-pts').value || 0);
         const tv = modal.querySelector('#hp-start').value || hhmm;
         const sd = new Date(); sd.setHours(+tv.split(':')[0] || 0, +tv.split(':')[1] || 0, 0, 0);
-        day.activeHourPlan = { id: S().uid(), startAt: sd.toISOString(), duration: dur, reward: pts, targets: { required: req, ideal: ide, extra: ext } };
+        const tvsel = modal.querySelector('#hp-task').value || '';
+        let tKey = '', tId = '', tText = '';
+        if (tvsel) {
+          const idx = tvsel.indexOf(':');
+          tKey = tvsel.slice(0, idx); tId = tvsel.slice(idx + 1);
+          const ts = (day.tasks[tKey] || []).find(function (t) { return t.id === tId; });
+          tText = ts ? ts.text : '';
+        }
+        day.activeHourPlan = { id: S().uid(), startAt: sd.toISOString(), duration: dur, reward: pts, taskKey: tKey, taskId: tId, taskText: tText, targets: { required: req, ideal: ide, extra: ext } };
         S().save();
         App.ui.closeModal();
         App.tasks.renderToday();
@@ -1528,14 +1549,18 @@
       cancel: App.ui.closeModal
     });
   }
-  // 结束结算：判定达标 → 达标弹奖励（积分自填）
+  // 结束结算：到点即封顶（窗口=[startAt, startAt+时长]），到点后补做不算；达标→自动发提前定的积分
   function endHourPlan() {
     const day = S().getDay(S().todayKey());
     const plan = day.activeHourPlan;
     if (!plan) { App.ui.toast('当前没有进行中的小时计划'); return; }
-    const sum = hourPlanSummary(plan);
+    const startMs = new Date(plan.startAt).getTime();
+    const planEndMs = plan.duration ? startMs + plan.duration * 60000 : startMs + 30 * 60000;
+    const endAtMs = Math.min(Date.now(), planEndMs); // 到点即封顶，超时补做不计
+    const sum = hourPlanSummary(plan, new Date(endAtMs));
     const met = sum.tTotal > 0 && sum.aTotal >= sum.tTotal;
-    plan.endAt = new Date().toISOString();
+    plan.endAt = new Date(endAtMs).toISOString();
+    plan.autoEnd = Date.now() >= planEndMs; // 是否到点自动结算
     plan.actual = sum.actual;
     plan.met = met;
     plan.usedMin = sum.aTotal;
@@ -1545,30 +1570,240 @@
     S().save();
     App.tasks.renderToday();
     if (met) {
-      // 达标直接发「提前填好的」奖励积分，不再补填
-      const rw = plan.reward || 0;
-      plan.rewardPoints = rw;
-      if (rw > 0) { App.store.addLedger(S().todayKey(), 'hour-reward', { points: rw, note: '小时计划达标奖励：积分+' + rw + '分' }); }
+      // 达标先自查中途消耗，选完才真正入账
+      hourDistractCheck(plan);
+    }
+    else {
+      App.ui.toast(plan.autoEnd
+        ? ('⏰ 到点了，这段没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分，到点即封顶、超时补做不算）——积分清零，下段再冲 💪')
+        : ('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'));
+    }
+    // 无论达不达标，都立刻问「接下来干什么」，别闲下来
+    nextStepPrompt();
+  }
+  // 达标后的「中途消耗自查」：有消耗 → 按设置百分比扣掉这段奖励积分
+  function hourDistractCheck(plan) {
+    const dayKey = S().todayKey();
+    const rw = plan.reward || 0;
+    const cutPct = (S().settings().hourDistractCut == null ? 100 : S().settings().hourDistractCut);
+    const modal = App.ui.openModal('🎁 这段达标！先自查一下',
+      '<p style="font-size:13px">这段奖励积分预设 <b>' + rw + '</b> 分。<br>这一段中途有没有去干<b>消耗性的事</b>（看手机 / 刷动态 / 摸鱼）？</p>' +
+      '<p style="font-size:12px;color:#8a919c;margin-top:6px">选「有」会按自查扣分比例（' + cutPct + '%）扣掉这段奖励。</p>',
+      '<button class="btn btn-primary" data-act="ok">✅ 没有，全额给我</button>' +
+      '<button class="btn" style="background:#e2545d;border-color:#e2545d;color:#fff" data-act="cut">⚠️ 有，扣' + cutPct + '%</button>');
+    function settle(distracted) {
+      const gain = distracted ? Math.round(rw * (100 - cutPct) / 100) : rw;
+      plan.rewardPoints = gain;
+      plan.distracted = !!distracted;
+      if (gain > 0) {
+        App.store.addLedger(dayKey, 'hour-reward', { points: gain, note: '小时计划达标奖励：积分+' + gain + '分' + (distracted ? '（中途有消耗，扣' + cutPct + '%）' : '') });
+      }
       S().save();
       if (App.app && App.app.refreshStats) App.app.refreshStats();
       App.tasks.renderToday();
-      App.ui.toast(rw > 0 ? ('🎉 这段达标！已入账 +' + rw + ' 分，辛苦啦！') : '🎉 这段达标了！');
+      App.ui.closeModal();
+      if (distracted) {
+        App.ui.toast(gain > 0
+          ? ('⚠️ 这段有消耗，扣了 ' + cutPct + '%，实得 +' + gain + ' 分；下次管住自己 💪')
+          : ('⚠️ 这段有消耗，积分被扣光（' + cutPct + '%），下次别再摸鱼啦'));
+      }
+      else {
+        App.ui.toast(rw > 0 ? ('🎉 全程专注，这段 +' + rw + ' 分已入账！') : '🎉 全程专注，这段达到目标了！');
+      }
+      nextStepPrompt(); // 这段结束，强制衔接下一步
     }
-    else { App.ui.toast('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'); }
+    App.ui.bindActions({ ok: function () { settle(false); }, cut: function () { settle(true); } });
+  }
+  // 一段结束后的衔接选择窗：强制别闲下来 → 继续做任务 或 去休息
+  function nextStepPrompt() {
+    App.ui.openModal('✅ 这一段结束了，接下来？',
+      '<p style="font-size:13px">别让空档落下去——马上定下一段，或主动去休息（好好休息也有积分）。</p>',
+      '<button class="btn btn-primary" data-act="work">📚 继续做任务</button><button class="btn" data-act="rest">☕ 去休息</button>');
+    App.ui.bindActions({
+      work: function () { App.ui.closeModal(); startHourPlanModal(); },
+      rest: function () { App.ui.closeModal(); startRestModal(); }
+    });
+  }
+  // 定一段休息：类型 + 时长 + 提前填「好好休息」积分
+  function startRestModal() {
+    const day = S().getDay(S().todayKey());
+    if (day.activeRest) { App.ui.toast('已经在休息中，先结束休息'); return; }
+    const dflt = (S().settings().hourPlanDefaultMin || 30);
+    const now = new Date();
+    const hhmm = S().pad2(now.getHours()) + ':' + S().pad2(now.getMinutes());
+    const modal = App.ui.openModal('☕ 定一段休息',
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">选类型、定多久、以及「好好休息」给多少积分（提前定好）。休息到点自动结束，也能提前结束提前开下一段。</p>' +
+      '<div class="field"><label>休息类型</label><select id="rs-type">' +
+      '<option value="rest">☕ 单纯休息</option><option value="meal">🍚 吃饭</option><option value="sleep">😴 睡觉</option></select></div>' +
+      '<div class="field"><label>休息多久（分钟，从 ' + hhmm + ' 起）</label><input type="number" id="rs-dur" min="1" value="' + dflt + '" /></div>' +
+      '<div class="field"><label>🎁 好好休息可得积分（提前定）</label><input type="number" id="rs-pts" min="0" value="10" /></div>',
+      '<button class="btn btn-primary" data-act="ok">☕ 开始休息</button><button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const type = modal.querySelector('#rs-type').value || 'rest';
+        const dur = Math.max(1, +modal.querySelector('#rs-dur').value || dflt);
+        const pts = Math.max(0, +modal.querySelector('#rs-pts').value || 0);
+        const tn = type === 'meal' ? '🍚 吃饭' : (type === 'sleep' ? '😴 睡觉' : '☕ 休息');
+        day.activeRest = { id: S().uid(), startAt: new Date().toISOString(), duration: dur, type: type, typeName: tn, reward: pts };
+        S().save(); App.ui.closeModal(); App.tasks.renderToday();
+        App.ui.toast('☕ ' + tn + ' 开始：' + dur + ' 分钟，好好休息 +' + pts + ' 分');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+  // 结束休息：先自查消耗（同上扣%）→ 入账休息积分 → 强制开始下一段
+  function endRest() {
+    const day = S().getDay(S().todayKey());
+    const r = day.activeRest;
+    if (!r) { App.ui.toast('当前不在休息'); return; }
+    const startMs = new Date(r.startAt).getTime();
+    const rEndMs = startMs + (r.duration || 30) * 60000;
+    r.endAt = new Date(Math.min(Date.now(), rEndMs)).toISOString();
+    r.autoEnd = Date.now() >= rEndMs;
+    const rw = r.reward || 0;
+    const cutPct = (S().settings().hourDistractCut == null ? 100 : S().settings().hourDistractCut);
+    const modal = App.ui.openModal('✅ 休息结束，先自查',
+      '<p style="font-size:13px">这段' + r.typeName + '预设奖励 <b>' + rw + '</b> 分。<br>休息期间有没有去干消耗性的事（刷手机等）？</p>',
+      '<button class="btn btn-primary" data-act="ok">✅ 没有，全额给我</button><button class="btn" style="background:#e2545d;border-color:#e2545d;color:#fff" data-act="cut">⚠️ 有，扣' + cutPct + '%</button>');
+    function settle(distracted) {
+      const gain = distracted ? Math.round(rw * (100 - cutPct) / 100) : rw;
+      r.rewardPoints = gain; r.distracted = !!distracted;
+      if (gain > 0) {
+        App.store.addLedger(S().todayKey(), 'rest-reward', { points: gain, note: r.typeName + '好好休息奖励：积分+' + gain + '分' + (distracted ? '（休息中消耗，扣' + cutPct + '%）' : '') });
+      }
+      day.rests = day.rests || []; day.rests.push(r); day.activeRest = null;
+      S().save();
+      if (App.app && App.app.refreshStats) App.app.refreshStats();
+      App.tasks.renderToday();
+      App.ui.closeModal();
+      App.ui.toast(distracted
+        ? ('休息有消耗，扣了 ' + cutPct + '%；起来动一动，接着冲 💪')
+        : (rw > 0 ? ('🎉 好好休息 +' + gain + ' 分，休息到位！') : '休息到位，这杯水也喝得值 😌'));
+      startHourPlanModal(); // 休息完强制立刻开下一段，不留空档
+    }
+    App.ui.bindActions({ ok: function () { settle(false); }, cut: function () { settle(true); } });
+  }
+  // 常驻 tick：到点自动结算 + 实时刷新卡片倒计时
+  function hourPlanAutoTick() {
+    const day = S().getDay(S().todayKey());
+    // 休息中：到点自动结束并衔接下一段
+    const r = day.activeRest;
+    if (r && r.duration) {
+      const rEnd = new Date(r.startAt).getTime() + r.duration * 60000;
+      if (Date.now() >= rEnd) { endRest(); return; }
+      const cR = document.getElementById('hp-countdown');
+      if (cR) {
+        const left = Math.max(0, rEnd - Date.now());
+        cR.textContent = '⏳ 休息到点还有 ' + Math.floor(left / 60000) + ' 分 ' + S().pad2(Math.floor((left % 60000) / 1000)) + ' 秒';
+      }
+      return;
+    }
+    const p = day.activeHourPlan;
+    if (p && p.duration) {
+      const endMs = new Date(p.startAt).getTime() + p.duration * 60000;
+      if (Date.now() >= endMs) { endHourPlan(); return; }
+    }
+    const c = document.getElementById('hp-countdown');
+    if (!c) return;
+    const cur = day.activeHourPlan;
+    if (cur && cur.duration) {
+      const endMs = new Date(cur.startAt).getTime() + cur.duration * 60000;
+      const left = Math.max(0, endMs - Date.now());
+      c.textContent = '⏳ 到点还有 ' + Math.floor(left / 60000) + ' 分 ' + S().pad2(Math.floor((left % 60000) / 1000)) + ' 秒 · 到点未达标 → 这段积分清零（超时补做不算）';
+    }
+  }
+  // 📌 预定明天的某一段：提前定好几点到几点、三大类指标、奖励积分
+  function bookTomorrowModal() {
+    const today = S().getDay(S().todayKey());
+    if (today.activeHourPlan || today.activeRest) { App.ui.toast('先把当前这段/休息处理完再预定明天'); return; }
+    const tom = S().getDay(S().tomorrowKey());
+    const dflt = (S().settings().hourPlanDefaultMin || 30);
+    const req0 = Math.round(dflt * 0.5), ide0 = Math.round(dflt * 0.3), ext0 = Math.max(1, dflt - req0 - ide0);
+    const modal = App.ui.openModal('📌 预定明天的时段', '' +
+      '<p class="hint">提前给明天定一段（几点开始、多久、三类指标、奖励）。明天 1 键就能「用预定的第一段开始」，当场按此刻跑这一段的指标。</p>' +
+      '<div class="field-row">' +
+      '<div class="field"><label>明天几点开始</label><input type="time" id="bp-start" value="08:00" /></div>' +
+      '<div class="field"><label>这一段多长（分钟）</label><input type="number" id="bp-dur" min="1" value="' + dflt + '" /></div>' +
+      '</div>' +
+      '<div class="field"><label>✅ 必须（分钟）</label><input type="number" id="bp-req" min="0" value="' + req0 + '" /></div>' +
+      '<div class="field"><label>⭐ 理想（分钟）</label><input type="number" id="bp-ide" min="0" value="' + ide0 + '" /></div>' +
+      '<div class="field"><label>🌱 拓展（分钟）</label><input type="number" id="bp-ext" min="0" value="' + ext0 + '" /></div>' +
+      '<div class="field"><label>🎁 这段奖励积分（提前定）</label><input type="number" id="bp-pts" min="0" value="10" /></div>',
+      '<button class="btn btn-primary" data-act="ok">📌 预定</button><button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const req = Math.max(0, +modal.querySelector('#bp-req').value || 0);
+        const ide = Math.max(0, +modal.querySelector('#bp-ide').value || 0);
+        const ext = Math.max(0, +modal.querySelector('#bp-ext').value || 0);
+        if (!req && !ide && !ext) { App.ui.toast('至少给一类定分钟'); return; }
+        const dur = Math.max(1, +modal.querySelector('#bp-dur').value || dflt);
+        const pts = Math.max(0, +modal.querySelector('#bp-pts').value || 0);
+        const tv = modal.querySelector('#bp-start').value || '08:00';
+        tom.plannedHourPlans = tom.plannedHourPlans || [];
+        tom.plannedHourPlans.push({ start: tv, dur: dur, req: req, ide: ide, ext: ext, pts: pts });
+        S().save(); App.ui.closeModal(); App.tasks.renderToday(); App.tasks.renderTomorrow();
+        App.ui.toast('📌 明天 ' + tv + ' 已预定一段：' + dur + ' 分（必' + req + '/理' + ide + '/拓' + ext + '）· 奖励 +' + pts + ' 分');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+  // ▶ 用明天预定的第一段开始（现在就跑这一段的指标）
+  function startFromPlanned() {
+    const day = S().getDay(S().todayKey());
+    const tom = S().getDay(S().tomorrowKey());
+    const planned = tom.plannedHourPlans || [];
+    if (!planned.length) { App.ui.toast('明天没有预定任何段'); return; }
+    const p = planned.shift();
+    day.activeHourPlan = {
+      id: S().uid(), startAt: new Date().toISOString(),
+      duration: p.dur, reward: p.pts, fromPlanned: true,
+      targets: { required: p.req || 0, ideal: p.ide || 0, extra: p.ext || 0 }
+    };
+    tom.plannedHourPlans = planned;
+    S().save(); App.tasks.renderToday();
+    App.ui.toast('▶ 用明天预定的段开跑：' + p.dur + ' 分（必' + p.req + '/理' + p.ide + '/拓' + p.ext + '）· 奖励 +' + p.pts + ' 分');
   }
   // 渲染小时计划卡片（今天页顶部 #hour-card）
   function renderHourPlan(dayKey) {
     const box = document.getElementById('hour-card');
     if (!box) return;
     const day = S().getDay(dayKey);
+    const rest = day.activeRest || null;
+    if (rest) {
+      const rEnd = new Date(rest.startAt).getTime() + (rest.duration || 30) * 60000;
+      const rStartTxt = S().hhmmOf(new Date(rest.startAt).getHours() * 60 + new Date(rest.startAt).getMinutes());
+      const rEndTxt = S().hhmmOf(new Date(rEnd).getHours() * 60 + new Date(rEnd).getMinutes());
+      box.innerHTML = '<div class="hour-card active">' +
+        '<h3 style="margin:0">☕ 休息中</h3>' +
+        '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">' + rest.typeName + ' · 从 <b>' + rStartTxt + '</b> 到 <b>' + rEndTxt + '</b>（' + (rest.duration || 30) + ' 分钟）· 好好休息可得 <b>' + (rest.reward || 0) + '</b> 分</div>' +
+        '<div id="hp-countdown" style="font-size:12px;color:#8a919c;margin:2px 0 6px"></div>' +
+        '<div class="hp-actions"><button class="btn btn-small btn-primary" id="hp-endrest">⏭ 提前结束休息</button></div></div>';
+      const e2 = box.querySelector('#hp-endrest');
+      if (e2) e2.onclick = function () { endRest(); };
+      return;
+    }
     const plan = day.activeHourPlan || null;
     if (!plan) {
+      const tp = (S().getDay(S().tomorrowKey()).plannedHourPlans || []);
+      const plannedNote = tp.length
+        ? '<p style="margin:2px 0 0;font-size:12.5px;color:#22a06b">📌 明天已预定 ' + tp.length + ' 段 → 点「▶ 用预定的第一段开始」现在就跑</p>'
+        : '<p style="margin:2px 0 0;font-size:12.5px;color:#8a919c">给每一段定个学习指标，别让没有目标的时间悄悄溜走。</p>';
       box.innerHTML = '<div class="hour-card idle">' +
-        '<div style="flex:1"><h3 style="margin:0">⏱ 小时计划</h3>' +
-        '<p style="margin:2px 0 0;font-size:12.5px;color:#8a919c">给每一段定个学习指标，别让没有目标的时间悄悄溜走。</p></div>' +
-        '<button class="btn btn-primary btn-small" id="hp-start">🎯 开始这小时代</button></div>';
+        '<div style="flex:1"><h3 style="margin:0">⏱ 小时计划</h3>' + plannedNote + '</div>' +
+        '<div>' +
+        '<button class="btn btn-primary btn-small" id="hp-start">🎯 开始这小时代</button>' +
+        (tp.length ? '<button class="btn btn-small btn-primary" id="hp-planned" style="margin-left:6px">▶ 用预定的第一段开始</button>' : '') +
+        '<button class="btn btn-small" id="hp-book" style="margin-left:6px">📌 预定明天的段</button>' +
+        '<button class="btn btn-small" id="hp-export" style="margin-left:6px">📤 导出复盘给AI</button>' +
+        '</div></div>';
       const b = box.querySelector('#hp-start');
       if (b) b.onclick = startHourPlanModal;
+      const bb = box.querySelector('#hp-book');
+      if (bb) bb.onclick = bookTomorrowModal;
+      const bp = box.querySelector('#hp-planned');
+      if (bp) bp.onclick = startFromPlanned;
+      const eb = box.querySelector('#hp-export');
+      if (eb) eb.onclick = function () { App.stats.exportReview(); };
       return;
     }
     const sum = hourPlanSummary(plan);
@@ -1584,9 +1819,16 @@
     var startMinTxt = '--';
     if (plan.startAt) { var d0 = new Date(plan.startAt); startMinTxt = S().hhmmOf(d0.getHours() * 60 + d0.getMinutes()); }
     var durTxt = plan.duration ? plan.duration + ' 分' : (sum.tTotal + ' 分（目标）');
+    var endMinTxt = '--';
+    if (plan.startAt && plan.duration) {
+      var d1 = new Date(new Date(plan.startAt).getTime() + plan.duration * 60000);
+      endMinTxt = S().hhmmOf(d1.getHours() * 60 + d1.getMinutes());
+    }
     box.innerHTML = '<div class="hour-card active">' +
       '<h3 style="margin:0">⏱ 当前小时计划</h3>' +
-      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">从 <b>' + startMinTxt + '</b> 开始 · 这一段 <b>' + durTxt + '</b> · 目标合计 <b>' + sum.tTotal + '</b> 分</div>' +
+      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">从 <b>' + startMinTxt + '</b> 开始 · 到 <b>' + endMinTxt + '</b> 到点（' + durTxt + '）· 目标合计 <b>' + sum.tTotal + '</b> 分</div>' +
+      (plan.taskText ? '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">🔗 关联：' + S().esc(plan.taskText) + '</div>' : '') +
+      '<div id="hp-countdown" style="font-size:12px;color:#8a919c;margin:2px 0 4px"></div>' +
       '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 6px">已执行 <b style="color:' + (met ? '#22a06b' : '#3b82f6') + '">' + sum.aTotal + '</b> 分 · ' + (met ? '🎉 已达标！' : '达成率 ' + pct + '%') + '</div>' +
       rows +
       '<div class="hp-actions"><button class="btn btn-small btn-primary" id="hp-end">⏹ 结束这小时代（结算）</button></div></div>';
@@ -2025,6 +2267,8 @@
       b.onclick = function () { switchTab(b.dataset.tab); };
     });
     document.getElementById('btn-end-day').onclick = endDay;
+    // ⏱ 小时计划常驻 tick：到点自动结算 + 实时刷新倒计时
+    setInterval(function () { hourPlanAutoTick(); }, 1000);
   }
 
   App.tasks = {

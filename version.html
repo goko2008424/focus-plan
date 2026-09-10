@@ -92,8 +92,8 @@ const SLIDES = [
           '<div class="tl" data-i="5"><div class="n">v5</div><div class="t">强化休息</div></div>'+
           '<div class="tl" data-i="6"><div class="n">v6</div><div class="t">精简自选</div></div>'+
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">主线/辅助+粘贴</div></div>'+
-          '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">辅助分类+多修</div></div>'+
-          '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">小时计划</div></div>'+
+          '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">辅助/小时计划</div></div>'+
+          '<div class="tl" data-i="9"><div class="n">今天</div><div class="t">小时计划完善</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -218,8 +218,8 @@ const SLIDES = [
       '<div class="col" style="--cc:#a855f7"><h4>🗑 回收站（误删恢复）</h4><ul><li>删任务 / 小题 / 任务组都先进回收站</li><li>误删了点「♻ 恢复」放回原处，不怕手滑</li></ul></div></div>'
   },
   {
-    name:"v8 · 辅助分类 + 多修", badge:{t:"v8 · 辅助 + 录音 + 粘贴修正",c:"#0ea5e9"},
-    tag:"时间轴更贴第三段，拆解更好用",
+    name:"v8 · 辅助/多修 + 小时计划", badge:{t:"v8 · 辅助/多修 + 小时计划",c:"#0ea5e9"},
+    tag:"时间轴更贴第三段，小时计划上线",
     cols:[
       {t:"🕑 时间轴「辅助」", c:"#0ea5e9", items:[
         "活动分类把「休闲」改为「辅助」（复盘 / 整理 / 写计划等）",
@@ -233,24 +233,24 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#f59e0b"><h4>📋 粘贴变回「一天开始」</h4><ul><li>从往日粘贴的任务 / 小题 / 组恢复为未完成</li><li>不再带旧日的完成记录 / 拆解过程</li></ul></div>'+
-      '<div class="col" style="--cc:#a855f7"><h4>🌱 长期推进类型</h4><ul><li>任务「推进类型」新增「长期推进」</li><li>长期自我提升的任务计入「扩展」时间</li></ul></div></div>'
+      '<div class="col" style="--cc:#a855f7"><h4>🌱 长期推进类型</h4><ul><li>任务「推进类型」新增「长期推进」</li><li>长期自我提升的任务计入「扩展」时间</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>⏱ 小时计划（上线）</h4><ul><li>今天页顶部小时计划卡片，给 必须/理想/拓展 各定目标分钟</li><li>对应 Goko 的感悟：没给每小时定「学多久」指标，就容易休息太久、中途跑去做别的</li></ul></div></div>'
   },
   {
-    name:"v9 · 小时计划", badge:{t:"v9 · ⏱ 小时计划",c:"#22a06b"},
-    tag:"每段定指标，不让时间悄悄溜走",
+    name:"今天 · 小时计划完善", badge:{t:"今天 · 提前填积分的小时计划",c:"#22a06b"},
+    tag:"每一段先定指标与奖励，达标自动入账",
     cols:[
-      {t:"⏱ 手动起止的小时代", c:"#22a06b", items:[
-        "今天页顶部小时计划卡片",
-        "点「开始这小时代」，给 必须/理想/拓展 三类各定目标分钟",
-        "执行时用任务计时器正常计时，实际用时自动统计"]},
-      {t:"📊 实时对比 + 奖励", c:"#3b82f6", items:[
-        "卡片实时显示三类 实际/目标 与总达成率",
-        "结束结算，总目标达成即达标",
-        "达标自己填奖励积分，自动入账本"]}
+      {t:"⏱ 标起点 + 定时长", c:"#22a06b", items:[
+        "开始先标「从几点」起 + 这一段多长（默认可在设置改）",
+        "在这一段时长内自动按 5:3:2 分配 必须/理想/拓展",
+        "随时可改"]},
+      {t:"🎁 奖励提前填", c:"#f59e0b", items:[
+        "开始时就提前定好这一段完成给多少奖励积分",
+        "结束结算达标 → 自动把提前定的积分入账",
+        "不用做完再补填"]}
     ],
     note:'<div class="cols" style="margin-top:10px">'+
-      '<div class="col" style="--cc:#f59e0b"><h4>🎯 为什么加它</h4><ul><li>对应 Goko 的感悟：没给每个小时定「学多久」的指标，就容易休息太久 / 中途跑去做别的</li><li>用小段强制指标，先稳住「当前这一小时」</li></ul></div>'+
-      '<div class="col" style="--cc:#a855f7"><h4>⏱ 达标即奖励积分</h4><ul><li>积分自填，可为 0（达标本身就是胜利）</li><li>已结算记录存在当天 hourPlans</li></ul></div></div>'
+      '<div class="col" style="--cc:#3b82f6"><h4>📊 实时进度</h4><ul><li>卡片显示从几点开始、这一段多长、三类实际/目标</li><li>已结算记录存在当天 hourPlans</li></ul></div></div>'
   },
   {
     name:"收尾", cls:"cover",

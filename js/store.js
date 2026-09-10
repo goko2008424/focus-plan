@@ -81,6 +81,7 @@
       srCooldownMin: 5,       // 强化休息系统：两次自动提醒的最小间隔（避免冲突连推）
       splitEnabled: true,     // 🧭 逐题拆解工具开关（语音/文字引导式做题，复用小题倒计时与三档积分）
       hourPlanDefaultMin: 30, // ⏱ 小时计划：每段的默认时长（分钟），开始时可临时改
+      hourDistractCut: 100, // ⏱ 小时计划：中途消耗自查——出现一次扣这段奖励积分的百分比（默认100=扣光）
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },
@@ -97,6 +98,9 @@
       rewards: [],    // 当日触发奖励 [{kind:'base'|'perfect', choice:'time'|'points', value, at}]
       hourPlans: [],        // ⏱ 小时计划已结算记录 [{id,startAt,endAt,targets,actual,met,rewardPoints,duration}]
       activeHourPlan: null, // ⏱ 当前进行中的小时计划 {id,startAt,targets:{required,ideal,extra}}
+      rests: [],            // ☕ 已结束的休息记录 [{id,startAt,endAt,duration,type,typeName,reward,rewardPoints,distracted}]
+      activeRest: null,     // ☕ 当前休息 {id,startAt,duration,type,typeName,reward}
+      plannedHourPlans: [], // 📌 明天预定的时段 [{start,dur,req,ide,ext,pts}]
       ended: false
     };
   }

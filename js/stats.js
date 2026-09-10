@@ -15,6 +15,7 @@
     'reward-base': '🎉 保底奖励',
     'reward-perfect': '🏆 完美奖励',
     'hour-reward': '⏱ 小时计划达标奖励',
+    'rest-reward': '☕ 好好休息奖励',
     'redeem': '🎁 积分兑换',
     'adjust': '✏ 调整'
   };
@@ -136,6 +137,31 @@
                 '</div>');
             });
           });
+          // ⏱ 小时计划记录：每段可点开写/看感想复盘
+          const hourPlans = day.hourPlans || [];
+          const hourHtml = hourPlans.length
+            ? '<details class="task-details" style="margin-top:8px"><summary>⏱ 小时代记录（' + hourPlans.length + ' 段）</summary>' +
+              hourPlans.map(function (hp) {
+                const hsd = new Date(hp.startAt), hed = new Date(hp.endAt);
+                const hsTxt = S().hhmmOf(hsd.getHours() * 60 + hsd.getMinutes());
+                const heTxt = S().hhmmOf(hed.getHours() * 60 + hed.getMinutes());
+                const tg = hp.targets || {};
+                const tTot = (tg.required || 0) + (tg.ideal || 0) + (tg.extra || 0);
+                const metMark = hp.met
+                  ? '<span style="color:#22a06b">🎉 达标</span>'
+                  : (hp.autoEnd ? '<span style="color:#e2545d">⏰ 到点未达标</span>' : '<span style="color:#e2545d">未达标</span>');
+                const rv = hp.review && hp.review.text
+                  ? '<div style="margin:4px 0 4px 10px;font-size:12.5px;color:#374151;background:#f4faf6;border-left:3px solid #22a06b;padding:4px 8px;border-radius:6px">📝 ' + S().esc(hp.review.text) + '</div>'
+                  : '';
+                return '<div style="margin:6px 0;font-size:12.5px">' +
+                  '<div><b>' + hsTxt + ' → ' + heTxt + '</b> · ' + (hp.duration || '') + ' 分</div>' +
+                  (hp.taskText ? '<div style="color:#6b7280">🔗 关联：' + S().esc(hp.taskText) + '</div>' : '') +
+                  '<div style="color:#6b7280">目标 ' + tTot + ' · 实际 ' + (hp.usedMin != null ? Math.round(hp.usedMin) : 0) + ' 分 · 奖励 ' + (hp.rewardPoints || 0) + '</div>' +
+                  rv +
+                  '<button class="btn btn-small" data-hpreview="' + hp.id + '" style="margin-top:4px">' + (rv ? '✏️ 改这段感想' : '📝 写这段感想') + '</button>' +
+                  '</div>';
+              }).join('') + '</details>'
+            : '';
           const detailHTML = detailLines.length
             ? '<details class="task-details"><summary>查看当天任务明细（' + detailLines.length + ' 条）</summary>' + detailLines.join('') + '</details>'
             : '';
@@ -158,7 +184,7 @@
             '<span>⏱ 计时专注 ' + S().fmtDur(focusMin) + '</span>' +
             '<span>⭐ 当日积分 ' + (dayPts >= 0 ? '+' : '') + dayPts + '</span>' +
             '</div>' +
-            detailHTML + reviewHTML + reviewBtn +
+            hourHtml + detailHTML + reviewHTML + reviewBtn +
             '</div>';
         }).join('')
       : '<p class="hint">还没有任何一天的任务或记录。</p>';
@@ -166,6 +192,9 @@
     // 补写/改复盘
     document.querySelectorAll('#day-history [data-reviewday]').forEach(function (b) {
       b.onclick = function () { editReviewModal(b.dataset.reviewday); };
+    });
+    document.querySelectorAll('#day-history [data-hpreview]').forEach(function (b) {
+      b.onclick = function () { editHourPlanReview(b.dataset.hpreview); };
     });
 
     // 点击日期 → 跳到时间轴那天
@@ -198,5 +227,95 @@
     });
   }
 
-  App.stats = { render: render, editReviewModal: editReviewModal };
+  // ⏱ 写某段小时代的感想 / 复盘
+  function editHourPlanReview(hpId) {
+    const days = S().data().days;
+    let hp = null;
+    Object.keys(days).forEach(function (k) {
+      (days[k].hourPlans || []).forEach(function (p) { if (p.id === hpId) hp = p; });
+    });
+    if (!hp) return;
+    const m = App.ui.openModal('📝 这段小时代感想 · ' + S().fmtDateCN(S().dateKey(new Date(hp.endAt))), '' +
+      '<p class="hint">写给自己：这一段做了什么、状态、想法。</p>' +
+      '<div class="field"><label>感想 / 复盘</label>' +
+      '<textarea id="hpv-text" style="width:100%;min-height:70px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13.5px;resize:vertical">' + S().esc((hp.review && hp.review.text) || '') + '</textarea></div>',
+      '<button class="btn btn-primary" data-act="ok">保存</button><button class="btn" data-act="clear">清空</button><button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const t = m.querySelector('#hpv-text').value.trim();
+        if (t) hp.review = { text: t, at: new Date().toISOString() }; else delete hp.review;
+        S().save(); App.ui.closeModal(); render();
+      },
+      clear: function () { delete hp.review; S().save(); App.ui.closeModal(); render(); },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  // 📤 导出复盘总结（给真实 AI）：纯文本、只客观提取小时代/休息/感想，不加评语
+  function exportReview() {
+    const days = S().data().days;
+    const keys = Object.keys(days).sort();
+    if (!keys.length) { App.ui.toast('还没有任何记录'); return; }
+    const lines = [];
+    keys.forEach(function (k) {
+      const d = days[k];
+      lines.push('===== ' + S().fmtDateCN(k) + ' =====');
+      const hpA = [];
+      (d.hourPlans || []).forEach(function (hp) {
+        const hs = new Date(hp.startAt), he = new Date(hp.endAt);
+        const tg = hp.targets || {};
+        const tTot = (tg.required || 0) + (tg.ideal || 0) + (tg.extra || 0);
+        let s = '小时代 ' + S().hhmmOf(hs.getHours() * 60 + hs.getMinutes()) + '→' +
+          S().hhmmOf(he.getHours() * 60 + he.getMinutes()) + '（' + (hp.duration || '') + '分）目标' +
+          tTot + '/实际' + Math.round(hp.usedMin || 0) + '分，' + (hp.met ? '达标' : '未达标');
+        if (hp.taskText) s += '，关联任务：' + hp.taskText;
+        if (hp.rewardPoints) s += '，得积分+' + hp.rewardPoints;
+        if (hp.review && hp.review.text) s += '，感想：' + hp.review.text;
+        hpA.push(s);
+      });
+      const rsA = [];
+      (d.rests || []).forEach(function (r) {
+        const a = new Date(r.startAt), b2 = new Date(r.endAt);
+        let s = '休息(' + r.typeName + ') ' + S().hhmmOf(a.getHours() * 60 + a.getMinutes()) + '→' +
+          S().hhmmOf(b2.getHours() * 60 + b2.getMinutes()) + '（' + (r.duration || '') + '分）';
+        if (r.rewardPoints) s += '，得积分+' + r.rewardPoints;
+        if (r.review && r.review.text) s += '，感想：' + r.review.text;
+        rsA.push(s);
+      });
+      const sessSec = (d.sessions || []).reduce(function (a2, s) {
+        return a2 + (s.actualSeconds != null ? s.actualSeconds : (s.actualMinutes || 0) * 60);
+      }, 0);
+      if (hpA.length) lines.push(hpA.join('\n'));
+      if (rsA.length) lines.push(rsA.join('\n'));
+      if (!hpA.length) lines.push('计时专注约 ' + Math.round(sessSec / 60) + ' 分钟');
+      if (d.review && d.review.text) lines.push('【当天复盘】' + d.review.text);
+      lines.push('');
+    });
+    const text = lines.join('\n');
+    const m = App.ui.openModal('📤 复盘总结（复制后粘给 AI）', '' +
+      '<p class="hint">只客观提取每天的小时代/休息/感想，不加评语；复制后粘贴给任意 AI 生成你的成长报告。</p>' +
+      '<textarea id="exp-text" readonly style="width:100%;min-height:220px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:12px;background:#f7f8fa;resize:vertical;font-family:monospace">' + S().esc(text) + '</textarea>',
+      '<button class="btn btn-primary" data-act="copy">📋 全选复制</button>' +
+      '<button class="btn" data-act="save">💾 下载 .txt</button>' +
+      '<button class="btn" data-act="cancel">关闭</button>');
+    App.ui.bindActions({
+      copy: function () {
+        const ta = m.querySelector('#exp-text');
+        ta.focus(); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        App.ui.toast('已复制，粘贴给 AI 即可');
+      },
+      save: function () {
+        const blob = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'focus-plan-review.txt';
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+        App.ui.closeModal(); App.ui.toast('已导出 focus-plan-review.txt');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+  App.stats = { render: render, editReviewModal: editReviewModal, editHourPlanReview: editHourPlanReview, exportReview: exportReview };
 })();

@@ -41,7 +41,8 @@
       '</div>' +
       '<div class="set-group"><h4>⏱ 小时计划</h4>' +
       numRow('set-hour-min', '每个小时计划的默认时长', s.hourPlanDefaultMin, '分钟') +
-      '<p class="hint">开始一小时计划时可改。这一段的时长内，你分配 必须/理想/拓展 各学多久；学完达标自填奖励积分。</p>' +
+      numRow('set-hour-cut', '中途消耗自查扣积分（出现一次扣这段的%）', s.hourDistractCut, '%') +
+      '<p class="hint">开始一小时计划时可改。这一段的时长内，你分配 必须/理想/拓展 各学多久；达标后自查中途有没有干消耗性的事（看手机/刷屏等），有就按上面这个百分比扣掉这段奖励积分（默认100%＝出现过就扣光）。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🔘 行为开关</h4>' +
       switchRow('set-ext-append', '拓展任务完成后可继续追加', s.extAppendable) +
@@ -78,6 +79,7 @@
     bind('set-sub-points', function () { s.subDefaultPoints = Math.max(1, +this.value || 10); S().save(); });
     bind('set-perfect-points', function () { s.perfectRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-hour-min', function () { s.hourPlanDefaultMin = Math.max(1, +this.value || 30); S().save(); });
+    bind('set-hour-cut', function () { s.hourDistractCut = Math.max(0, Math.min(100, +this.value || 100)); S().save(); });
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
     bind('set-mode', function () { s.recordMode = this.value; S().save(); });
