@@ -236,14 +236,20 @@ const SLIDES = [
       '<div class="col" style="--cc:#22a06b"><h4>⏱ 小时计划 · 计时权威</h4><ul><li>标「从几点」起 + 这一段多长，到点自动结算；只把 [开始→到点] 窗口内的实际学习计入</li><li>超时补做不算，未达标＝0积分；卡片每秒倒计时；开始就提前填好这一段奖励积分，达标自动入账</li></ul></div>'+
       '<div class="col" style="--cc:#f59e0b"><h4>🧐 中途消耗自查</h4><ul><li>达标先自查：中途有没有看手机/刷屏（消耗性的事）</li><li>有 → 按设置% 扣这段奖励（默认100％＝扣光，可调）</li></ul></div>'+
       '<div class="col" style="--cc:#e2545d"><h4>☕ 休息系统 + 衔接</h4><ul><li>段结束强制弹「继续做 / 去休息」；休息可定 类型（纯休息/吃饭/睡觉）+ 时长</li><li>提前填「好好休息」积分自动入账（type rest-reward）；可提前结束、到点自动结束，结束强制开下一段</li></ul></div>'+
-      '<div class="col" style="--cc:#a855f7"><h4>⏱ 秒级 + 复盘 + 导出</h4><ul><li>小任务计时记到秒（actualSeconds）可累加不丢时间；开始段可关联任务，历史页每段可写感想</li><li>📤 导出复盘给AI（txt/复制）· 📌 预定明天的段 → 第二天一键开跑</li></ul></div></div>'
+      '<div class="col" style="--cc:#a855f7"><h4>⏱ 秒级 + 复盘 + 导出</h4><ul><li>小任务计时记到秒（actualSeconds）可累加不丢时间；开始段可关联任务，历史页每段可写感想</li><li>📤 导出复盘给AI（txt/复制）· 📌 预定明天的段 → 第二天一键开跑</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>🧐 两问自查（升级）</h4><ul><li>达标自查改成「①有没有好好休息 ②中途消耗几次(0/1/2/3+)」</li><li>每次消耗按设置%扣（默认100＝一次扣光），如实提交才入账</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>📝 每段强制复盘</h4><ul><li>每一段结算后先弹感想窗（可跳）再强制衔接下一步</li><li>时间轴里每个小时代单独一段延续记录（不计入学时避免重复）</li></ul></div>'+
+      '<div class="col" style="--cc:#a855f7"><h4>📕 两套AI导出</h4><ul><li>📤 导出复盘给AI：每天/整年逐段总结</li><li>📕 今日小时代复盘：今天每段单独分开导出，两表不混</li></ul></div>'+
+      '<div class="col" style="--cc:#f59e0b"><h4>🔥 连续学习 & 小休</h4><ul><li>任务页顶部展示「已连续学习 xx:xx」，学习时可点「☕ 小休」（休息单独算、不占学习）</li><li>休息结束问消耗 → 有则记一次，结束今天统一扣分；休息后连续学习归零重新算</li></ul></div>'+
+      '<div class="col" style="--cc:#e2545d"><h4>🏃 运动模块</h4><ul><li>新「运动」页：前一天安排明天的运动（分组+每项设分），今日做完一项点它=+分</li><li>没做到结算统一扣分；积多少、扣多少都可由你自己定</li></ul></div>'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>📊 统计统一</h4><ul><li>顶部状态条与时间轴摘要同源（都从时间轴按分类统计），同一天数值完全一致</li></ul></div></div>'
   },
   {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 6.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 8.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+

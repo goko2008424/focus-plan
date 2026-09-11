@@ -23,15 +23,18 @@
     }
     let html = '<div class="card"><h3>🏃 今日运动</h3><p class="hint">做完一项点它 = +分立即入账；没做完的，点底部「结算」会统一扣分。</p>';
     sports.forEach(function (grp, gi) {
-      html += '<div class="card"><h4>' + S().esc(grp.name) + '</h4>';
+      html += '<div class="card"><h4>' + S().esc(grp.name) +
+        (grp.points > 0 ? ' <span style="color:var(--c2);font-size:12px">· 整组全做完再 +' + grp.points + ' 分</span>' : '') + '</h4>';
       (grp.items || []).forEach(function (it, ii) {
-        const st = it.done ? '✅ 已完成 +' + (it.points || DEFAULT_PTS) + ' 分'
-          : (it.settled ? '❌ 没做到 · 已扣分' : '🕐 还没做');
+        const pts = it.points || DEFAULT_PTS;
+        const pen = it.pen != null ? it.pen : pts;
+        const st = it.done ? '✅ 已完成 +' + pts + ' 分'
+          : (it.settled ? '❌ 没做到 · 已扣 ' + pen + ' 分' : '🕐 还没做（没做扣 ' + pen + ' 分）');
         html += '<div class="sport-item" style="display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer" data-g="' + gi + '" data-i="' + ii + '">' +
           '<span style="flex:0 0 auto">' + (it.done ? '✅' : (it.settled ? '❌' : '⬜')) + '</span>' +
           '<span style="flex:1">' + S().esc(it.text) + '</span>' +
           '<span style="flex:0 0 auto;color:' + (it.done ? 'var(--c2)' : (it.settled ? 'var(--c4)' : 'var(--muted)')) + ';font-weight:700">' +
-          (it.done ? '+' : (it.settled ? '-' : '')) + (it.points || DEFAULT_PTS) + '分</span>' +
+          (it.done ? '+' : (it.settled ? '-' : '+')) + (it.settled ? pen : pts) + '分</span>' +
           '<span style="flex:0 0 auto;font-size:11px;color:var(--muted)">' + st + '</span></div>';
       });
       html += '</div>';
@@ -45,6 +48,10 @@
         if (it.done || it.settled) return;
         it.done = true; it.rewarded = true;
         App.store.addLedger(S().todayKey(), 'sport', { points: it.points || DEFAULT_PTS, note: '🏃 运动完成：' + it.text + '，+' + (it.points || DEFAULT_PTS) + ' 分' });
+        if (grp.points > 0 && !grp.groupRewarded && (grp.items || []).every(function (x) { return !!x.done; })) {
+          grp.groupRewarded = true;
+          App.store.addLedger(S().todayKey(), 'sport', { points: grp.points, note: '🏃 整组「' + grp.name + '」全做完，奖励 +' + grp.points + ' 分' });
+        }
         S().save();
         if (App.app && App.app.refreshStats) App.app.refreshStats();
         renderToday();
@@ -67,8 +74,9 @@
         if (it.done) doneCount++;
         else if (!it.settled) {
           it.settled = true;
-          penalized += it.points || DEFAULT_PTS;
-          App.store.addLedger(k, 'sport-cut', { points: -(it.points || DEFAULT_PTS), note: '🏃 运动没做到：' + it.text + '，扣 ' + (it.points || DEFAULT_PTS) + ' 分' });
+          const pen = it.pen != null ? it.pen : (it.points || DEFAULT_PTS);
+          penalized += pen;
+          App.store.addLedger(k, 'sport-cut', { points: -pen, note: '🏃 运动没做到：' + it.text + '，扣 ' + pen + ' 分' });
         }
       });
     });
@@ -87,17 +95,20 @@
     if (!wrap) return;
     const sports = day.sports || [];
     let html = '<div class="card"><h3>📅 明天的运动安排</h3>' +
-      '<p class="hint">先建组，再往组里加运动项（每项默认 5 分，可改）。今晚写好，明天就有得做。</p>';
+      '<p class="hint">先建组再加运动项：每项填「做完得几分 / 没做到扣几分」（默认5），组还能填「整组全做完奖励」——扣分就是强制作用。今晚写好，明天就有得做。</p>';
     (sports && sports.length ? sports : []).forEach(function (grp, gi) {
       html += '<div class="card sport-plan-group" data-g="' + gi + '">' +
         '<div style="display:flex;align-items:center;gap:8px">' +
         '<input class="sport-group-name" style="flex:1;' + INPUT_STYLE + '" value="' + S().esc(grp.name) + '" />' +
+        '<label style="font-size:11px;color:var(--muted)">组奖励</label>' +
+        '<input class="sport-group-pts" type="number" min="0" style="width:56px;' + INPUT_STYLE + '" title="整组全做完额外奖励积分" value="' + (grp.points || 0) + '" />' +
         '<button class="btn btn-small btn-danger sport-del-g">🗑 删这组</button></div>' +
         '<div class="sport-plan-items" style="margin-top:6px">';
       (grp.items || []).forEach(function (it, ii) {
         html += '<div class="sport-plan-item" style="display:flex;gap:6px;margin:6px 0;align-items:center" data-i="' + ii + '">' +
           '<input class="sport-item-text" style="flex:1;' + INPUT_STYLE + '" value="' + S().esc(it.text) + '" />' +
-          '<input class="sport-item-pts" type="number" min="0" style="width:60px;' + INPUT_STYLE + '" value="' + (it.points || DEFAULT_PTS) + '" />' +
+          '<input class="sport-item-pts" type="number" min="0" style="width:52px;' + INPUT_STYLE + '" title="做完得几分" value="' + (it.points || DEFAULT_PTS) + '" />' +
+          '<input class="sport-item-pen" type="number" min="0" style="width:52px;' + INPUT_STYLE + '" title="没做到扣几分" value="' + (it.pen != null ? it.pen : (it.points || DEFAULT_PTS)) + '" />' +
           '<button class="btn btn-small btn-danger sport-del-i">🗑</button></div>';
       });
       html += '<button class="btn btn-small sport-add-item">＋ 加一项</button></div>';
@@ -107,11 +118,11 @@
     wrap.innerHTML = html;
 
     const addG = wrap.querySelector('#sport-add-group');
-    if (addG) addG.onclick = function () { sports.push({ id: S().uid(), name: '新的运动组 ' + (sports.length + 1), items: [] }); renderPlan(); };
+    if (addG) addG.onclick = function () { sports.push({ id: S().uid(), name: '新的运动组 ' + (sports.length + 1), points: 0, items: [] }); renderPlan(); };
     wrap.querySelectorAll('.sport-add-item').forEach(function (b) {
       b.onclick = function () {
         const gi = +b.closest('.sport-plan-group').dataset.g;
-        sports[gi].items.push({ id: S().uid(), text: '新的运动项', points: DEFAULT_PTS });
+        sports[gi].items.push({ id: S().uid(), text: '新的运动项', points: DEFAULT_PTS, pen: DEFAULT_PTS });
         renderPlan();
       };
     });
@@ -132,13 +143,15 @@
       wrap.querySelectorAll('.sport-plan-group').forEach(function (g) {
         const old = sports[+g.dataset.g];
         const name = (g.querySelector('.sport-group-name').value || '').trim() || '运动组';
+        const gpts = Math.max(0, parseInt((g.querySelector('.sport-group-pts') || {}).value, 10)) || 0;
         const items = [];
         g.querySelectorAll('.sport-plan-item').forEach(function (itEl) {
           const t = itEl.querySelector('.sport-item-text').value.trim();
           const p = Math.max(0, parseInt(itEl.querySelector('.sport-item-pts').value, 10));
-          if (t) items.push({ id: S().uid(), text: t, points: p || DEFAULT_PTS });
+          const pen = Math.max(0, parseInt(itEl.querySelector('.sport-item-pen').value, 10));
+          if (t) items.push({ id: S().uid(), text: t, points: p || DEFAULT_PTS, pen: pen || (p || DEFAULT_PTS) });
         });
-        if (items.length) cleaned.push({ id: old ? old.id : S().uid(), name: name, items: items });
+        if (items.length) cleaned.push({ id: old ? old.id : S().uid(), name: name, points: gpts, items: items, groupRewarded: !!(old && old.groupRewarded) });
       });
       day.sports = cleaned;
       S().save();
