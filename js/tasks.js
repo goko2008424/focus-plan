@@ -1578,41 +1578,102 @@
         ? ('⏰ 到点了，这段没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分，到点即封顶、超时补做不算）——积分清零，下段再冲 💪')
         : ('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'));
     }
-    // 无论达不达标，都立刻问「接下来干什么」，别闲下来
-    nextStepPrompt();
+    // 无论达不达标：先写这一段复盘，再强制衔接下一步，同时把这段写进时间轴延续记录
+    hourPlanTimelinePush(plan);
+    hourReviewPrompt(plan);
+  }
+  // 每段小时代 → 在时间轴里单独记一条延续记录（视图条，不计入学习分钟避免重复）
+  function hourPlanTimelinePush(plan) {
+    const day = S().getDay(S().todayKey());
+    const s = new Date(plan.startAt), e = new Date(plan.endAt);
+    let sMin = s.getHours() * 60 + s.getMinutes();
+    let eMin = e.getHours() * 60 + e.getMinutes();
+    if (eMin < sMin) eMin = 1439;
+    const total = Math.max(1, eMin - sMin);
+    day.timeline = day.timeline || [];
+    day.timeline.push({
+      id: S().uid(), start: sMin, end: eMin, minutes: Math.min(total, Math.round(plan.usedMin || total)),
+      content: '⏱ 小时代 ' + S().hhmmOf(sMin) + '→' + S().hhmmOf(eMin) + (plan.met ? ' · 达标' : ' · 未达标'),
+      category: 'study', countAsStudy: false, auto: true, hourPlanId: plan.id,
+      note: (plan.review && plan.review.text) || ''
+    });
+    S().save();
+  }
+  // 每段结算后的强制复盘：让用户写下这一段状态/感想，再强制衔接下一步
+  function hourReviewPrompt(plan) {
+    const m = App.ui.openModal('📝 这一段的复盘 · 感想', '' +
+      '<p style="font-size:13px">写给自己：这一段做了什么、状态、想法。写完点保存，会强制衔接下一段（不让你闲下来）。</p>' +
+      '<div class="field"><label>感想 / 复盘</label>' +
+      '<textarea id="hrev-text" style="width:100%;min-height:84px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13.5px;resize:vertical"></textarea></div>',
+      '<button class="btn btn-primary" data-act="ok">✔ 保存并下一步</button>' +
+      '<button class="btn" data-act="skip">稍后再写</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const v = m.querySelector('#hrev-text').value.trim();
+        if (v) { plan.review = { text: v, at: new Date().toISOString() }; S().save(); }
+        App.ui.closeModal(); nextStepPrompt();
+      },
+      skip: function () { App.ui.closeModal(); nextStepPrompt(); }
+    });
   }
   // 达标后的「中途消耗自查」：有消耗 → 按设置百分比扣掉这段奖励积分
   function hourDistractCheck(plan) {
     const dayKey = S().todayKey();
     const rw = plan.reward || 0;
     const cutPct = (S().settings().hourDistractCut == null ? 100 : S().settings().hourDistractCut);
-    const modal = App.ui.openModal('🎁 这段达标！先自查一下',
-      '<p style="font-size:13px">这段奖励积分预设 <b>' + rw + '</b> 分。<br>这一段中途有没有去干<b>消耗性的事</b>（看手机 / 刷动态 / 摸鱼）？</p>' +
-      '<p style="font-size:12px;color:#8a919c;margin-top:6px">选「有」会按自查扣分比例（' + cutPct + '%）扣掉这段奖励。</p>',
-      '<button class="btn btn-primary" data-act="ok">✅ 没有，全额给我</button>' +
-      '<button class="btn" style="background:#e2545d;border-color:#e2545d;color:#fff" data-act="cut">⚠️ 有，扣' + cutPct + '%</button>');
-    function settle(distracted) {
-      const gain = distracted ? Math.round(rw * (100 - cutPct) / 100) : rw;
+    const modal = App.ui.openModal('🎁 这段达标！先自查两句',
+      '<p style="font-size:13px">这段奖励积分预设 <b>' + rw + '</b> 分。答真实才入账。</p>' +
+      '<p style="font-size:13px;margin-top:8px"><b>① 这一段有没有好好休息？</b></p>' +
+      '<div class="btn-row">' +
+      '<button class="btn btn-small" data-act="rgood">✅ 好好休息了</button>' +
+      '<button class="btn btn-small" data-act="rbad">⚠️ 没好好休息（刷了手机/没真歇）</button>' +
+      '</div>' +
+      '<p style="font-size:13px;margin-top:8px"><b>② 中途偷偷看了几次手机 / 刷了几次屏？</b></p>' +
+      '<div class="btn-row">' +
+      '<button class="btn btn-small" data-act="n0">0 次</button>' +
+      '<button class="btn btn-small" data-act="n1">1 次</button>' +
+      '<button class="btn btn-small" data-act="n2">2 次</button>' +
+      '<button class="btn btn-small" data-act="n3">3 次以上</button>' +
+      '</div>' +
+      '<p style="font-size:12px;color:#8a919c;margin-top:8px">每消耗 1 次扣 ' + cutPct + '%（累计上限扣光）。选好两项再点「如实提交」。</p>',
+      '<button class="btn btn-primary" data-act="ok">☑ 如实提交</button>');
+    let restGood = null, times = 0;
+    modal.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-act]');
+      if (!b || b.dataset.act === 'ok') return;
+      const a = b.dataset.act;
+      if (a === 'rgood') restGood = true;
+      else if (a === 'rbad') restGood = false;
+      else if (a.charAt(0) === 'n') times = +a.slice(1);
+      modal.querySelectorAll('[data-act]').forEach(function (x) { x.classList.remove('btn-primary'); });
+      b.classList.add('btn-primary');
+    });
+    function settle() {
+      if (restGood === null) { App.ui.toast('先点一下「好好休息 / 没好好休息」'); return; }
+      const n = (restGood ? 0 : 1) + times;
+      const cut = Math.min(100, n * cutPct);
+      const gain = n > 0 ? Math.round(rw * (100 - cut) / 100) : rw;
       plan.rewardPoints = gain;
-      plan.distracted = !!distracted;
+      plan.distracted = n > 0;
+      plan.disturbCount = n;
+      plan.restGood = restGood;
       if (gain > 0) {
-        App.store.addLedger(dayKey, 'hour-reward', { points: gain, note: '小时计划达标奖励：积分+' + gain + '分' + (distracted ? '（中途有消耗，扣' + cutPct + '%）' : '') });
+        App.store.addLedger(dayKey, 'hour-reward', { points: gain, note: '小时计划达标奖励：积分+' + gain + '分' + (n > 0 ? '（消耗' + n + '次，扣' + cut + '%）' : '（全程专注）') });
       }
       S().save();
       if (App.app && App.app.refreshStats) App.app.refreshStats();
       App.tasks.renderToday();
       App.ui.closeModal();
-      if (distracted) {
+      if (n > 0) {
         App.ui.toast(gain > 0
-          ? ('⚠️ 这段有消耗，扣了 ' + cutPct + '%，实得 +' + gain + ' 分；下次管住自己 💪')
-          : ('⚠️ 这段有消耗，积分被扣光（' + cutPct + '%），下次别再摸鱼啦'));
+          ? ('⚠️ 这段消耗了 ' + n + ' 次，扣 ' + cut + '%，实得 +' + gain + ' 分；下次管住自己 💪')
+          : ('⚠️ 这段消耗了 ' + n + ' 次，积分被扣光（' + cut + '%）'));
       }
       else {
         App.ui.toast(rw > 0 ? ('🎉 全程专注，这段 +' + rw + ' 分已入账！') : '🎉 全程专注，这段达到目标了！');
       }
-      nextStepPrompt(); // 这段结束，强制衔接下一步
     }
-    App.ui.bindActions({ ok: function () { settle(false); }, cut: function () { settle(true); } });
+    App.ui.bindActions({ ok: function () { settle(); } });
   }
   // 一段结束后的衔接选择窗：强制别闲下来 → 继续做任务 或 去休息
   function nextStepPrompt() {
@@ -1795,6 +1856,7 @@
         (tp.length ? '<button class="btn btn-small btn-primary" id="hp-planned" style="margin-left:6px">▶ 用预定的第一段开始</button>' : '') +
         '<button class="btn btn-small" id="hp-book" style="margin-left:6px">📌 预定明天的段</button>' +
         '<button class="btn btn-small" id="hp-export" style="margin-left:6px">📤 导出复盘给AI</button>' +
+        '<button class="btn btn-small" id="hp-export-hour" style="margin-left:6px">📕 今日小时代复盘</button>' +
         '</div></div>';
       const b = box.querySelector('#hp-start');
       if (b) b.onclick = startHourPlanModal;
@@ -1804,6 +1866,8 @@
       if (bp) bp.onclick = startFromPlanned;
       const eb = box.querySelector('#hp-export');
       if (eb) eb.onclick = function () { App.stats.exportReview(); };
+      const eh = box.querySelector('#hp-export-hour');
+      if (eh) eh.onclick = function () { App.stats.exportHourReviewToday(); };
       return;
     }
     const sum = hourPlanSummary(plan);

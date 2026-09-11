@@ -317,5 +317,55 @@
       cancel: App.ui.closeModal
     });
   }
-  App.stats = { render: render, editReviewModal: editReviewModal, editHourPlanReview: editHourPlanReview, exportReview: exportReview };
+  // 今日每个小时代单独复盘（和「每日/整年总结」分开的两套之一）
+  function exportHourReviewToday(dayKey) {
+    const k = dayKey || S().todayKey();
+    const d = S().getDay(k);
+    const lines = [];
+    lines.push('【今日小时代复盘】 ' + S().fmtDateCN(k));
+    const hps = d.hourPlans || [];
+    if (!hps.length) lines.push('今天还没有已结算的小时代');
+    else {
+      hps.forEach(function (hp) {
+        const hs = new Date(hp.startAt), he = new Date(hp.endAt);
+        const tg = hp.targets || {};
+        const tTot = (tg.required || 0) + (tg.ideal || 0) + (tg.extra || 0);
+        lines.push('—— 小时代 ' + S().hhmmOf(hs.getHours() * 60 + hs.getMinutes()) +
+          ' → ' + S().hhmmOf(he.getHours() * 60 + he.getMinutes()) + ' ——');
+        if (hp.taskText) lines.push('关联任务：' + hp.taskText);
+        lines.push('目标 ' + tTot + ' 分 / 实际学 ' + Math.round(hp.usedMin || 0) + ' 分 · ' +
+          (hp.met ? '✔ 达标' : '✘ 未达标') +
+          (hp.disturbCount ? ' · 中途消耗' + hp.disturbCount + '次' : '') +
+          (hp.rewardPoints ? ' · 得 +' + hp.rewardPoints + ' 分' : ''));
+        lines.push('感想：' + ((hp.review && hp.review.text) ? hp.review.text : '（这段还没写感想）'));
+        lines.push('');
+      });
+    }
+    showExportText(lines.join('\n'), '📕 今日小时代复盘（每段单独，粘给 AI）');
+  }
+  // 通用导出弹窗
+  function showExportText(text, title) {
+    const m = App.ui.openModal(title || '📤 导出', '' +
+      '<p class="hint">只客观提取，不加评语；复制后粘给 AI 生成你的报告。</p>' +
+      '<textarea id="exp-text" readonly style="width:100%;min-height:220px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:12px;background:#f7f8fa;resize:vertical;font-family:monospace">' + S().esc(text) + '</textarea>',
+      '<button class="btn btn-primary" data-act="copy">📋 全选复制</button>' +
+      '<button class="btn" data-act="save">💾 下载 .txt</button>' +
+      '<button class="btn" data-act="cancel">关闭</button>');
+    App.ui.bindActions({
+      copy: function () {
+        const ta = m.querySelector('#exp-text'); ta.focus(); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        App.ui.toast('已复制，粘给 AI 即可');
+      },
+      save: function () {
+        const blob = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = 'focus-plan-export.txt'; document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+        App.ui.closeModal(); App.ui.toast('已导出');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+  App.stats = { render: render, editReviewModal: editReviewModal, editHourPlanReview: editHourPlanReview, exportReview: exportReview, exportHourReviewToday: exportHourReviewToday };
 })();
