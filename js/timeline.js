@@ -164,6 +164,11 @@
         let d = en - st;
         if (d < 0) d = 1440 - st + en;
         if (d < 1) { App.ui.toast('时间区间无效'); return; }
+        // ⚠️ 时间轴只记录真实的过去：不能提前预定未来的时段，最多时间过了再补记
+        const nowMinT = new Date().getHours() * 60 + new Date().getMinutes();
+        const todayK = S().todayKey();
+        if (selDate > todayK) { App.ui.toast('⏳ 不能提前排未来的时段，只有时间过去后才能补记'); return; }
+        if (selDate === todayK && en > nowMinT) { App.ui.toast('⏳ 这段还没到点呢，时间过了再补记'); return; }
         const text = modal.querySelector('#rec-content').value.trim();
         if (!text) { App.ui.toast('请填写活动内容'); return; }
         const tId = modal.querySelector('#rec-task').value;

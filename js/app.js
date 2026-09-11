@@ -150,6 +150,7 @@
 
     // 计时悬浮窗按钮（任务正向计时）
     document.getElementById('timer-pause').onclick = function () { App.tasks.togglePause(); };
+    document.getElementById('timer-rest').onclick = function () { App.tasks.startSmallRest(); };
     document.getElementById('timer-stop').onclick = function () {
       if (App.tasks.getTimer()) App.tasks.stopTimer();
     };

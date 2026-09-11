@@ -1360,11 +1360,11 @@
       return;
     }
     const live = streakLiveMs();
-    const on = !!timer && !timer.paused;
+    const running = !!timer && !timer.paused;
     bar.innerHTML = '<div class="card streak-card">🔥 ' +
-      (on ? '已连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>' +
-        '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>'
+      (running ? '已连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>'
         : '连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>（上次休息后）') +
+      (timer ? '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>' : '') +
       '</div>';
     const r = bar.querySelector('#sr-rest');
     if (r) r.onclick = startSmallRest;
@@ -2414,6 +2414,7 @@
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,
     getTimer: function () { return timer; },
     getCdTimer: function () { return cdTimer; },
+    startSmallRest: startSmallRest, endSmallRest: endSmallRest,
     isRunning: isRunning, elapsedMs: elapsedMs,
     toggleCdPause: toggleCdPause, cdFinish: cdFinish,
     startCdTimer: startCdTimer,
