@@ -21,6 +21,7 @@
         <button class="nav-btn" data-view="timeline">时间轴</button>
         <button class="nav-btn" data-view="stats">历史</button>
         <button class="nav-btn" data-view="settings">设置</button>
+        <button class="nav-btn" id="btn-demo" title="快速上手演示动画">✨ 演示</button>
         <button class="nav-btn" id="btn-about" title="公告与使用指南">📖 指南</button>
       </nav>
     </div>
@@ -219,6 +220,7 @@
   <script src="js/settings.js"></script>
   <script src="js/sport.js"></script>
   <script src="js/link.js"></script>
+  <script src="js/demo.js"></script>
   <script src="js/app.js"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
@@ -228,5 +230,85 @@
       });
     }
   </script>
+
+  <!-- ✨ 快速上手演示动画 -->
+  <style id="demo-style">
+    #demo-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;}
+    #demo-overlay.hidden{display:none;}
+    #demo-backdrop{position:absolute;inset:0;background:rgba(13,17,23,.72);backdrop-filter:blur(4px);}
+    #demo-card{position:relative;width:min(560px,92vw);background:linear-gradient(160deg,#22304a,#1a2436);
+      border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:18px 20px 14px;box-shadow:0 20px 60px rgba(0,0,0,.45);}
+    #demo-stage{min-height:210px;display:flex;align-items:center;justify-content:center;}
+    #demo-stage .d-mock-wrap{width:100%;}
+    #demo-caption{text-align:center;padding:2px 4px 8px;}
+    .d-icon{font-size:30px;}
+    .d-title{font-size:19px;font-weight:700;color:#eaf0ff;margin:4px 0 4px;}
+    .d-cap{font-size:13.5px;color:#c6cdd9;line-height:1.6;max-width:480px;margin:0 auto;}
+    #demo-dots{display:flex;gap:6px;justify-content:center;margin:6px 0 10px;}
+    .d-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.22);transition:.2s;}
+    .d-dot.on{background:var(--c2,#22c55e);width:20px;border-radius:4px;}
+    #demo-controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}
+    #demo-controls .btn{font-size:12.5px;}
+    #demo-controls .disabled{opacity:.4;pointer-events:none;}
+    /* 每步动画 */
+    #demo-stage>*{opacity:0;transform:translateY(14px);animation:dRise .45s ease forwards;}
+    #demo-caption>*{opacity:0;transform:translateY(10px);animation:dRise .45s ease .08s forwards;}
+    #demo-stage.d-on>*,#demo-caption.d-on>*{opacity:1;transform:none;}
+    @keyframes dRise{to{opacity:1;transform:none;}}
+    /* 模拟卡片 */
+    .d-logo{font-size:26px;font-weight:800;color:#eaf0ff;background:linear-gradient(120deg,#3b82f6,#22c55e);
+      -webkit-background-clip:text;background-clip:text;color:transparent;}
+    .d-sub{color:#7d8aa0;font-size:13px;margin-top:4px;}
+    .d-pills{display:flex;gap:8px;justify-content:center;margin-top:14px;}
+    .d-pills span{padding:5px 12px;border-radius:999px;background:rgba(59,130,246,.15);color:#bfd4ff;font-size:12.5px;border:1px solid rgba(59,130,246,.4);}
+    .d-cols{display:flex;gap:10px;width:100%;}
+    .d-col{flex:1;border-radius:12px;padding:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);}
+    .d-col b{display:block;font-size:12px;margin-bottom:6px;color:#dbe4f0;}
+    .d-col.req{box-shadow:inset 0 0 0 1px rgba(244,63,94,.4);}
+    .d-col.ideal{box-shadow:inset 0 0 0 1px rgba(34,197,94,.4);}
+    .d-col.ext{box-shadow:inset 0 0 0 1px rgba(168,85,247,.4);}
+    .d-task{display:block;font-size:12px;color:#dbe4f0;background:rgba(255,255,255,.06);border-radius:8px;padding:6px 8px;margin:4px 0;font-style:normal;}
+    .d-task.done{color:#8fd6b0;text-decoration:line-through;}
+    .d-task.run{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.5);}
+    .d-float,.d-hp{border-radius:14px;padding:12px 14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);text-align:left;width:100%;}
+    .d-float b,.d-hp b{display:block;color:#eaf0ff;font-size:13.5px;margin-bottom:8px;}
+    .d-time{color:var(--c2,#22c55e);}
+    .d-bar{height:8px;border-radius:6px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:10px;}
+    .d-bar i{display:block;height:100%;background:linear-gradient(120deg,#3b82f6,#22c55e);}
+    .d-bar.rest i{background:linear-gradient(120deg,#f59e0b,#e2545d);}
+    .d-bar.ok i{background:linear-gradient(120deg,#22c55e,#06b6d4);}
+    .d-btn{display:inline-block;margin-top:8px;padding:7px 14px;border-radius:9px;background:rgba(245,158,11,.2);
+      border:1px solid rgba(245,158,11,.5);color:#ffe4a6;font-size:13px;}
+    .d-btn:last-child{background:rgba(244,63,94,.2);border-color:rgba(244,63,94,.5);color:#ffc9ce;margin-top:12px;}
+    .d-hp-row{display:flex;justify-content:space-between;font-size:12.5px;color:#dbe4f0;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.1);}
+    .d-hp-row i{font-style:normal;}
+    .d-hp-row i.done{color:#8fd6b0;}
+    .d-timeline{display:flex;align-items:flex-end;gap:4px;height:120px;width:100%;padding-top:8px;}
+    .d-timeline .d-block{flex:1;border-radius:6px 6px 0 0;background:rgba(59,130,246,.45);border:1px solid rgba(59,130,246,.6);
+      color:#dbe4f0;font-size:10px;text-align:center;overflow:hidden;}
+    .d-timeline .d-block:nth-child(2){background:rgba(245,158,11,.35);}
+    .d-timeline .d-block:nth-child(3){background:rgba(34,197,94,.4);}
+    .d-timeline .d-block:nth-child(4){background:rgba(168,85,247,.4);}
+    .d-stats{text-align:left;width:100%;}
+    .d-stats b{display:block;color:#eaf0ff;font-size:14px;}
+    .d-stats .d-bars{display:flex;align-items:flex-end;gap:8px;height:90px;margin-top:10px;}
+    .d-stats .d-bars i{flex:1;background:linear-gradient(180deg,#3b82f6,#22c55e);border-radius:6px 6px 0 0;}
+    .d-start{color:#a8b4c6;font-size:13px;margin-top:12px;}
+  </style>
+
+  <div id="demo-overlay" class="hidden">
+    <div id="demo-backdrop"></div>
+    <div id="demo-card">
+      <div id="demo-stage" class="d-mock-wrap"></div>
+      <div id="demo-caption"></div>
+      <div id="demo-dots"></div>
+      <div id="demo-controls">
+        <button id="demo-prev" class="btn btn-small disabled">← 上一步</button>
+        <button id="demo-restart" class="btn btn-small">↺ 重放</button>
+        <button id="demo-next" class="btn btn-small btn-primary">下一步 →</button>
+        <button id="demo-close" class="btn btn-small">✕ 关闭</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

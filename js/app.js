@@ -165,6 +165,9 @@
     App.settings.render();
     if (App.sport && App.sport.init) App.sport.init();
     if (App.link && App.link.init) App.link.init();
+    if (App.demo && App.demo.init) App.demo.init();
+    const dbtn = document.getElementById('btn-demo');
+    if (dbtn) dbtn.onclick = function () { App.demo.open(); };
 
     // 初始化各视图
     switchView('tasks');
