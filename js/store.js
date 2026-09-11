@@ -101,6 +101,7 @@
       rests: [],            // ☕ 已结束的休息记录 [{id,startAt,endAt,duration,type,typeName,reward,rewardPoints,distracted}]
       activeRest: null,     // ☕ 当前休息 {id,startAt,duration,type,typeName,reward}
       plannedHourPlans: [], // 📌 明天预定的时段 [{start,dur,req,ide,ext,pts}]
+      sports: [],           // 🏃 运动安排 [{id,name,items:[{id,text,points,done,rewarded,settled}]}]
       ended: false
     };
   }

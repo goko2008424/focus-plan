@@ -16,6 +16,9 @@
     'reward-perfect': '🏆 完美奖励',
     'hour-reward': '⏱ 小时计划达标奖励',
     'rest-reward': '☕ 好好休息奖励',
+    'sport': '🏃 运动完成',
+    'sport-cut': '🏃 运动没做到（扣）',
+    'focus-cut': '🔥 学习休息时消耗（扣）',
     'redeem': '🎁 积分兑换',
     'adjust': '✏ 调整'
   };

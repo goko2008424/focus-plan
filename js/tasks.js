@@ -20,6 +20,10 @@
   let tickId = null;
   let activeTab = 'today';
   let srProgressGroupKey = null; // 已完成"进度休息"提醒的组/任务键（避免每 5 分钟小题都提醒）
+  // 🔥 连续学习 & ☕ 小休：休息单独算不占学习；休息回来问消耗，结束今天统一扣
+  const FOCUS_CUT_PER = 5; // 休息中消耗一次扣的积分
+  const streak = { startAt: Date.now(), accMs: 0 };
+  let smallRest = null;    // {startAt, durMs}
 
   // 小任务开始时随机播一句至理名言
   const QUOTES = [
@@ -76,6 +80,9 @@
         ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
         : 'linear-gradient(90deg,#3b82f6,#22a06b)';
     }
+    // 🔥 连续学习累计 + 小休倒计时（休息不占学习时间）
+    if (timer && !timer.paused && !smallRest) { streak.accMs += 1000; renderStreakBar(); }
+    else if (smallRest) { renderStreakBar(); if (Date.now() >= smallRest.startAt + smallRest.durMs) endSmallRest(); }
     // 子任务倒计时区（到点继续计时、不自动弹窗，显示超时）
     if (cdTimer) {
       // 任务内小休（强化休息系统）：倒计时展示 + 到点自动恢复原题
@@ -1319,6 +1326,11 @@
             });
             S().save();
           }
+          // 🔥 学习休息中的消耗，结束今天统一扣分
+          const cutN = day.focusCut || 0;
+          if (cutN > 0) {
+            App.store.addLedger(dayKey, 'focus-cut', { points: -cutN * FOCUS_CUT_PER, note: '学习休息时消耗 ' + cutN + ' 次，扣 ' + (cutN * FOCUS_CUT_PER) + ' 分' });
+          }
           day.ended = true;
           S().save();
           App.ui.closeModal();
@@ -1328,6 +1340,66 @@
         cancel: App.ui.closeModal
       });
     }
+  }
+
+  /* ---------- 🔥 连续学习 & 小休（学习时可休息，休息单独算，回来问消耗） ---------- */
+  function streakLiveMs() {
+    if (!timer || timer.paused || smallRest) return streak.accMs;
+    return streak.accMs + (Date.now() - streak.startAt);
+  }
+  function renderStreakBar() {
+    const bar = document.getElementById('streak-bar');
+    if (!bar) return;
+    if (smallRest) {
+      const leftSec = Math.max(0, Math.ceil((smallRest.startAt + smallRest.durMs - Date.now()) / 1000));
+      const f = document.getElementById('timer-float');
+      bar.innerHTML = '<div class="card streak-card resting">☕ <b>小休中</b> · 剩余 ' +
+        S().fmtClock(leftSec * 1000).replace(/^00:/, '') + ' · 休息不占学习 <button class="btn btn-small" id="sr-end" style="margin-left:6px">🔚 结束小休</button></div>';
+      const e = bar.querySelector('#sr-end');
+      if (e) e.onclick = function () { if (f && !f.classList.contains('hidden')) {} endSmallRest(); };
+      return;
+    }
+    const live = streakLiveMs();
+    const on = !!timer && !timer.paused;
+    bar.innerHTML = '<div class="card streak-card">🔥 ' +
+      (on ? '已连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>' +
+        '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>'
+        : '连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>（上次休息后）') +
+      '</div>';
+    const r = bar.querySelector('#sr-rest');
+    if (r) r.onclick = startSmallRest;
+  }
+  function startSmallRest() {
+    if (smallRest || !timer) return;
+    smallRest = { startAt: Date.now(), durMs: 300000 }; // 默认小休 5 分钟，休息单独算
+    streak.accMs = streakLiveMs(); // 定格连续学习
+    if (!timer.paused) togglePause(); // 学习计时暂停，休息不占学习
+    renderStreakBar();
+    App.ui.toast('☕ 小休开始，休息时间不占学习。');
+  }
+  function endSmallRest() {
+    if (!smallRest) return;
+    smallRest = null;
+    const day = S().getDay(S().todayKey());
+    App.ui.openModal('🛋 小休结束 · 自查一下', '' +
+      '<p style="font-size:13px">这一段休息，中途有没有去干<b>消耗性的事</b>（刷手机 / 刷视频 / 分神）？</p>' +
+      '<p style="font-size:12px;color:#8a919c">如实选：没有 → 干净休息；有 → 记一次消耗（结束今天的运动/任务时会统一扣 ' + FOCUS_CUT_PER + ' 分）。</p>',
+      '<button class="btn btn-primary" data-act="clean">✅ 没有，休息得很好</button>' +
+      '<button class="btn" style="background:#e2545d;border-color:#e2545d;color:#fff" data-act="cut">⚠️ 有，我消耗了</button>');
+    App.ui.bindActions({
+      clean: function () { App.ui.closeModal(); finishRest(false); },
+      cut: function () {
+        day.focusCut = (day.focusCut || 0) + 1;
+        S().save();
+        App.ui.closeModal(); finishRest(true);
+      }
+    });
+  }
+  function finishRest(distracted) {
+    streak.startAt = Date.now(); streak.accMs = 0; // 休息后连续学习归零重新算
+    if (timer && timer.paused) togglePause(); // 自动恢复学习计时
+    renderStreakBar();
+    App.ui.toast(distracted ? '⚠️ 记了一次消耗，结束今天的运动/任务时会扣 ' + FOCUS_CUT_PER + ' 分' : '✅ 休息结束，接着学吧');
   }
 
   /* ---------- 渲染 ---------- */
@@ -1411,6 +1483,7 @@
         '</div>';
     }).join('');
     bindTodayEvents();
+    renderStreakBar();
     renderReview(dayKey);
     renderHourPlan(dayKey);
   }

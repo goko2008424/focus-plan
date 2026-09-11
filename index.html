@@ -17,6 +17,7 @@
       </div>
       <nav id="main-nav">
         <button class="nav-btn active" data-view="tasks">任务</button>
+        <button class="nav-btn" data-view="sport">🏃 运动</button>
         <button class="nav-btn" data-view="timeline">时间轴</button>
         <button class="nav-btn" data-view="stats">历史</button>
         <button class="nav-btn" data-view="settings">设置</button>
@@ -86,6 +87,7 @@
       <div id="tasks-today" class="tab-panel active">
         <div id="today-date" class="date-label"></div>
         <div id="hour-card"></div>
+        <div id="streak-bar"></div>
         <div id="task-columns"></div>
         <div class="card" id="review-card"></div>
         <div id="link-card"></div>
@@ -99,6 +101,16 @@
         <div id="tomorrow-columns"></div>
         <p class="hint">提示：今晚填好明天的任务，"结束今天"时未完成的任务也会自动顺延到这里。</p>
       </div>
+    </section>
+
+    <!-- 运动视图 -->
+    <section id="view-sport" class="view">
+      <div class="view-tabs">
+        <button class="tab-btn active" data-tab="today" id="sport-tab-today">今日运动</button>
+        <button class="tab-btn" data-tab="plan" id="sport-tab-plan">运动安排（明天的）</button>
+      </div>
+      <div id="sport-today" class="tab-panel active"></div>
+      <div id="sport-plan" class="tab-panel"></div>
     </section>
 
     <!-- 时间轴视图 -->
@@ -204,6 +216,7 @@
   <script src="js/timeline.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/sport.js"></script>
   <script src="js/link.js"></script>
   <script src="js/app.js"></script>
   <script>

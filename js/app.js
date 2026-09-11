@@ -28,22 +28,12 @@
     }
     lastPoints = pts;
 
-    // 三段时间：有效学习（主线）/ 扩展（拓展）/ 辅助（辅助推进）
-    var mainMs = 0, extMs = 0, auxMs = 0;
-    day.sessions.forEach(function (se) {
-      if (!se.taskId) return; // 非任务会话（休息/生活等）不计入学习时间
-      var tm = (se.actualMinutes || 0) * 60000;
-      var taskKey = null, task = null;
-      ['required', 'ideal', 'extra'].forEach(function (k) {
-        if (task) return;
-        var f = (day.tasks[k] || []).find(function (t) { return t.id === se.taskId; });
-        if (f) { taskKey = k; task = f; }
-      });
-      if (!task) return;
-      if (taskKey === 'extra' || task.long) extMs += tm;
-      else if (task.aux) auxMs += tm;
-      else mainMs += tm;
-    });
+    // 三段时间：与时间轴摘要完全同源（都从 day.timeline 按分类统计），保证两处一致
+    var recs = day.timeline || [];
+    var sum = function (f) { return recs.reduce(function (s, r) { return s + (f(r) ? (r.minutes || 0) : 0); }, 0); };
+    var mainMs = sum(function (r) { return r.category === 'study' && r.countAsStudy; }) * 60000;
+    var extMs = sum(function (r) { return r.category === 'extend'; }) * 60000;
+    var auxMs = sum(function (r) { return r.category === 'fun'; }) * 60000;
     document.getElementById('stat-main').textContent = S().fmtDur(mainMs / 60000);
     document.getElementById('stat-extend').textContent = S().fmtDur(extMs / 60000);
     document.getElementById('stat-aux').textContent = S().fmtDur(auxMs / 60000);
@@ -169,6 +159,7 @@
     App.tasks.init();
     App.settings.init();
     App.settings.render();
+    if (App.sport && App.sport.init) App.sport.init();
     if (App.link && App.link.init) App.link.init();
 
     // 初始化各视图
