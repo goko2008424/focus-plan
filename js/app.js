@@ -156,7 +156,7 @@
     };
     // 小任务倒计时按钮
     document.getElementById('cd-pause').onclick = function () { App.tasks.toggleCdPause(); };
-    document.getElementById('cd-rest').onclick = function () { App.tasks.startMicroRest(); };
+    document.getElementById('cd-rest').onclick = function () { App.tasks.startSmallRest(); };
     document.getElementById('cd-split').onclick = function () { App.tasks.reopenSplit(); };
     document.getElementById('cd-stop').onclick = function () { App.tasks.cdFinish(); };
 

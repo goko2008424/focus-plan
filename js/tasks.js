@@ -1370,10 +1370,13 @@
     if (r) r.onclick = startSmallRest;
   }
   function startSmallRest() {
-    if (smallRest || !timer) return;
+    if (smallRest) return;
+    const hasTimer = !!timer, hasCd = !!cdTimer;
+    if (!hasTimer && !hasCd) return; // 没在计时/倒计时时不能小休
     smallRest = { startAt: Date.now(), durMs: 300000 }; // 默认小休 5 分钟，休息单独算
     streak.accMs = streakLiveMs(); // 定格连续学习
-    if (!timer.paused) togglePause(); // 学习计时暂停，休息不占学习
+    if (hasTimer && !timer.paused) togglePause(); // 正向计时暂停，休息不占学习
+    else if (hasCd && !cdTimer.paused) toggleCdPause(); // 做题倒计时暂停
     renderStreakBar();
     App.ui.toast('☕ 小休开始，休息时间不占学习。');
   }
@@ -1397,7 +1400,8 @@
   }
   function finishRest(distracted) {
     streak.startAt = Date.now(); streak.accMs = 0; // 休息后连续学习归零重新算
-    if (timer && timer.paused) togglePause(); // 自动恢复学习计时
+    if (timer && timer.paused) togglePause(); // 自动恢复正向计时
+    else if (cdTimer && cdTimer.paused) toggleCdPause(); // 自动恢复做题倒计时
     renderStreakBar();
     App.ui.toast(distracted ? '⚠️ 记了一次消耗，结束今天的运动/任务时会扣 ' + FOCUS_CUT_PER + ' 分' : '✅ 休息结束，接着学吧');
   }
