@@ -82,7 +82,7 @@ const SLIDES = [
       return '<div style="text-align:center">'+
         '<span class="kicker" style="margin-bottom:22px">FOCUS-PLAN · 版本更新史</span>'+
         '<div class="big">专注计划</div>'+
-        '<h1 style="font-size:34px;margin:18px 0 6px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 6.0 的每一次进化</h1>'+
+        '<h1 style="font-size:34px;margin:18px 0 6px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 9.0 的每一次进化</h1>'+
         '<p class="sub" style="margin-top:14px">你的个人学习账本 · 系统是账本，你是会计</p>'+
         '<div class="timeline" id="timeline">'+
           '<div class="tl" data-i="1"><div class="n">v1</div><div class="t">基础版</div></div>'+
@@ -93,6 +93,7 @@ const SLIDES = [
           '<div class="tl" data-i="6"><div class="n">v6</div><div class="t">精简自选</div></div>'+
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">主线/辅助+粘贴</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">小时计划 7 项完善</div></div>'+
+          '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">一波大修</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -245,11 +246,33 @@ const SLIDES = [
       '<div class="col" style="--cc:#0ea5e9"><h4>📊 统计统一</h4><ul><li>顶部状态条与时间轴摘要同源（都从时间轴按分类统计），同一天数值完全一致</li></ul></div></div>'
   },
   {
+    name:"v9 · 一波大修", badge:{t:"v9 · 一波大修",c:"#e2545d"},
+    tag:"把几个拖了很久的老毛病，一次修掉",
+    cols:[
+      {t:"🎁 小时计划积分修复", c:"#e2545d", items:[
+        "老 bug：达标后「自查窗」刚弹出就被「复盘窗」顶掉，积分永远入不了账（手动/自动结算都中招）",
+        "现在顺序正确：先自查 → 提交入账 → 再复盘 → 再衔接；自查窗上锁，不提交不消失"]},
+      {t:"🔥 连续学习重做", c:"#f59e0b", items:[
+        "以前：不开任务计时就不涨、悬浮窗藏着不涨、还会双倍跳——基本不可用",
+        "现在：真在学就每秒 +1（任务计时 / 小题倒计时 / 小时代段内都算），暂停和休息不涨",
+        "只有 ☕ 小休、小时代一段结束、小时休息结束才清零重新算；刷新页面也不丢（当天有效）"]},
+      {t:"🏃 运动模块重做", c:"#22a06b", items:[
+        "安排不再只限明天：今天 / 明天 / 任选日期都能写",
+        "今天临时加运动：今日运动页一键「➕ 临时加一项」",
+        "编辑今天不会弄丢已完成 ✅ / 已扣 ❌ 的记录",
+        "白字看不清修好；「加一组→这组加一项」两步写清楚，每格都有标签"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#3b82f6"><h4>✨ 演示动画修复</h4><ul><li>老问题：打开演示后 关闭/上一步/下一步 全点不动，只能刷新页面</li><li>根因是按钮绑得太早（元素还没生成），现在每次打开都重新绑定</li><li>最后一步「看完啦」点了直接关闭，不再绕回第一页</li></ul></div>'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>⏰ 自动结算更可靠</h4><ul><li>到点自动结算照常封顶计时，弹窗不会再互相顶掉</li><li>结算后一定有弹窗跟进（自查或复盘），不会再只有一条一闪而过的提示</li></ul></div>'+
+      '<div class="col" style="--cc:#a855f7"><h4>🧾 提醒</h4><ul><li>小时计划的达标标准不变：这一段实际学满目标分钟数才算达标</li><li>提前做完任务但学时没到目标 = 未达标 = 0 积分（计时权威，由你拍板要不要改）</li></ul></div></div>'
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 8.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 9.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+

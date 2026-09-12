@@ -22,8 +22,12 @@
   let srProgressGroupKey = null; // 已完成"进度休息"提醒的组/任务键（避免每 5 分钟小题都提醒）
   // 🔥 连续学习 & ☕ 小休：休息单独算不占学习；休息回来问消耗，结束今天统一扣
   const FOCUS_CUT_PER = 5; // 休息中消耗一次扣的积分
-  const streak = { startAt: Date.now(), accMs: 0 };
+  // 连续学习 = 纯累计制：真在学（任务计时/小题倒计时/小时代段内且没暂停）每秒 +1，
+  // 暂停/休息不涨；只有主动 ☕ 小休、小时代一段结束、小时休息结束才清零。
+  // 刷新不丢：每 5 秒写一次 localStorage，按天失效。
+  const streak = { accMs: 0 };
   let smallRest = null;    // {startAt, durMs}
+  let streakSaveCnt = 0;
 
   // 小任务开始时随机播一句至理名言
   const QUOTES = [
@@ -80,9 +84,7 @@
         ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
         : 'linear-gradient(90deg,#3b82f6,#22a06b)';
     }
-    // 🔥 连续学习累计 + 小休倒计时（休息不占学习时间）
-    if (timer && !timer.paused && !smallRest) { streak.accMs += 1000; renderStreakBar(); }
-    else if (smallRest) { renderStreakBar(); if (Date.now() >= smallRest.startAt + smallRest.durMs) endSmallRest(); }
+    // 🔥 连续学习累计与小休倒计时都在常驻 tick（hourPlanAutoTick）里，这里不再重复处理
     // 子任务倒计时区（到点继续计时、不自动弹窗，显示超时）
     if (cdTimer) {
       // 任务内小休（强化休息系统）：倒计时展示 + 到点自动恢复原题
@@ -1343,38 +1345,68 @@
   }
 
   /* ---------- 🔥 连续学习 & 小休（学习时可休息，休息单独算，回来问消耗） ---------- */
-  function streakLiveMs() {
-    if (!timer || timer.paused || smallRest) return streak.accMs;
-    return streak.accMs + (Date.now() - streak.startAt);
+  // 现在算不算"真在学"：任务计时/小题倒计时在跑，或小时代段内（没开任何计时器、段在进行）
+  function isLearningNow() {
+    if (smallRest) return false;
+    const day = S().getDay(S().todayKey());
+    if (day.activeRest) return false; // 小时代休息中：不算学习
+    if (timer && !timer.paused) return true;
+    if (cdTimer && !cdTimer.paused && !cdTimer.microRest) return true;
+    if (!timer && !cdTimer) {
+      if (day.activeHourPlan) return true; // 只开小时代没开任务计时，也算在学
+    }
+    return false;
+  }
+  function streakLiveMs() { return streak.accMs; }
+  function streakSave() {
+    try { localStorage.setItem('focusPlan.streak', JSON.stringify({ d: S().todayKey(), ms: streak.accMs })); } catch (e) { /* 存储不可用就算了 */ }
+  }
+  function streakReset() {
+    streak.accMs = 0;
+    streakSave();
+    renderStreakBar();
+  }
+  function streakRestore() {
+    try {
+      const v = JSON.parse(localStorage.getItem('focusPlan.streak') || 'null');
+      streak.accMs = (v && v.d === S().todayKey() && v.ms > 0 && v.ms < 86400000 * 2) ? v.ms : 0; // 超过2天视为残留，清零
+    } catch (e) { streak.accMs = 0; }
+  }
+  // 常驻每秒调用：真在学就累计并刷新顶栏（在 hourPlanAutoTick 里驱动，任何视图都生效）
+  function streakTick() {
+    if (!isLearningNow()) return;
+    streak.accMs += 1000;
+    if (++streakSaveCnt % 5 === 0) streakSave(); // 每5秒存一次，刷新不丢
+    renderStreakBar();
   }
   function renderStreakBar() {
     const bar = document.getElementById('streak-bar');
     if (!bar) return;
     if (smallRest) {
       const leftSec = Math.max(0, Math.ceil((smallRest.startAt + smallRest.durMs - Date.now()) / 1000));
-      const f = document.getElementById('timer-float');
       bar.innerHTML = '<div class="card streak-card resting">☕ <b>小休中</b> · 剩余 ' +
         S().fmtClock(leftSec * 1000).replace(/^00:/, '') + ' · 休息不占学习 <button class="btn btn-small" id="sr-end" style="margin-left:6px">🔚 结束小休</button></div>';
       const e = bar.querySelector('#sr-end');
-      if (e) e.onclick = function () { if (f && !f.classList.contains('hidden')) {} endSmallRest(); };
+      if (e) e.onclick = function () { endSmallRest(); };
       return;
     }
     const live = streakLiveMs();
-    const running = !!timer && !timer.paused;
+    const running = isLearningNow();
+    const canFloatRest = !!timer || !!cdTimer;
+    const hpOnly = !canFloatRest && !!(S().getDay(S().todayKey()).activeHourPlan); // 只开小时代没开计时：小休走小时计划的休息
     bar.innerHTML = '<div class="card streak-card">🔥 ' +
       (running ? '已连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>'
         : '连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>（上次休息后）') +
-      (timer ? '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>' : '') +
+      (canFloatRest || hpOnly ? '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>' : '') +
       '</div>';
     const r = bar.querySelector('#sr-rest');
-    if (r) r.onclick = startSmallRest;
+    if (r) r.onclick = canFloatRest ? startSmallRest : startRestModal;
   }
   function startSmallRest() {
     if (smallRest) return;
     const hasTimer = !!timer, hasCd = !!cdTimer;
     if (!hasTimer && !hasCd) return; // 没在计时/倒计时时不能小休
     smallRest = { startAt: Date.now(), durMs: 300000 }; // 默认小休 5 分钟，休息单独算
-    streak.accMs = streakLiveMs(); // 定格连续学习
     if (hasTimer && !timer.paused) togglePause(); // 正向计时暂停，休息不占学习
     else if (hasCd && !cdTimer.paused) toggleCdPause(); // 做题倒计时暂停
     renderStreakBar();
@@ -1399,7 +1431,7 @@
     });
   }
   function finishRest(distracted) {
-    streak.startAt = Date.now(); streak.accMs = 0; // 休息后连续学习归零重新算
+    streakReset(); // 休息后连续学习归零重新算
     if (timer && timer.paused) togglePause(); // 自动恢复正向计时
     else if (cdTimer && cdTimer.paused) toggleCdPause(); // 自动恢复做题倒计时
     renderStreakBar();
@@ -1646,18 +1678,19 @@
     day.activeHourPlan = null;
     S().save();
     App.tasks.renderToday();
+    streakReset(); // 一段结束，连续学习重新计时
+    // 顺序很重要：先把这段写进时间轴；达标时先弹自查、提交入账之后，才弹复盘+衔接。
+    // （之前自查窗刚弹出来就被复盘窗顶掉，积分永远入不了账）
+    hourPlanTimelinePush(plan);
     if (met) {
-      // 达标先自查中途消耗，选完才真正入账
-      hourDistractCheck(plan);
+      hourDistractCheck(plan, function () { hourReviewPrompt(plan); });
     }
     else {
       App.ui.toast(plan.autoEnd
         ? ('⏰ 到点了，这段没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分，到点即封顶、超时补做不算）——积分清零，下段再冲 💪')
         : ('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'));
+      hourReviewPrompt(plan);
     }
-    // 无论达不达标：先写这一段复盘，再强制衔接下一步，同时把这段写进时间轴延续记录
-    hourPlanTimelinePush(plan);
-    hourReviewPrompt(plan);
   }
   // 每段小时代 → 在时间轴里单独记一条延续记录（视图条，不计入学习分钟避免重复）
   function hourPlanTimelinePush(plan) {
@@ -1694,7 +1727,8 @@
     });
   }
   // 达标后的「中途消耗自查」：有消耗 → 按设置百分比扣掉这段奖励积分
-  function hourDistractCheck(plan) {
+  // done：自查提交（入账）之后再继续的回调——复盘窗必须等这步做完才能弹，否则会把自查窗顶掉
+  function hourDistractCheck(plan, done) {
     const dayKey = S().todayKey();
     const rw = plan.reward || 0;
     const cutPct = (S().settings().hourDistractCut == null ? 100 : S().settings().hourDistractCut);
@@ -1713,7 +1747,8 @@
       '<button class="btn btn-small" data-act="n3">3 次以上</button>' +
       '</div>' +
       '<p style="font-size:12px;color:#8a919c;margin-top:8px">每消耗 1 次扣 ' + cutPct + '%（累计上限扣光）。选好两项再点「如实提交」。</p>',
-      '<button class="btn btn-primary" data-act="ok">☑ 如实提交</button>');
+      '<button class="btn btn-primary" data-act="ok">☑ 如实提交</button>',
+      { lock: true }); // 上锁：点空白不许关，必须如实提交，积分才不会无声丢掉
     let restGood = null, times = 0;
     modal.addEventListener('click', function (e) {
       const b = e.target.closest('[data-act]');
@@ -1749,6 +1784,7 @@
       else {
         App.ui.toast(rw > 0 ? ('🎉 全程专注，这段 +' + rw + ' 分已入账！') : '🎉 全程专注，这段达到目标了！');
       }
+      if (done) done(); // 入账完成，再走复盘+衔接
     }
     App.ui.bindActions({ ok: function () { settle(); } });
   }
@@ -1813,6 +1849,7 @@
       S().save();
       if (App.app && App.app.refreshStats) App.app.refreshStats();
       App.tasks.renderToday();
+      streakReset(); // 休息结束，连续学习归零
       App.ui.closeModal();
       App.ui.toast(distracted
         ? ('休息有消耗，扣了 ' + cutPct + '%；起来动一动，接着冲 💪')
@@ -1821,8 +1858,15 @@
     }
     App.ui.bindActions({ ok: function () { settle(false); }, cut: function () { settle(true); } });
   }
-  // 常驻 tick：到点自动结算 + 实时刷新卡片倒计时
+  // 常驻 tick：连续学习累计（任何视图/悬浮窗藏着都算）+ 到点自动结算 + 实时刷新卡片倒计时
   function hourPlanAutoTick() {
+    // 🔥 连续学习：真在学每秒 +1；小休到点自动结束
+    if (smallRest) {
+      if (Date.now() >= smallRest.startAt + smallRest.durMs) { endSmallRest(); }
+      else renderStreakBar();
+    } else {
+      streakTick();
+    }
     const day = S().getDay(S().todayKey());
     // 休息中：到点自动结束并衔接下一段
     const r = day.activeRest;
@@ -2408,7 +2452,8 @@
       b.onclick = function () { switchTab(b.dataset.tab); };
     });
     document.getElementById('btn-end-day').onclick = endDay;
-    // ⏱ 小时计划常驻 tick：到点自动结算 + 实时刷新倒计时
+    streakRestore(); // 恢复刷新前的连续学习（当天有效）
+    // ⏱ 小时计划常驻 tick：连续学习累计 + 到点自动结算 + 实时刷新倒计时
     setInterval(function () { hourPlanAutoTick(); }, 1000);
   }
 

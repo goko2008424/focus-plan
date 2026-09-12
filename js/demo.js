@@ -143,7 +143,7 @@
     const p = document.getElementById('demo-prev');
     const n = document.getElementById('demo-next');
     if (p) p.classList.toggle('disabled', i === 0);
-    if (n) n.textContent = (i === STEPS.length - 1) ? '✓ 看完啦' : '下一步 →';
+    if (n) n.textContent = (i === STEPS.length - 1) ? '✓ 看完啦（点我关闭）' : '下一步 →';
   }
 
   function play(i) {
@@ -162,7 +162,10 @@
     }, s.dur || 3000);
   }
 
-  function next() { play(idx + 1); }
+  function next() {
+    if (idx >= STEPS.length - 1) { App.demo.close(); return; } // 最后一步再点 = 关闭，别绕回第一页
+    play(idx + 1);
+  }
   function prev() { play(idx - 1); }
 
   function bind() {
@@ -185,6 +188,7 @@
     open: function () {
       const o = ov();
       if (!o) return;
+      bind(); // 每次打开都重绑：overlay 的 HTML 在脚本之后，页面加载时的绑定时元素还不存在、按钮会全失灵
       o.classList.remove('hidden');
       idx = 0; build(0); schedule();
     },
