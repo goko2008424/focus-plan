@@ -50,6 +50,7 @@
     const modal = App.ui.openModal('🎓 开始听课三步',
       '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">预习只读目标与总结（到点就停，做减法）→ 听课用空白纸记重点 → 课后用自己的逻辑重构笔记。' +
       '<b>三步都走完才发大奖</b>，跳步/放弃拿不到。</p>' +
+      '<p class="hint" style="margin-bottom:10px"><b>和「任务」怎么分工？</b>上课这件事本身 → 用这里走三步（自动进时间轴）；课后要做的事（作业、订正、要重做的题）→ 到「任务」或「📅 日历」里安排。两边别重复安排同一件事。</p>' +
       '<div class="field"><label>课程名（如：化学 · 盐类水解）</label><input id="lec-course" style="width:100%;' + INPUT_STYLE + '" placeholder="这节课叫什么" /></div>' +
       '<div class="field-row">' +
       '<div class="field"><label>⏳ 预习上限（分钟）</label><input type="number" id="lec-pmin" min="1" value="30" /></div>' +
@@ -143,6 +144,7 @@
         L.attendStartAt = Date.now();
         L.note = L.note || '';
         S().save();
+        timelinePush(L); // 📅 开始听就进时间轴
         App.ui.closeModal();
         render();
         App.ui.toast('🪑 开始听课！只记重点，别在讲义上批注');
@@ -212,6 +214,7 @@
       if (which === 'preview') {
         L.skipPreview = true; L.previewEndAt = Date.now();
         L.phase = 'attend'; L.prepDone = false; L.attendStartAt = Date.now(); L.note = L.note || '';
+        timelinePush(L);
         App.ui.toast('已跳过预习（无大奖）。听课开始');
       } else if (which === 'attend') {
         L.skipAttend = true; L.attendEndAt = Date.now();
@@ -244,26 +247,35 @@
       day.lectures = day.lectures || [];
       day.lectures.push(L);
       day.activeLecture = null;
+      timelinePush(L);
       S().save();
       render();
       App.ui.toast('已放弃并存档。下次换个预算再试');
     });
   }
 
+  /* 时间轴同步（upsert）：开始听就挂一条，阶段推进/完成/放弃时更新同一条 */
   function timelinePush(L) {
     const day = today();
+    day.timeline = day.timeline || [];
     const start = new Date(L.previewStartAt), end = new Date(L.endAt || Date.now());
     let sMin = start.getHours() * 60 + start.getMinutes();
     let eMin = end.getHours() * 60 + end.getMinutes();
     if (eMin < sMin) eMin = 1439;
     const totalMin = Math.max(1, Math.round((phaseSeconds(L, 'preview') + phaseSeconds(L, 'attend') + phaseSeconds(L, 'cons')) / 60));
-    day.timeline = day.timeline || [];
-    day.timeline.push({
-      id: S().uid(), start: sMin, end: eMin, minutes: totalMin,
-      content: '🎓 听课三步 · ' + L.course + (L.awarded > 0 ? ' · 三步达成' : ''),
-      category: 'study', countAsStudy: true, auto: true, lectureId: L.id,
-      note: (L.question ? '核心问题：' + L.question + '　' : '') + (L.chain || '')
-    });
+    const content = '🎓 听课三步 · ' + L.course + (L.endAt ? (L.abandoned ? ' · 放弃' : (L.awarded > 0 ? ' · 三步达成' : '')) : ' · 进行中');
+    const note = (L.question ? '核心问题：' + L.question + '　' : '') + (L.chain || '');
+    const rec = day.timeline.find(function (r) { return r.lectureId === L.id; });
+    if (rec) {
+      rec.start = sMin; rec.end = eMin; rec.minutes = Math.min(totalMin, Math.max(1, eMin - sMin));
+      rec.content = content; rec.note = note;
+    } else {
+      day.timeline.push({
+        id: S().uid(), start: sMin, end: eMin, minutes: Math.min(totalMin, Math.max(1, eMin - sMin)),
+        content: content, category: 'study', countAsStudy: true, auto: true, lectureId: L.id,
+        note: note
+      });
+    }
     S().save();
   }
 

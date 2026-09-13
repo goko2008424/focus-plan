@@ -1284,6 +1284,60 @@
     reopen();
   }
 
+  /* ---------- 🌱 拓展欠账清算：挂账的任务，下次结算时给最后一次补勾机会 ---------- */
+  function pendingExtDebts() {
+    const out = [];
+    const days = S().data().days;
+    Object.keys(days).forEach(function (k) {
+      const d = days[k];
+      if (d.extDebt && !d.extDebt.settled) {
+        (d.extDebt.items || []).forEach(function (it) { out.push({ dayKey: k, debt: d.extDebt, it: it }); });
+      }
+    });
+    return out;
+  }
+
+  function settleExtDebts(done) {
+    const items = pendingExtDebts();
+    if (!items.length) { done(); return; }
+    const rows = items.map(function (x, i) {
+      return '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13.5px;color:#374151">' +
+        '<input type="checkbox" data-debt="' + i + '" /> <span>[' + S().fmtDateCN(S().keyToDate(x.dayKey)).slice(5, 12) + '] ' +
+        S().esc(x.it.text) + ' <b style="color:#e2545d">(' + x.it.points + ' 分)</b></span></label>';
+    }).join('');
+    const modal = App.ui.openModal('🌱 拓展欠账清算（宽限到期）',
+      '<p style="font-size:13px">之前挂账的长期拓展到了最后期限：<b>做完的勾上划掉（不扣分）</b>，没勾的现在真扣：</p>' +
+      '<div style="max-height:220px;overflow-y:auto;border:1px solid #e5e8ec;border-radius:8px;padding:6px 10px">' + rows + '</div>',
+      '<button class="btn btn-primary" data-act="ok">确认清算</button>');
+    App.ui.bindActions({
+      ok: function () {
+        const ticked = {};
+        modal.querySelectorAll('[data-debt]:checked').forEach(function (c) { ticked[c.dataset.debt] = true; });
+        const perDay = {};
+        items.forEach(function (x, i) {
+          const day = S().getDay(x.dayKey);
+          if (ticked[i]) {
+            const t = (day.tasks[x.it.col] || []).find(function (t2) { return t2.id === x.it.id; });
+            if (t && !t.done) {
+              t.done = true;
+              t.summary = { done: true, text: '（宽限期内补完）', at: new Date().toISOString() };
+            }
+          } else {
+            perDay[x.dayKey] = (perDay[x.dayKey] || 0) + x.it.points;
+          }
+          x.debt.settled = true;
+        });
+        Object.keys(perDay).forEach(function (k) {
+          App.store.addLedger(k, 'ext-penalty', { points: -perDay[k], note: '🌱 拓展欠账清算：宽限期内没补完，扣 ' + perDay[k] + ' 分' });
+        });
+        S().save();
+        App.ui.closeModal();
+        if (items.length) App.ui.toast('🌱 拓展欠账已清算');
+        done();
+      }
+    });
+  }
+
   /* ---------- 结束今天 ---------- */
   function endDay() {
     // 若正在休息/杂事/娱乐，先提醒收回来
@@ -1291,7 +1345,37 @@
       App.link.endDayGuard();
       return;
     }
-    const dayKey = S().todayKey();
+    // 🌱 先清算之前的拓展欠账（宽限到期：补勾=不扣，没补勾=真扣），清完再继续结算
+    settleExtDebts(function () {
+      endDayStep2();
+    });
+  }
+
+  function isEmptyDay(d) {
+    if (!d) return true;
+    const noTasks = !['required', 'ideal', 'extra'].some(function (k) {
+      return (d.tasks[k] || []).some(function (t) { return t.text; });
+    });
+    return noTasks && !(d.sessions || []).length && !(d.timeline || []).length;
+  }
+
+  /** 智能结算目标：正常=今天；熬夜跨夜/今天已结束 → 往前找最近一个没结算的日子（最多回看7天） */
+  function pickSettleKey() {
+    const today = S().todayKey();
+    const tDay = S().data().days[today];
+    if (tDay && !tDay.ended && !isEmptyDay(tDay)) return today;
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const k = S().dateKey(d);
+      const pd = S().data().days[k];
+      if (pd && !pd.ended && !isEmptyDay(pd)) return k;
+    }
+    return today;
+  }
+
+  function endDayStep2() {
+    const dayKey = pickSettleKey();
     const day = S().getDay(dayKey);
     const settings = S().settings();
 
@@ -1314,10 +1398,15 @@
       const focusMin = sessions.reduce(function (s, x) { return s + (x.actualMinutes || 0); }, 0);
       const restMin = Math.round(sessions.reduce(function (s, x) { return s + (x.pausedMs || 0); }, 0) / 60000);
 
-      const undone = [];
+      const undoneAll = [];
       ['required', 'ideal', 'extra'].forEach(function (k) {
-        day.tasks[k].filter(function (t) { return !t.done; }).forEach(function (t) { undone.push({ k: k, task: t }); });
+        day.tasks[k].filter(function (t) { return !t.done; }).forEach(function (t) { undoneAll.push({ k: k, task: t }); });
       });
+      // 🌱 严格模式：拓展不顺延（不进顺延名单），改挂账宽限
+      const undone = settings.extStrict ? undoneAll.filter(function (u) { return u.k !== 'extra'; }) : undoneAll.slice();
+      const extItems = settings.extStrict ? undoneAll.filter(function (u) { return u.k === 'extra'; }) : [];
+      const extPointsOf = function (t) { return t.points != null ? t.points : (settings.extPoints || 0); };
+      const extDebtSum = extItems.reduce(function (s, u) { return s + extPointsOf(u.task); }, 0);
 
       let body = '' +
         '<div class="field"><label>今日完成</label><p>' +
@@ -1327,6 +1416,24 @@
         '</p></div>' +
         '<div class="field"><label>今日专注</label><p>' + S().fmtDur(focusMin) + (restMin > 0 ? '（期间休息 ' + S().fmtDur(restMin) + '）' : '') + '</p></div>';
 
+      if (settings.extStrict && extItems.length > 0) {
+        body += '<div class="field"><label>🌱 长期拓展（严格模式 · 宽限一晚）</label><p style="color:#e2545d;font-weight:700">' +
+          '没做完 ' + extItems.length + ' 条，共 ' + extDebtSum + ' 分 → <b>先挂账，暂不扣</b></p>' +
+          '<p class="hint">下面把"实际做完了"的任务勾上（熬夜做完的也算完），勾了的直接划掉、不扣分；' +
+          '剩下的挂账，<b>下次结束今天的时会再给你一次补勾机会</b>，到那时还没补完才真扣。</p></div>';
+      }
+
+      if (undoneAll.length > 0) {
+        body += '<div class="field"><label>☑ 补记：下面没勾完的任务里，有实际已经做完的？（勾上就划掉，拓展的能免扣）</label>' +
+          '<div style="max-height:180px;overflow-y:auto;border:1px solid #e5e8ec;border-radius:8px;padding:6px 10px">' +
+          undoneAll.map(function (u) {
+            return '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13.5px;color:#374151">' +
+              '<input type="checkbox" data-donefix="' + u.task.id + '" data-col="' + u.k + '" /> <span>[' + COL_NAMES[u.k] + '] ' + S().esc(u.task.text) + '</span></label>';
+          }).join('') + '</div></div>';
+      } else if (undoneAll.length === 0) {
+        body += '<p style="color:#22a06b;font-weight:600">🎉 今天任务全部完成，提前收工吧！</p>';
+      }
+
       if (settings.rollover && undone.length > 0) {
         body += '<div class="field"><label>未完成任务，勾选顺延到明天（无惩罚）</label>' +
           '<div style="max-height:180px;overflow-y:auto;border:1px solid #e5e8ec;border-radius:8px;padding:6px 10px">' +
@@ -1334,8 +1441,6 @@
             return '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13.5px;color:#374151">' +
               '<input type="checkbox" data-roll="' + u.task.id + '" checked /> <span>[' + COL_NAMES[u.k] + '] ' + S().esc(u.task.text) + '</span></label>';
           }).join('') + '</div></div>';
-      } else if (undone.length === 0) {
-        body += '<p style="color:#22a06b;font-weight:600">🎉 今天任务全部完成，提前收工吧！</p>';
       }
 
       // 结束时的复盘（可选，写给自己；边打边自动保存）
@@ -1343,7 +1448,7 @@
         '<textarea id="end-review" style="width:100%;min-height:64px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13.5px;resize:vertical">' +
         S().esc((day.review && day.review.text) || '') + '</textarea></div>';
 
-      const modal = App.ui.openModal('🏁 结束今天', body,
+      const modal = App.ui.openModal(dayKey === S().todayKey() ? '🏁 结束今天' : '🏁 结算 ' + S().fmtDateCN(S().keyToDate(dayKey)).slice(5, 12) + '（熬夜跨天，先结昨天）', body,
         '<button class="btn btn-primary" data-act="ok">确认结束</button><button class="btn" data-act="cancel">取消</button>');
       autoSave(modal.querySelector('#end-review'), function (v) {
         if (v.trim()) { day.review = { text: v, at: new Date().toISOString() }; }
@@ -1354,6 +1459,27 @@
           if (revTa) {
             const revText = revTa.value.trim();
             if (revText) day.review = { text: revText, at: new Date().toISOString() };
+          }
+          // ☑ 补记：勾了"实际做完了"的任务直接划掉（在结算日当天标完成）
+          modal.querySelectorAll('[data-donefix]:checked').forEach(function (c) {
+            const list = day.tasks[c.dataset.col];
+            const t = list.find(function (x) { return x.id === c.dataset.donefix; });
+            if (t && !t.done) {
+              t.done = true;
+              t.summary = { done: true, text: '（结算时补记完成）', at: new Date().toISOString() };
+            }
+          });
+          // 🌱 严格模式：拓展未完成 → 挂账（不扣分、不顺延、任务保留），下次结算时清算
+          if (settings.extStrict && extItems.length > 0) {
+            day.extDebt = {
+              settled: false,
+              count: extItems.length,
+              points: extDebtSum,
+              items: extItems.map(function (u) {
+                return { col: 'extra', id: u.task.id, text: u.task.text, points: extPointsOf(u.task) };
+              }),
+              at: new Date().toISOString()
+            };
           }
           if (settings.rollover && undone.length > 0) {
             const ids = [];
@@ -1368,6 +1494,7 @@
             });
             S().save();
           }
+          // 🌱 长期拓展严格模式的扣分已改为「挂账 + 下次结算时清算」，这里不再当场扣
           // 🔥 学习休息中的消耗，结束今天统一扣分
           const cutN = day.focusCut || 0;
           if (cutN > 0) {

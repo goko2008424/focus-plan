@@ -45,17 +45,17 @@
   function repeatModal(task, colKey, fromKey, mode) {
     const fromLabel = fromKey === todayK() ? '今天' : S().fmtDateCN(S().keyToDate(fromKey)).slice(5, 12);
     let pickKey = addDays(todayK(), 3);
-    let moveIt = (mode === 'move');
+    let moveIt = false; // 默认只复制——绝不悄悄删原任务
+    const hasKids = (task.subs || []).length || (task.groups || []).length;
     const modal = App.ui.openModal('🔁 重做安排 · ' + esc(task.text).slice(0, 20),
       '<p style="font-size:12.5px;color:var(--muted);margin-bottom:8px">原任务在 ' + fromLabel +
-      (mode === 'copy' ? '（完成后安排一次重做，原任务保留）' : '（可移动或复制到目标日期）') + '</p>' +
+      '。小任务和任务组会<b>一起带过去</b>（含题目列表）。</p>' +
       '<div class="field"><label>目标日期</label><input type="date" id="rep-date" value="' + pickKey + '" style="width:180px" /></div>' +
       '<div class="field"><label>标准：要做到什么程度（选填，如：全对 / 8分钟内解出）</label>' +
       '<input type="text" id="rep-standard" style="width:100%" value="' + esc(task.standard || '') + '" placeholder="写清楚标准，重做时才知道够不够格" /></div>' +
-      (mode === 'move'
-        ? '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;cursor:pointer;margin-top:4px">' +
-          '<input type="checkbox" id="rep-move" checked style="width:16px;height:16px" /> 移走（从 ' + fromLabel + ' 删除原任务）</label>'
-        : ''),
+      '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;cursor:pointer;margin-top:4px">' +
+      '<input type="checkbox" id="rep-move"' + (moveIt ? ' checked' : '') + ' style="width:16px;height:16px" /> ' +
+      '同时从 ' + fromLabel + ' <b>移走</b>原任务（不勾 = 复制一份，原任务原地保留）</label>',
       '<button class="btn btn-primary" data-act="ok">✔ 安排到 ' + S().fmtDateCN(S().keyToDate(pickKey)).slice(5, 12) + '</button>' +
       '<button class="btn" data-act="cancel">取消</button>');
     const dateEl = modal.querySelector('#rep-date');
@@ -72,12 +72,13 @@
         if (dateEl.value) pickKey = dateEl.value;
         if (pickKey < todayK()) { App.ui.toast('目标日期在过去啦，往后面挑一天'); return; }
         const n = copyTaskToDay(task, colKey, pickKey, std);
-        if (!n) { App.ui.toast('目标日期已有同名任务，不用重复安排'); return; }
+        if (!n) { App.ui.toast('目标日期已有同名任务，未重复安排（原任务原地保留）'); return; }
         if (moveIt && pickKey !== fromKey) removeTask(fromKey, colKey, task.id);
         S().save();
         App.ui.closeModal();
         render();
-        App.ui.toast('🔁 已安排：' + S().fmtDateCN(S().keyToDate(pickKey)).slice(5, 12) + ' 重做「' + task.text.slice(0, 14) + '」' + (std ? '（标准：' + std + '）' : ''));
+        App.ui.toast('🔁 已' + (moveIt ? '移动' : '复制') + '到 ' + S().fmtDateCN(S().keyToDate(pickKey)).slice(5, 12) +
+          '：' + task.text.slice(0, 14) + (hasKids ? '（小任务/任务组一起带了）' : '') + (std ? '（标准：' + std + '）' : ''));
       },
       cancel: App.ui.closeModal
     });
@@ -235,6 +236,23 @@
       '<p class="hint" style="margin:6px 0 0">按时间轴分类统计（学习/拓展/辅助/生活/其他）；休息和记录也会算进去。</p></div>';
   }
 
+  /* 任务的小任务/任务组上下文（只读展示，让人知道这条任务是哪部分） */
+  function taskContextHTML(task) {
+    let h = '';
+    (task.groups || []).forEach(function (g) {
+      const subs = g.subs || [];
+      const done = subs.filter(function (s) { return s.done === true; }).length;
+      h += '<div class="t-ctx grp">🧩 ' + esc(g.name || '任务组') + (subs.length ? '（' + done + '/' + subs.length + '）' : '') + '</div>';
+      subs.forEach(function (s) {
+        h += '<div class="t-ctx sub">· ' + esc(s.text) + (s.done === true ? ' ✓' : (s.done === false ? ' ✗' : '')) + '</div>';
+      });
+    });
+    (task.subs || []).forEach(function (s) {
+      h += '<div class="t-ctx sub">· ' + esc(s.text) + '（限' + s.minutes + '分）' + (s.done === true ? ' ✓' : (s.done === false ? ' ✗' : '')) + '</div>';
+    });
+    return h;
+  }
+
   /* ---------- 选中日的任务面板 ---------- */
   function dayPanelHTML(key) {
     const day = S().getDay(key);
@@ -265,7 +283,9 @@
         html += '<div class="cal-task' + (t.done ? ' done' : '') + '" style="border-bottom:1px dashed var(--line);padding:6px 2px">' +
           '<span class="t-text" style="font-size:13.5px;word-break:break-all;display:block">' + esc(t.text) + (t.done ? ' ✓' : '') + '</span>' +
           (t.standard ? '<div class="t-std" style="font-size:11.5px;color:#f59e0b;margin-top:2px">📌 标准：' + esc(t.standard) + '</div>' : '') +
+          taskContextHTML(t) +
           '<div class="t-btns">' +
+          '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（熬夜做完的在这里补勾划掉）">☑</button>' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" data-col="' + c.k + '" data-id="' + t.id + '" title="删除">🗑</button>' +
@@ -332,6 +352,12 @@
         const task = day.tasks[col].find(function (t) { return t.id === id; });
         if (!task) return;
         if (b.dataset.act === 'rep') repeatModal(task, col, selKey, selKey < todayK() ? 'move' : 'move');
+        else if (b.dataset.act === 'tick') {
+          task.done = !task.done;
+          if (task.done) task.summary = { done: true, text: '（手动补勾）', at: new Date().toISOString() };
+          S().save();
+          render();
+        }
         else if (b.dataset.act === 'edit') App.tasks.editTaskModal(col, id, selKey, false);
         else if (b.dataset.act === 'del') {
           App.ui.confirm('删除「' + task.text.slice(0, 16) + '」？', '删除', function () {

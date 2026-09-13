@@ -47,6 +47,7 @@
       '<div class="set-group"><h4>🔘 行为开关</h4>' +
       switchRow('set-ext-append', '拓展任务完成后可继续追加', s.extAppendable) +
       switchRow('set-rollover', '每日未完成任务自动顺延到明天', s.rollover) +
+      switchRow('set-ext-strict', '🌱 长期拓展严格模式：不顺延；没做完先挂账，宽限一次（下次结算前补勾=不扣），到期没补完才扣', s.extStrict) +
       '</div>' +
       '<div class="set-group"><h4>🎛 记录模式（时段衔接的监管强度）</h4>' +
       '<div class="set-row"><span class="set-label">模式</span>' +
@@ -82,6 +83,7 @@
     bind('set-hour-cut', function () { s.hourDistractCut = Math.max(0, Math.min(100, +this.value || 100)); S().save(); });
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
+    bind('set-ext-strict', function () { s.extStrict = this.checked; S().save(); });
     bind('set-mode', function () { s.recordMode = this.value; S().save(); });
     bind('set-rest-points', function () { s.restRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-sr-rest-min', function () { s.srRestMin = Math.max(1, +this.value || 2); S().save(); });

@@ -18,6 +18,7 @@
     'rest-reward': '☕ 好好休息奖励',
     'sport': '🏃 运动完成',
     'sport-cut': '🏃 运动没做到（扣）',
+    'ext-penalty': '🌱 长期拓展没做完（扣）',
     'focus-cut': '🔥 学习休息时消耗（扣）',
     'redeem': '🎁 积分兑换',
     'adjust': '✏ 调整'
@@ -80,73 +81,19 @@
     });
     App.ui.lineChart(document.getElementById('chart-month'), monthVals, monthLabels);
 
-    // 📋 今日时间账单（番茄 todo 式：做了哪些任务、各花多久）
-    const tday = S().getDay(S().todayKey());
-    const billRows = [];
-    (tday.sessions || []).forEach(function (s) {
-      if (!s.startAt) return;
-      const actual = s.actualSeconds != null ? s.actualSeconds / 60 : (s.actualMinutes || 0);
-      const st = new Date(s.startAt);
-      billRows.push({
-        at: st.getTime(),
-        time: S().hhmmOf(st.getHours() * 60 + st.getMinutes()),
-        name: s.taskText || s.planContent || '(未命名任务)',
-        plan: s.planMinutes || 0,
-        actual: Math.round(actual * 10) / 10,
-        live: !s.endAt
-      });
-    });
-    (tday.lectures || []).forEach(function (x) {
-      if (x.abandoned || !x.endAt || !x.previewStartAt) return;
-      const secOf = function (a, b, e) {
-        if (!a) return 0;
-        return Math.max(0, ((b != null ? b : e) - a) / 1000);
-      };
-      const totalSec = secOf(x.previewStartAt, x.previewEndAt, x.endAt) +
-        secOf(x.attendStartAt, x.attendEndAt, x.endAt) +
-        secOf(x.consStartAt, x.consEndAt, x.endAt);
-      const st = new Date(x.previewStartAt);
-      billRows.push({
-        at: st.getTime(),
-        time: S().hhmmOf(st.getHours() * 60 + st.getMinutes()),
-        name: '🎓 听课三步 · ' + x.course,
-        plan: (x.previewMin || 0) + (x.attendMin || 0) + (x.consMin || 0),
-        actual: Math.round(totalSec / 60 * 10) / 10,
-        live: false
-      });
-    });
-    billRows.sort(function (a, b) { return a.at - b.at; });
-    const billTotal = Math.round(billRows.reduce(function (s, r) { return s + r.actual; }, 0) * 10) / 10;
-    const billEl = document.getElementById('today-bill');
-    if (billEl) {
-      billEl.innerHTML = billRows.length
-        ? '<table class="bill-table"><thead><tr><th>开始</th><th style="text-align:left">做了什么</th><th>预计</th><th>实际</th><th>状态</th></tr></thead><tbody>' +
-          billRows.map(function (r) {
-            return '<tr><td>' + r.time + '</td><td style="text-align:left">' + S().esc(r.name) + '</td>' +
-              '<td>' + (r.plan ? S().fmtDur(r.plan) : '—') + '</td>' +
-              '<td><b>' + S().fmtDur(Math.round(r.actual)) + '</b></td>' +
-              '<td style="color:' + (r.live ? '#3b82f6' : '#22a06b') + '">' + (r.live ? '⏱ 进行中' : '✔ 完成') + '</td></tr>';
-          }).join('') +
-          '<tr class="bill-total"><td></td><td style="text-align:left"><b>合计</b></td><td></td>' +
-          '<td><b>' + S().fmtDur(Math.round(billTotal)) + '</b></td><td></td></tr>' +
-          '</tbody></table>'
-        : '<p class="hint">今天还没有计时记录。用任务计时或 🎓 听课三步后，这里会像番茄 Todo 一样列出每一项花了多久。</p>';
-    }
-
-    // 积分流水（按天分组折叠：一天一块，默认收起，只有今天展开）
+    // 积分流水（整体折叠：点一下才展开；里面再按天分组）
     const ledger = S().ledger();
     const byDay = {};
     ledger.forEach(function (e) {
       (byDay[e.date] = byDay[e.date] || []).push(e);
     });
     const dayKeys = Object.keys(byDay).sort().reverse();
-    const todayKeyStr = S().todayKey();
     document.getElementById('ledger-list').innerHTML = dayKeys.length
-      ? '<p class="hint" style="margin-bottom:8px">按天折叠，点日期展开当天的明细 ↓</p>' + dayKeys.map(function (day) {
+      ? '<details class="ledger-all"><summary>📓 积分流水：共 <b>' + dayKeys.length + '</b> 天 · ' + ledger.length +
+        ' 条 · 点开按天查看</summary><div style="margin-top:8px">' + dayKeys.map(function (day) {
           const evs = byDay[day];
           const net = evs.reduce(function (s, e) { return s + (e.points || 0); }, 0);
-          return '<details class="ledger-day"' + (day === todayKeyStr ? ' open' : '') + '>' +
-            '<summary>🗓 ' + day + ' · ' + evs.length + ' 条 · <b style="color:' + (net >= 0 ? '#22a06b' : '#e2545d') + '">' +
+          return '<details class="ledger-day"><summary>🗓 ' + day + ' · ' + evs.length + ' 条 · <b style="color:' + (net >= 0 ? '#22a06b' : '#e2545d') + '">' +
             (net >= 0 ? '净 +' : '净 ') + net + ' 分</b></summary>' +
             '<div style="margin-top:6px">' + evs.map(function (e) {
               const name = LEDGER_NAMES[e.type] || e.type;
@@ -160,7 +107,7 @@
                 (e.note ? '<div class="day-card-body"><span>' + S().esc(e.note) + '</span></div>' : '') +
                 '</div>';
             }).join('') + '</div></details>';
-        }).join('')
+        }).join('') + '</div></details>'
       : '<p class="hint">还没有账目记录。完成理想/拓展任务、触发奖励、兑换积分都会记在这里。</p>';
 
     // 兑换记录专区（只列花掉积分的兑换）

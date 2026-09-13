@@ -68,6 +68,7 @@
       perfectRewardTime: 30,  // 100% 额外奖励：休闲分钟
       perfectRewardPoints: 20, // 100% 额外奖励：积分
       extAppendable: true,  // 拓展任务可追加
+      extStrict: true,      // 🌱 长期拓展：不顺延；没做完挂账宽限一次，到期没补完按分值扣
       rollover: true,       // 未完成顺延
       recordMode: 'strict', // 记录模式：strict=严格监管休息 / easy=平常心只记学习
       restRewardPoints: 5,  // 严格模式下「好好休息」得积分
