@@ -112,17 +112,16 @@
 
   /* ---------- 年度热力图 ---------- */
   function heatmapHTML(selKeyArg) {
-    const cells = [];
     let totalMin = 0;
-    // 末尾对齐到本周周日（周一为一周之首），往前铺 53 周
+    // 整一年：末尾对齐到本周周日（周一为一周之首），往前铺 53 周
     const end = new Date();
     const shift = (end.getDay() + 6) % 7; // 周一=0
     const lastCell = new Date(end);
     lastCell.setDate(end.getDate() + (6 - shift));
     const start = new Date(lastCell);
-    start.setDate(lastCell.getDate() - 7 * 18 - 1); // 约 19 周，够一年观感又不至于太小
+    start.setDate(lastCell.getDate() - 7 * 53 - 1); // 整 53 周 ≈ 一年
     // GitHub 式：列=周，行=周一..周日
-    let html = '<div class="hm-wrap"><div class="hm-grid">';
+    let html = '<div class="hm-wrap"><div class="hm-grid" style="display:flex;gap:3px;overflow-x:auto">';
     const cur = new Date(start);
     let weekCells = [];
     const weeks = [];
@@ -135,9 +134,9 @@
       const lvl = isFuture ? -1 : (min <= 0 ? 0 : min < 30 ? 1 : min < 60 ? 2 : min < 120 ? 3 : 4);
       const sel = k === selKeyArg;
       weekCells.push('<div class="hm-cell' + (sel ? ' sel' : '') + '" data-k="' + k + '" style="background:' +
-        (lvl < 0 ? 'transparent' : HEAT_COLORS[lvl]) + '" title="' + k + (isFuture ? '（未来）' : ' · 学习 ' + min + ' 分钟') + '"></div>');
+        (lvl < 0 ? 'transparent' : HEAT_COLORS[lvl]) + ';width:12px;height:12px;border-radius:3px;cursor:pointer;flex:0 0 auto" title="' + k + (isFuture ? '（未来）' : ' · 学习 ' + min + ' 分钟') + '"></div>');
       if (weekCells.length === 7) {
-        weeks.push('<div class="hm-week">' + weekCells.join('') + '</div>');
+        weeks.push('<div class="hm-week" style="display:flex;flex-direction:column;gap:3px">' + weekCells.join('') + '</div>');
         weekCells = [];
       }
       cur.setDate(cur.getDate() + 1);
@@ -145,8 +144,7 @@
     if (weekCells.length) weeks.push('<div class="hm-week">' + weekCells.join('') + '</div>');
     html += weeks.join('') + '</div>' +
       '<div class="hm-meta">过去一年有效学习 <b>' + S().fmtDur(totalMin) + '</b> · 颜色越深学得越久 · 点格子跳到那天</div></div>';
-    return html;
-  }
+    return html;  }
 
   /* ---------- 月历 ---------- */
   function monthHTML() {
@@ -158,8 +156,8 @@
       '<b style="font-size:16px;min-width:120px;text-align:center">' + calMonth.getFullYear() + ' 年 ' + (calMonth.getMonth() + 1) + ' 月</b>' +
       '<button class="btn btn-small" id="cal-next">›</button>' +
       '<button class="btn btn-small" id="cal-today" style="margin-left:8px">回到今天</button></div>';
-    html += '<div class="cal-grid">';
-    html += WD.map(function (w) { return '<div class="cal-wd">' + w + '</div>'; }).join('');
+    html += '<div class="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">';
+    html += WD.map(function (w) { return '<div class="cal-wd" style="text-align:center;font-size:11.5px;color:var(--muted)">' + w + '</div>'; }).join('');
     for (let i = 0; i < lead; i++) html += '<div class="cal-day empty"></div>';
     for (let d = 1; d <= daysInMonth; d++) {
       const dt = new Date(calMonth.getFullYear(), calMonth.getMonth(), d);
@@ -173,14 +171,68 @@
         return s + day.tasks[c].filter(function (t) { return t.done; }).length;
       }, 0) : 0;
       let badge = '';
-      if (isFuture && pc) badge = '<span class="cal-badge plan">' + pc + ' 项已排</span>';
-      else if (!isFuture && min) badge = '<span class="cal-badge done">' + Math.round(min) + '分</span>';
-      else if (!isFuture && doneCnt) badge = '<span class="cal-badge done">✓' + doneCnt + '</span>';
+      if (isFuture && pc) badge = '<span class="cal-badge plan" style="display:block;font-size:10px;margin-top:3px;border-radius:6px;padding:1px 5px;width:fit-content;background:rgba(59,130,246,.18);color:#7dd3fc">' + pc + ' 项已排</span>';
+      else if (!isFuture && min) badge = '<span class="cal-badge done" style="display:block;font-size:10px;margin-top:3px;border-radius:6px;padding:1px 5px;width:fit-content;background:rgba(34,160,107,.16);color:#35d09a">' + Math.round(min) + '分</span>';
+      else if (!isFuture && doneCnt) badge = '<span class="cal-badge done" style="display:block;font-size:10px;margin-top:3px;border-radius:6px;padding:1px 5px;width:fit-content;background:rgba(34,160,107,.16);color:#35d09a">✓' + doneCnt + '</span>';
       html += '<div class="cal-day' + (isToday ? ' today' : '') + (k === selKey ? ' sel' : '') +
-        '" data-k="' + k + '"><b>' + d + '</b>' + badge + '</div>';
+        '" data-k="' + k + '" style="min-height:62px;border:1px solid var(--line);border-radius:9px;padding:5px 6px;cursor:pointer;background:rgba(255,255,255,.03)' +
+        (isToday || k === selKey ? ';border-color:var(--primary)' : '') +
+        (k === selKey ? ';background:rgba(59,130,246,.14)' : '') +
+        '"><b>' + d + '</b>' + badge + '</div>';
     }
     html += '</div>';
     return html;
+  }
+
+  /* ---------- 当天时间构成饼图（番茄 ToDo 式：分类占比 + 图例） ---------- */
+  function pieHTML(key) {
+    const day = readDay(key);
+    if (!day || !day.timeline || !day.timeline.length) return '';
+    const byCat = {};
+    let total = 0;
+    day.timeline.forEach(function (r) {
+      const m = r.minutes || 0;
+      if (m <= 0 || r.hourPlanId) return; // 小时代视图条是可视化覆盖层，不计入
+      const c = r.category || 'other';
+      byCat[c] = (byCat[c] || 0) + m;
+      total += m;
+    });
+    if (total < 1) return '';
+    const CATS = App.ui.CATS;
+    const segs = Object.keys(byCat).map(function (c) { return { c: c, m: byCat[c] }; })
+      .sort(function (a, b) { return b.m - a.m; });
+    const cx = 105, cy = 105, R = 92, r0 = 56;
+    let a0 = -Math.PI / 2, paths = '';
+    segs.forEach(function (s) {
+      const frac = s.m / total;
+      const col = (CATS[s.c] || CATS.other).color;
+      if (frac >= 0.999) {
+        paths += '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((R + r0) / 2) + '" fill="none" stroke="' + col + '" stroke-width="' + (R - r0) + '" opacity=".92"/>';
+        return;
+      }
+      const a1 = a0 + frac * 2 * Math.PI;
+      const large = (a1 - a0) > Math.PI ? 1 : 0;
+      const p = function (ang, r) { return (cx + r * Math.cos(ang)).toFixed(2) + ' ' + (cy + r * Math.sin(ang)).toFixed(2); };
+      paths += '<path d="M ' + p(a0, R) + ' A ' + R + ' ' + R + ' 0 ' + large + ' 1 ' + p(a1, R) +
+        ' L ' + p(a1, r0) + ' A ' + r0 + ' ' + r0 + ' 0 ' + large + ' 0 ' + p(a0, r0) + ' Z" fill="' + col + '" opacity=".92"/>';
+      a0 = a1;
+    });
+    const legend = segs.map(function (s) {
+      const cat = CATS[s.c] || CATS.other;
+      const pct = Math.round(s.m / total * 1000) / 10;
+      return '<div class="pie-lg">' +
+        '<span class="pie-dot" style="background:' + cat.color + '"></span>' +
+        '<span class="pie-name">' + cat.label + '</span>' +
+        '<span class="pie-min">' + S().fmtDur(Math.round(s.m)) + '</span>' +
+        '<span class="pie-pct">' + pct + '%</span></div>';
+    }).join('');
+    return '<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0">' +
+      '<div class="row" style="flex-wrap:wrap;gap:16px;align-items:center">' +
+      '<svg width="210" height="210" viewBox="0 0 210 210">' + paths +
+      '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" font-size="12" fill="var(--muted)">总计</text>' +
+      '<text x="' + cx + '" y="' + (cy + 16) + '" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">' + S().fmtDur(Math.round(total)) + '</text></svg>' +
+      '<div style="flex:1;min-width:220px">' + legend + '</div></div>' +
+      '<p class="hint" style="margin:6px 0 0">按时间轴分类统计（学习/拓展/辅助/生活/其他）；休息和记录也会算进去。</p></div>';
   }
 
   /* ---------- 选中日的任务面板 ---------- */
@@ -204,14 +256,15 @@
         html += '<p class="hint">这天有 <b>' + undone.length + '</b> 条任务没完成——点任务旁的 🔁 把它安排到后面的日子重做。</p>';
       }
     }
-    html += '<div class="cal-cols">';
+    if (!isFuture) html += pieHTML(key);
+    html += '<div class="cal-cols" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
     COLS.forEach(function (c) {
       const list = day.tasks[c.k] || [];
-      html += '<div class="cal-col"><div class="cal-col-head">' + c.n + ' <span class="tag">' + list.length + '</span></div>';
+      html += '<div class="cal-col" style="border:1px solid var(--line);border-radius:10px;padding:9px 10px"><div class="cal-col-head" style="font-size:13px;font-weight:700;margin-bottom:6px">' + c.n + ' <span class="tag">' + list.length + '</span></div>';
       list.forEach(function (t) {
-        html += '<div class="cal-task' + (t.done ? ' done' : '') + '">' +
-          '<span class="t-text">' + esc(t.text) + (t.done ? ' ✓' : '') + '</span>' +
-          (t.standard ? '<div class="t-std">📌 标准：' + esc(t.standard) + '</div>' : '') +
+        html += '<div class="cal-task' + (t.done ? ' done' : '') + '" style="border-bottom:1px dashed var(--line);padding:6px 2px">' +
+          '<span class="t-text" style="font-size:13.5px;word-break:break-all;display:block">' + esc(t.text) + (t.done ? ' ✓' : '') + '</span>' +
+          (t.standard ? '<div class="t-std" style="font-size:11.5px;color:#f59e0b;margin-top:2px">📌 标准：' + esc(t.standard) + '</div>' : '') +
           '<div class="t-btns">' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +
@@ -231,10 +284,21 @@
     if (!wrap) return;
     if (!calMonth) calMonth = new Date();
     if (!selKey) selKey = todayK();
+    // 近 30 天每日学习分钟（番茄 ToDo 式柱状图）
+    const bars = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const k = keyOf(d);
+      bars.push({ label: (d.getMonth() + 1) + '/' + d.getDate(), study: Math.round(studyMinutes(readDay(k))), extend: 0, fun: 0 });
+    }
     wrap.innerHTML =
       '<div class="card"><h3>📅 日历 · 任务与学习热力</h3>' + heatmapHTML(selKey) + '</div>' +
+      '<div class="card"><h3>📊 每日学习时长（近 30 天）</h3><div id="cal-bars"></div>' +
+      '<p class="hint">一根柱子 = 一天的有效学习分钟数</p></div>' +
       '<div class="card">' + monthHTML() + '</div>' +
       dayPanelHTML(selKey);
+    App.ui.barChart(document.getElementById('cal-bars'), bars);
     bind();
   }
 

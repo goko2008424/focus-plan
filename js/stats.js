@@ -133,20 +133,33 @@
         : '<p class="hint">今天还没有计时记录。用任务计时或 🎓 听课三步后，这里会像番茄 Todo 一样列出每一项花了多久。</p>';
     }
 
-    // 积分流水
-    const ledger = S().ledger().slice().reverse();
-    document.getElementById('ledger-list').innerHTML = ledger.length
-      ? ledger.map(function (e) {
-          const name = LEDGER_NAMES[e.type] || e.type;
-          const pts = e.points || 0;
-          const sign = pts > 0 ? '+' + pts + '分' : pts < 0 ? pts + '分' : '';
-          return '<div class="day-card">' +
-            '<div class="day-card-head"><span class="d-date">' + e.date + '</span>' +
-            '<span>' + name + '</span>' +
-            '<span style="font-weight:700;color:' + (pts < 0 ? '#e2545d' : '#22a06b') + '">' + sign + '</span>' +
-            '</div>' +
-            (e.note ? '<div class="day-card-body"><span>' + S().esc(e.note) + '</span></div>' : '') +
-            '</div>';
+    // 积分流水（按天分组折叠：一天一块，默认收起，只有今天展开）
+    const ledger = S().ledger();
+    const byDay = {};
+    ledger.forEach(function (e) {
+      (byDay[e.date] = byDay[e.date] || []).push(e);
+    });
+    const dayKeys = Object.keys(byDay).sort().reverse();
+    const todayKeyStr = S().todayKey();
+    document.getElementById('ledger-list').innerHTML = dayKeys.length
+      ? '<p class="hint" style="margin-bottom:8px">按天折叠，点日期展开当天的明细 ↓</p>' + dayKeys.map(function (day) {
+          const evs = byDay[day];
+          const net = evs.reduce(function (s, e) { return s + (e.points || 0); }, 0);
+          return '<details class="ledger-day"' + (day === todayKeyStr ? ' open' : '') + '>' +
+            '<summary>🗓 ' + day + ' · ' + evs.length + ' 条 · <b style="color:' + (net >= 0 ? '#22a06b' : '#e2545d') + '">' +
+            (net >= 0 ? '净 +' : '净 ') + net + ' 分</b></summary>' +
+            '<div style="margin-top:6px">' + evs.map(function (e) {
+              const name = LEDGER_NAMES[e.type] || e.type;
+              const pts = e.points || 0;
+              const sign = pts > 0 ? '+' + pts + '分' : pts < 0 ? pts + '分' : '';
+              return '<div class="day-card">' +
+                '<div class="day-card-head"><span class="d-date">' + (e.at ? new Date(e.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
+                '<span>' + name + '</span>' +
+                '<span style="font-weight:700;color:' + (pts < 0 ? '#e2545d' : '#22a06b') + '">' + sign + '</span>' +
+                '</div>' +
+                (e.note ? '<div class="day-card-body"><span>' + S().esc(e.note) + '</span></div>' : '') +
+                '</div>';
+            }).join('') + '</div></details>';
         }).join('')
       : '<p class="hint">还没有账目记录。完成理想/拓展任务、触发奖励、兑换积分都会记在这里。</p>';
 
