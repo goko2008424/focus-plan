@@ -213,13 +213,13 @@
     // 指南按钮 → 随时打开公告
     document.getElementById('btn-about').onclick = aboutModal;
 
-    // 首次访问自动弹出公告（关闭后不再自动弹，可从「📖 指南」随时查看）
+    // 不再自动弹指南（糊在页面上很烦）：改成首次使用给一条轻提示
     try {
       if (!localStorage.getItem('focusPlan.aboutSeen')) {
         localStorage.setItem('focusPlan.aboutSeen', '1');
-        aboutModal();
+        App.ui.toast('👋 第一次用？点右上「📖 指南」有三分钟上手教程', 5000);
       }
-    } catch (e) { /* 存储不可用时直接弹一次 */ }
+    } catch (e) { /* 存储不可用时静默 */ }
 
     // 每分钟自动兜底保存一次（防意外）
     setInterval(function () { S().save(); }, 60000);

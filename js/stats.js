@@ -87,10 +87,10 @@
     ledger.forEach(function (e) {
       (byDay[e.date] = byDay[e.date] || []).push(e);
     });
-    const dayKeys = Object.keys(byDay).sort().reverse();
+    const ldDays = Object.keys(byDay).sort().reverse();
     document.getElementById('ledger-list').innerHTML = dayKeys.length
       ? '<details class="ledger-all"><summary>📓 积分流水：共 <b>' + dayKeys.length + '</b> 天 · ' + ledger.length +
-        ' 条 · 点开按天查看</summary><div style="margin-top:8px">' + dayKeys.map(function (day) {
+        ' 条 · 点开按天查看</summary><div style="margin-top:8px">' + ldDays.map(function (day) {
           const evs = byDay[day];
           const net = evs.reduce(function (s, e) { return s + (e.points || 0); }, 0);
           return '<details class="ledger-day"><summary>🗓 ' + day + ' · ' + evs.length + ' 条 · <b style="color:' + (net >= 0 ? '#22a06b' : '#e2545d') + '">' +

@@ -153,6 +153,11 @@
     }).catch(function () { return null; });
   }
 
+  /** 老数据缺的新设置字段自动补默认值（避免 value=undefined / 开关失效） */
+  function mergeDefaults() {
+    if (data) data.settings = Object.assign(defaultSettings(), data.settings || {});
+  }
+
   function load() {
     let fromLocal = false;
     try {
@@ -163,6 +168,7 @@
       }
     } catch (e) { /* 损坏则尝试 IndexedDB */ }
     if (fromLocal) {
+      mergeDefaults();
       ensureDay(todayKey());
       return;
     }
@@ -170,6 +176,7 @@
     idbGet().then(function (d) {
       if (d && d.version === 1) {
         data = d;
+        mergeDefaults();
         ensureDay(todayKey());
         save();
       } else {

@@ -274,7 +274,7 @@
         html += '<p class="hint">这天有 <b>' + undone.length + '</b> 条任务没完成——点任务旁的 🔁 把它安排到后面的日子重做。</p>';
       }
     }
-    if (!isFuture) html += pieHTML(key);
+    if (key <= todayK()) html += pieHTML(key);
     html += '<div class="cal-cols" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
     COLS.forEach(function (c) {
       const list = day.tasks[c.k] || [];
