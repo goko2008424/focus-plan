@@ -18,6 +18,8 @@
       <nav id="main-nav">
         <button class="nav-btn active" data-view="tasks">任务</button>
         <button class="nav-btn" data-view="lecture">🎓 听课</button>
+        <button class="nav-btn" data-view="calendar">📅 日历</button>
+        <button class="nav-btn" data-view="notes">🎙 笔记</button>
         <button class="nav-btn" data-view="sport">🏃 运动</button>
         <button class="nav-btn" data-view="timeline">时间轴</button>
         <button class="nav-btn" data-view="stats">历史</button>
@@ -109,6 +111,20 @@
     <!-- 听课三步视图 -->
     <section id="view-lecture" class="view">
       <div id="lecture-view"></div>
+    </section>
+
+    <!-- 日历视图 -->
+    <section id="view-calendar" class="view">
+      <div id="calendar-view"></div>
+    </section>
+
+    <!-- 网课笔记工坊视图（内嵌本机服务） -->
+    <section id="view-notes" class="view">
+      <div id="notes-status"></div>
+      <div id="notes-frame-wrap" style="display:none">
+        <iframe id="notes-frame" src="http://127.0.0.1:8890/?embed=1"
+          style="width:100%;height:calc(100vh - 120px);border:1px solid var(--line);border-radius:14px;background:#0b1020"></iframe>
+      </div>
     </section>
 
     <!-- 运动视图 -->
@@ -231,6 +247,7 @@
   <script src="js/settings.js"></script>
   <script src="js/sport.js"></script>
   <script src="js/lecture.js"></script>
+  <script src="js/calendar.js"></script>
   <script src="js/link.js"></script>
   <script src="js/demo.js"></script>
   <script src="js/app.js"></script>

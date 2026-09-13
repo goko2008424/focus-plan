@@ -874,9 +874,11 @@
     App.tasks.renderAll();
   }
 
-  /* ---------- 任务总结（勾选完成时填写） ---------- */
+  /* ---------- 任务总结（勾选完成时填写）+ 🔁 间隔重做安排 ---------- */
   function summaryTaskModal(listKey, taskId, taskText, onDone) {
     let doneFlag = true;
+    let repDays = 0;        // 0=不安排, 1/3/7=N天后, -1=自选日期
+    let repStandard = '';   // 重做的标准
     const body = function () {
       return '<div class="field"><label>任务</label><p style="font-size:14px;font-weight:700">' + S().esc(taskText) + '</p></div>' +
         '<div class="field"><label>这次做完了吗？</label><div class="btn-row">' +
@@ -884,26 +886,59 @@
         '<button class="btn btn-small' + (doneFlag ? '' : ' btn-primary') + '" data-act="sum-part">⛔ 没做完</button>' +
         '</div></div>' +
         '<div class="field"><label>总结 / 心得 / 注意事项</label>' +
-        '<textarea id="sum-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical"></textarea></div>';
+        '<textarea id="sum-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13px;resize:vertical"></textarea></div>' +
+        '<div class="field"><label>🔁 间隔重做（选填）：这道题过几天再来一次？</label><div class="btn-row" id="rep-chips">' +
+        '<button class="btn btn-small' + (repDays === 0 ? ' btn-primary' : '') + '" data-days="0">不安排</button>' +
+        '<button class="btn btn-small' + (repDays === 1 ? ' btn-primary' : '') + '" data-days="1" style="margin-left:4px">明天</button>' +
+        '<button class="btn btn-small' + (repDays === 3 ? ' btn-primary' : '') + '" data-days="3" style="margin-left:4px">3天后</button>' +
+        '<button class="btn btn-small' + (repDays === 7 ? ' btn-primary' : '') + '" data-days="7" style="margin-left:4px">7天后</button>' +
+        '<button class="btn btn-small' + (repDays === -1 ? ' btn-primary' : '') + '" data-days="-1" style="margin-left:4px">自选…</button>' +
+        '</div>' +
+        '<input type="date" id="rep-date" value="' + S().dateKey(new Date(Date.now() + 3 * 86400000)) + '" style="display:' + (repDays === -1 ? 'block' : 'none') + ';margin-top:6px" />' +
+        '<input type="text" id="rep-standard" value="' + S().esc(repStandard) + '" placeholder="标准：要做到什么程度（选填，如：全对 / 8分钟内解出）" style="width:100%;margin-top:6px" />' +
+        '</div>';
     };
     function reopen() {
       const modal = App.ui.openModal('📝 写个任务总结', body(),
         '<button class="btn btn-primary" data-act="sum-save">保存总结</button>');
       const ta = modal.querySelector('#sum-note');
+      ta.value = noteText;
+      modal.querySelectorAll('#rep-chips [data-days]').forEach(function (b) {
+        b.onclick = function () {
+          repDays = +b.dataset.days;
+          modal.querySelectorAll('#rep-chips [data-days]').forEach(function (x) { x.classList.remove('btn-primary'); });
+          b.classList.add('btn-primary');
+          modal.querySelector('#rep-date').style.display = repDays === -1 ? 'block' : 'none';
+        };
+      });
+      const stdEl = modal.querySelector('#rep-standard');
+      stdEl.oninput = function () { repStandard = stdEl.value; };
       App.ui.bindActions({
-        'sum-done': function () { doneFlag = true; App.ui.closeModal(); reopen(); },
-        'sum-part': function () { doneFlag = false; App.ui.closeModal(); reopen(); },
+        'sum-done': function () { doneFlag = true; noteText = ta.value; App.ui.closeModal(); reopen(); },
+        'sum-part': function () { doneFlag = false; noteText = ta.value; App.ui.closeModal(); reopen(); },
         'sum-save': function () {
           const day = S().getDay(S().todayKey());
           const task = day.tasks[listKey].find(function (t) { return t.id === taskId; });
           if (task) task.summary = { done: doneFlag, text: ta.value.trim(), at: new Date().toISOString() };
           S().save();
+          // 🔁 间隔重做：安排到目标日（带小任务/任务组一起复制，标准写进任务）
+          const std = (modal.querySelector('#rep-standard').value || '').trim();
+          let target = null;
+          if (repDays > 0) target = S().dateKey(new Date(Date.now() + repDays * 86400000));
+          if (repDays === -1) target = modal.querySelector('#rep-date').value;
+          if (target && task) {
+            const ok = App.calendar.copyTaskToDay(task, listKey, target, std);
+            App.ui.toast(ok
+              ? '🔁 已安排 ' + S().fmtDateCN(S().keyToDate(target)).slice(5, 12) + ' 重做（日历页可改）'
+              : '目标日期已有同名任务，未重复安排');
+          }
           App.ui.closeModal();
           App.tasks.renderAll();
           if (typeof onDone === 'function') onDone();
         }
       });
     }
+    let noteText = '';
     reopen();
   }
 
@@ -2535,6 +2570,7 @@
     init: init, renderAll: renderAll, renderToday: renderToday,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,
+    addTaskModal: addTaskModal, editTaskModal: editTaskModal,
     getTimer: function () { return timer; },
     getCdTimer: function () { return cdTimer; },
     startSmallRest: startSmallRest, endSmallRest: endSmallRest,
