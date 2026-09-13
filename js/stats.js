@@ -80,6 +80,59 @@
     });
     App.ui.lineChart(document.getElementById('chart-month'), monthVals, monthLabels);
 
+    // 📋 今日时间账单（番茄 todo 式：做了哪些任务、各花多久）
+    const tday = S().getDay(S().todayKey());
+    const billRows = [];
+    (tday.sessions || []).forEach(function (s) {
+      if (!s.startAt) return;
+      const actual = s.actualSeconds != null ? s.actualSeconds / 60 : (s.actualMinutes || 0);
+      const st = new Date(s.startAt);
+      billRows.push({
+        at: st.getTime(),
+        time: S().hhmmOf(st.getHours() * 60 + st.getMinutes()),
+        name: s.taskText || s.planContent || '(未命名任务)',
+        plan: s.planMinutes || 0,
+        actual: Math.round(actual * 10) / 10,
+        live: !s.endAt
+      });
+    });
+    (tday.lectures || []).forEach(function (x) {
+      if (x.abandoned || !x.endAt || !x.previewStartAt) return;
+      const secOf = function (a, b, e) {
+        if (!a) return 0;
+        return Math.max(0, ((b != null ? b : e) - a) / 1000);
+      };
+      const totalSec = secOf(x.previewStartAt, x.previewEndAt, x.endAt) +
+        secOf(x.attendStartAt, x.attendEndAt, x.endAt) +
+        secOf(x.consStartAt, x.consEndAt, x.endAt);
+      const st = new Date(x.previewStartAt);
+      billRows.push({
+        at: st.getTime(),
+        time: S().hhmmOf(st.getHours() * 60 + st.getMinutes()),
+        name: '🎓 听课三步 · ' + x.course,
+        plan: (x.previewMin || 0) + (x.attendMin || 0) + (x.consMin || 0),
+        actual: Math.round(totalSec / 60 * 10) / 10,
+        live: false
+      });
+    });
+    billRows.sort(function (a, b) { return a.at - b.at; });
+    const billTotal = Math.round(billRows.reduce(function (s, r) { return s + r.actual; }, 0) * 10) / 10;
+    const billEl = document.getElementById('today-bill');
+    if (billEl) {
+      billEl.innerHTML = billRows.length
+        ? '<table class="bill-table"><thead><tr><th>开始</th><th style="text-align:left">做了什么</th><th>预计</th><th>实际</th><th>状态</th></tr></thead><tbody>' +
+          billRows.map(function (r) {
+            return '<tr><td>' + r.time + '</td><td style="text-align:left">' + S().esc(r.name) + '</td>' +
+              '<td>' + (r.plan ? S().fmtDur(r.plan) : '—') + '</td>' +
+              '<td><b>' + S().fmtDur(Math.round(r.actual)) + '</b></td>' +
+              '<td style="color:' + (r.live ? '#3b82f6' : '#22a06b') + '">' + (r.live ? '⏱ 进行中' : '✔ 完成') + '</td></tr>';
+          }).join('') +
+          '<tr class="bill-total"><td></td><td style="text-align:left"><b>合计</b></td><td></td>' +
+          '<td><b>' + S().fmtDur(Math.round(billTotal)) + '</b></td><td></td></tr>' +
+          '</tbody></table>'
+        : '<p class="hint">今天还没有计时记录。用任务计时或 🎓 听课三步后，这里会像番茄 Todo 一样列出每一项花了多久。</p>';
+    }
+
     // 积分流水
     const ledger = S().ledger().slice().reverse();
     document.getElementById('ledger-list').innerHTML = ledger.length

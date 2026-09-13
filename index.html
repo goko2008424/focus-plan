@@ -17,6 +17,7 @@
       </div>
       <nav id="main-nav">
         <button class="nav-btn active" data-view="tasks">任务</button>
+        <button class="nav-btn" data-view="lecture">🎓 听课</button>
         <button class="nav-btn" data-view="sport">🏃 运动</button>
         <button class="nav-btn" data-view="timeline">时间轴</button>
         <button class="nav-btn" data-view="stats">历史</button>
@@ -105,6 +106,11 @@
       </div>
     </section>
 
+    <!-- 听课三步视图 -->
+    <section id="view-lecture" class="view">
+      <div id="lecture-view"></div>
+    </section>
+
     <!-- 运动视图 -->
     <section id="view-sport" class="view">
       <div class="view-tabs">
@@ -156,6 +162,11 @@
             <svg id="chart-month" class="chart" viewBox="0 0 600 220"></svg>
           </div>
         </div>
+      </div>
+      <div class="card">
+        <h3>📋 今日时间账单</h3>
+        <p class="hint">番茄 Todo 式：今天做了哪些任务、预计多久、实际花了多久（含 🎓 听课三步）。</p>
+        <div id="today-bill"></div>
       </div>
       <div class="card">
         <h3>积分流水账</h3>
@@ -219,6 +230,7 @@
   <script src="js/stats.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/sport.js"></script>
+  <script src="js/lecture.js"></script>
   <script src="js/link.js"></script>
   <script src="js/demo.js"></script>
   <script src="js/app.js"></script>

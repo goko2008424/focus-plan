@@ -1,5 +1,5 @@
 /* Service Worker：离线可用 + 缓存本应用静态资源 */
-const CACHE = 'focus-plan-v20';
+const CACHE = 'focus-plan-v23';
 const ASSETS = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const ASSETS = [
   './js/stats.js',
   './js/settings.js',
   './js/sport.js',
+  './js/lecture.js',
   './js/link.js',
   './js/demo.js',
   './js/app.js',

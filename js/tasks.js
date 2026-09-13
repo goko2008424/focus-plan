@@ -28,6 +28,8 @@
   const streak = { accMs: 0 };
   let smallRest = null;    // {startAt, durMs}
   let streakSaveCnt = 0;
+  // 「进行中任务」已计入小时计划的分钟数（按 taskId+startedAt 防跨段重复计入）
+  const liveCredited = {};
 
   // 小任务开始时随机播一句至理名言
   const QUOTES = [
@@ -1301,13 +1303,16 @@
         body += '<p style="color:#22a06b;font-weight:600">🎉 今天任务全部完成，提前收工吧！</p>';
       }
 
-      // 结束时的复盘（可选，写给自己）
-      body += '<div class="field"><label>📝 今日复盘（可选，结束前写几句）</label>' +
+      // 结束时的复盘（可选，写给自己；边打边自动保存）
+      body += '<div class="field"><label>📝 今日复盘（可选，边打边自动保存）</label>' +
         '<textarea id="end-review" style="width:100%;min-height:64px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13.5px;resize:vertical">' +
         S().esc((day.review && day.review.text) || '') + '</textarea></div>';
 
       const modal = App.ui.openModal('🏁 结束今天', body,
         '<button class="btn btn-primary" data-act="ok">确认结束</button><button class="btn" data-act="cancel">取消</button>');
+      autoSave(modal.querySelector('#end-review'), function (v) {
+        if (v.trim()) { day.review = { text: v, at: new Date().toISOString() }; }
+      });
       App.ui.bindActions({
         ok: function () {
           const revTa = modal.querySelector('#end-review');
@@ -1392,30 +1397,37 @@
     }
     const live = streakLiveMs();
     const running = isLearningNow();
-    const canFloatRest = !!timer || !!cdTimer;
-    const hpOnly = !canFloatRest && !!(S().getDay(S().todayKey()).activeHourPlan); // 只开小时代没开计时：小休走小时计划的休息
+    const canRest = !!(timer || cdTimer || S().getDay(S().todayKey()).activeHourPlan);
     bar.innerHTML = '<div class="card streak-card">🔥 ' +
       (running ? '已连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>'
         : '连续学习 <b>' + S().fmtClock(live).replace(/^00:/, '') + '</b>（上次休息后）') +
-      (canFloatRest || hpOnly ? '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>' : '') +
+      (canRest ? '<button class="btn btn-small" id="sr-rest" style="margin-left:6px">☕ 小休一下</button>' : '') +
       '</div>';
     const r = bar.querySelector('#sr-rest');
-    if (r) r.onclick = canFloatRest ? startSmallRest : startRestModal;
+    if (r) r.onclick = startSmallRest;
   }
   function startSmallRest() {
     if (smallRest) return;
     const hasTimer = !!timer, hasCd = !!cdTimer;
-    if (!hasTimer && !hasCd) return; // 没在计时/倒计时时不能小休
+    const hasPlan = !!S().getDay(S().todayKey()).activeHourPlan;
+    if (!hasTimer && !hasCd && !hasPlan) return; // 没在计时/倒计时/小时代段内，不能小休
     smallRest = { startAt: Date.now(), durMs: 300000 }; // 默认小休 5 分钟，休息单独算
+    // 小休期间小时代的倒计时同步暂停（休多久这一段顺延多久），见 hpEffectiveEndMs
     if (hasTimer && !timer.paused) togglePause(); // 正向计时暂停，休息不占学习
     else if (hasCd && !cdTimer.paused) toggleCdPause(); // 做题倒计时暂停
     renderStreakBar();
-    App.ui.toast('☕ 小休开始，休息时间不占学习。');
+    App.ui.toast('☕ 小休开始，休息不占学习，这一段的倒计时也暂停了。');
   }
   function endSmallRest() {
     if (!smallRest) return;
+    const restElapsed = Date.now() - smallRest.startAt;
     smallRest = null;
     const day = S().getDay(S().todayKey());
+    // 小休结束：把暂停的时长记到这一段账上，到点时间相应顺延
+    if (day.activeHourPlan) {
+      day.activeHourPlan.restMs = (day.activeHourPlan.restMs || 0) + restElapsed;
+      S().save();
+    }
     App.ui.openModal('🛋 小休结束 · 自查一下', '' +
       '<p style="font-size:13px">这一段休息，中途有没有去干<b>消耗性的事</b>（刷手机 / 刷视频 / 分神）？</p>' +
       '<p style="font-size:12px;color:#8a919c">如实选：没有 → 干净休息；有 → 记一次消耗（结束今天的运动/任务时会统一扣 ' + FOCUS_CUT_PER + ' 分）。</p>',
@@ -1524,6 +1536,20 @@
     renderHourPlan(dayKey);
   }
 
+  /* ---------- 复盘/总结类 textarea 的自动保存（边打边存，关窗不丢） ---------- */
+  function autoSave(ta, apply) {
+    if (!ta) return;
+    let timer = null;
+    ta.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () {
+        timer = null;
+        apply(ta.value);
+        S().save();
+      }, 600);
+    });
+  }
+
   /* ---------- 今日复盘（随时可写，结束今天时也能写） ---------- */
   function renderReview(dayKey) {
     const day = S().getDay(dayKey);
@@ -1535,10 +1561,14 @@
       S().esc(text) + '</textarea>' +
       '<div class="btn-row" style="margin-top:8px;align-items:center">' +
       '<button class="btn btn-small btn-primary" data-act="review-save">保存复盘</button>' +
+      '<span id="review-autosave" style="font-size:11.5px;color:#8a919c">（边打边自动保存，关页面也不丢）</span>' +
       (text ? '<span class="review-meta">已保存' + (day.review.at ? ' · ' + new Date(day.review.at).toLocaleString('zh-CN') : '') + '</span>' : '') +
       '</div>';
     const ta = card.querySelector('#review-text');
     if (ta && !text) ta.placeholder = '自由写下今天的感想与反思';
+    autoSave(ta, function (v) {
+      if (v.trim()) { day.review = { text: v, at: new Date().toISOString() }; }
+    });
     card.onclick = function (e) {
       if (!e.target.closest('[data-act="review-save"]')) return;
       const txt = ta.value.trim();
@@ -1569,6 +1599,13 @@
     return null;
   }
   // 统计当前小时计划某类（或全部）已完成的实际分钟
+  // 这一段的"到点时刻"：开始 + 时长 + 小休累计顺延（小休中：到点同步冻结，等于倒计时暂停）
+  function hpEffectiveEndMs(plan) {
+    if (!plan || !plan.startAt) return Date.now();
+    let end = new Date(plan.startAt).getTime() + (plan.duration || 30) * 60000 + (plan.restMs || 0);
+    if (smallRest) end += Date.now() - smallRest.startAt; // 进行中的小休也顺延
+    return end;
+  }
   // 统计某类(或全部)实际分钟；upper 缺省=现在。到点结算时传"到点时刻"，超时补做不再计入
   function hourPlanActual(plan, colKey, upper) {
     if (!plan || !plan.startAt) return 0;
@@ -1585,15 +1622,40 @@
     });
     return ms;
   }
-  function hourPlanSummary(plan, upper) {
+  // 进行中（还没点结算）的任务计时：也算进这一段——到点自动结算不再漏掉正做着的时间。
+  // 每段只计自己窗口内的部分（跨段不重复），liveCredited 记录已计入的总量。
+  function hourPlanSummary(plan, upper, record) {
     const tg = (plan && plan.targets) || {};
     const req = tg.required || 0, ide = tg.ideal || 0, ext = tg.extra || 0;
     const ar = hourPlanActual(plan, 'required', upper), ai = hourPlanActual(plan, 'ideal', upper), ae = hourPlanActual(plan, 'extra', upper);
+    const live = { required: 0, ideal: 0, extra: 0, total: 0 };
+    if (plan && plan.startAt) {
+      const start = new Date(plan.startAt).getTime();
+      const up = upper ? upper.getTime() : Date.now();
+      [timer, cdTimer].forEach(function (t) {
+        if (!t || !t.startedAt) return;
+        const bk = hourPlanBucket(t.taskId);
+        if (!bk) return;
+        const st = new Date(t.startedAt).getTime();
+        if (st > up) return;
+        const frozen = (t.paused && t.pauseAt) ? new Date(t.pauseAt).getTime() : Date.now();
+        const liveMs = Math.max(0, frozen - st - (t.pausedMs || 0)); // 真实跑了多久（暂停不吃）
+        const roomMs = Math.max(0, up - Math.max(st, start));          // 最多只能算窗口内的时间
+        const total = Math.min(liveMs, roomMs);
+        const key = t.taskId + '|' + t.startedAt;
+        const cred = Math.max(0, total - (liveCredited[key] || 0));   // 这一段实际新计入的
+        if (cred <= 0) return;
+        if (record) liveCredited[key] = total; // 结算时记账，下一段不再重复算这部分
+        live[bk] += cred / 60000;
+        live.total += cred / 60000;
+      });
+    }
     return {
       targets: { required: req, ideal: ide, extra: ext },
-      actual: { required: ar, ideal: ai, extra: ae },
+      actual: { required: ar + live.required, ideal: ai + live.ideal, extra: ae + live.extra },
       tTotal: req + ide + ext,
-      aTotal: ar + ai + ae
+      aTotal: ar + ai + ae + live.total,
+      liveMin: live.total
     };
   }
   // 开始一个小时代：标起点 + 定这一段多长 + 在时长内分配三类
@@ -1658,21 +1720,24 @@
       cancel: App.ui.closeModal
     });
   }
-  // 结束结算：到点即封顶（窗口=[startAt, startAt+时长]），到点后补做不算；达标→自动发提前定的积分
+  // 结束结算：到点即封顶（窗口=[开始, 开始+时长+小休顺延]），到点后补做不算；
+  // 还在做的任务（没点结算的）时间一并计入，达标就照常发提前定的积分
   function endHourPlan() {
     const day = S().getDay(S().todayKey());
     const plan = day.activeHourPlan;
     if (!plan) { App.ui.toast('当前没有进行中的小时计划'); return; }
+    if (smallRest) { App.ui.toast('☕ 小休中，这一段倒计时也暂停了——先结束小休再结算'); return; }
     const startMs = new Date(plan.startAt).getTime();
-    const planEndMs = plan.duration ? startMs + plan.duration * 60000 : startMs + 30 * 60000;
+    const planEndMs = hpEffectiveEndMs(plan);
     const endAtMs = Math.min(Date.now(), planEndMs); // 到点即封顶，超时补做不计
-    const sum = hourPlanSummary(plan, new Date(endAtMs));
+    const sum = hourPlanSummary(plan, new Date(endAtMs), true); // record=true：进行中任务时间记账防重
     const met = sum.tTotal > 0 && sum.aTotal >= sum.tTotal;
     plan.endAt = new Date(endAtMs).toISOString();
     plan.autoEnd = Date.now() >= planEndMs; // 是否到点自动结算
     plan.actual = sum.actual;
     plan.met = met;
     plan.usedMin = sum.aTotal;
+    plan.liveMin = sum.liveMin; // 这一段里"进行中未结算"任务贡献的分钟（留档可查）
     day.hourPlans = day.hourPlans || [];
     day.hourPlans.push(plan);
     day.activeHourPlan = null;
@@ -1712,18 +1777,22 @@
   // 每段结算后的强制复盘：让用户写下这一段状态/感想，再强制衔接下一步
   function hourReviewPrompt(plan) {
     const m = App.ui.openModal('📝 这一段的复盘 · 感想', '' +
-      '<p style="font-size:13px">写给自己：这一段做了什么、状态、想法。写完点保存，会强制衔接下一段（不让你闲下来）。</p>' +
+      '<p style="font-size:13px">写给自己：这一段做了什么、状态、想法。<b>边打边自动保存</b>，误关弹窗也不会丢。写完点保存，会强制衔接下一段（不让你闲下来）。</p>' +
       '<div class="field"><label>感想 / 复盘</label>' +
-      '<textarea id="hrev-text" style="width:100%;min-height:84px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13.5px;resize:vertical"></textarea></div>',
+      '<textarea id="hrev-text" style="width:100%;min-height:84px;border:1px solid #e5e8ec;border-radius:8px;padding:8px;font-size:13.5px;resize:vertical">' +
+      S().esc((plan.review && plan.review.text) || '') + '</textarea></div>',
       '<button class="btn btn-primary" data-act="ok">✔ 保存并下一步</button>' +
-      '<button class="btn" data-act="skip">稍后再写</button>');
+      '<button class="btn" data-act="skip">稍后再写（已打的内容会留着）</button>');
+    autoSave(m.querySelector('#hrev-text'), function (v) {
+      if (v.trim()) { plan.review = { text: v, at: new Date().toISOString() }; }
+    });
     App.ui.bindActions({
       ok: function () {
         const v = m.querySelector('#hrev-text').value.trim();
         if (v) { plan.review = { text: v, at: new Date().toISOString() }; S().save(); }
         App.ui.closeModal(); nextStepPrompt();
       },
-      skip: function () { App.ui.closeModal(); nextStepPrompt(); }
+      skip: function () { S().save(); App.ui.closeModal(); nextStepPrompt(); }
     });
   }
   // 达标后的「中途消耗自查」：有消耗 → 按设置百分比扣掉这段奖励积分
@@ -1881,17 +1950,19 @@
       return;
     }
     const p = day.activeHourPlan;
-    if (p && p.duration) {
-      const endMs = new Date(p.startAt).getTime() + p.duration * 60000;
-      if (Date.now() >= endMs) { endHourPlan(); return; }
+    if (p) {
+      if (Date.now() >= hpEffectiveEndMs(p)) { endHourPlan(); return; } // 小休中到点同步冻结，不会误触发
     }
     const c = document.getElementById('hp-countdown');
     if (!c) return;
     const cur = day.activeHourPlan;
-    if (cur && cur.duration) {
-      const endMs = new Date(cur.startAt).getTime() + cur.duration * 60000;
-      const left = Math.max(0, endMs - Date.now());
-      c.textContent = '⏳ 到点还有 ' + Math.floor(left / 60000) + ' 分 ' + S().pad2(Math.floor((left % 60000) / 1000)) + ' 秒 · 到点未达标 → 这段积分清零（超时补做不算）';
+    if (cur) {
+      if (smallRest) {
+        c.textContent = '☕ 小休中 · 这一段的倒计时已暂停，休完接着算';
+        return;
+      }
+      const left = Math.max(0, hpEffectiveEndMs(cur) - Date.now());
+      c.textContent = '⏳ 到点还有 ' + Math.floor(left / 60000) + ' 分 ' + S().pad2(Math.floor((left % 60000) / 1000)) + ' 秒 · 到点自动结算（进行中的任务时间也一并算入）';
     }
   }
   // 📌 预定明天的某一段：提前定好几点到几点、三大类指标、奖励积分
@@ -1994,6 +2065,8 @@
     const sum = hourPlanSummary(plan);
     const pct = sum.tTotal > 0 ? Math.min(100, Math.round(sum.aTotal / sum.tTotal * 100)) : 0;
     const met = sum.tTotal > 0 && sum.aTotal >= sum.tTotal;
+    const liveNote = sum.liveMin > 0
+      ? '<span style="font-size:11.5px;color:var(--muted)">（含进行中未结算 ' + (Math.round(sum.liveMin * 10) / 10) + ' 分）</span>' : '';
     const rows = HOUR_COLS.map(function (c) {
       const tg = sum.targets[c.k], ac = sum.actual[c.k];
       const pp = tg > 0 ? Math.min(100, Math.round(ac / tg * 100)) : 0;
@@ -2004,9 +2077,10 @@
     var startMinTxt = '--';
     if (plan.startAt) { var d0 = new Date(plan.startAt); startMinTxt = S().hhmmOf(d0.getHours() * 60 + d0.getMinutes()); }
     var durTxt = plan.duration ? plan.duration + ' 分' : (sum.tTotal + ' 分（目标）');
+    if (plan.restMs) durTxt += '（小休顺延 ' + Math.round(plan.restMs / 60000) + ' 分）';
     var endMinTxt = '--';
     if (plan.startAt && plan.duration) {
-      var d1 = new Date(new Date(plan.startAt).getTime() + plan.duration * 60000);
+      var d1 = new Date(hpEffectiveEndMs(plan));
       endMinTxt = S().hhmmOf(d1.getHours() * 60 + d1.getMinutes());
     }
     box.innerHTML = '<div class="hour-card active">' +
@@ -2014,7 +2088,7 @@
       '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">从 <b>' + startMinTxt + '</b> 开始 · 到 <b>' + endMinTxt + '</b> 到点（' + durTxt + '）· 目标合计 <b>' + sum.tTotal + '</b> 分</div>' +
       (plan.taskText ? '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 4px">🔗 关联：' + S().esc(plan.taskText) + '</div>' : '') +
       '<div id="hp-countdown" style="font-size:12px;color:#8a919c;margin:2px 0 4px"></div>' +
-      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 6px">已执行 <b style="color:' + (met ? '#22a06b' : '#3b82f6') + '">' + sum.aTotal + '</b> 分 · ' + (met ? '🎉 已达标！' : '达成率 ' + pct + '%') + '</div>' +
+      '<div style="font-size:12.5px;color:#8a919c;margin:2px 0 6px">已执行 <b style="color:' + (met ? '#22a06b' : '#3b82f6') + '">' + sum.aTotal + '</b> 分 · ' + (met ? '🎉 已达标！' : '达成率 ' + pct + '%') + liveNote + '</div>' +
       rows +
       '<div class="hp-actions"><button class="btn btn-small btn-primary" id="hp-end">⏹ 结束这小时代（结算）</button></div></div>';
     const e = box.querySelector('#hp-end');

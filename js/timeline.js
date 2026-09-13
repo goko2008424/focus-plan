@@ -69,7 +69,9 @@
     const extMin = sum(function (r) { return r.category === 'extend'; });
     const funMin = sum(function (r) { return r.category === 'fun'; }); // 原「休闲」分类现更名为「辅助」
     const linked = recs.filter(function (r) { return r.taskId; }).length;
-    const totalMin = recs.reduce(function (s, r) { return s + (r.minutes || 0); }, 0);
+    // ⏱ 小时代的"视图条"（hourPlanId）只是把这段可视化，其中任务计时已有各自记录，
+    //   时间完全重叠——不计入总记录时间，否则同一段时间被算两次
+    const totalMin = recs.reduce(function (s, r) { return s + (r.hourPlanId ? 0 : (r.minutes || 0)); }, 0);
     const req = day.tasks.required;
     const reqRate = req.length ? Math.round(req.filter(function (t) { return t.done; }).length / req.length * 100) + '%' : '--';
 

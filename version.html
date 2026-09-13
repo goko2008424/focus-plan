@@ -94,6 +94,8 @@ const SLIDES = [
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">主线/辅助+粘贴</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">小时计划 7 项完善</div></div>'+
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">一波大修</div></div>'+
+          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">小休暂停+自动结算</div></div>'+
+          '<div class="tl" data-i="11"><div class="n">v11</div><div class="t">听课三步</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -268,11 +270,53 @@ const SLIDES = [
       '<div class="col" style="--cc:#a855f7"><h4>🧾 提醒</h4><ul><li>小时计划的达标标准不变：这一段实际学满目标分钟数才算达标</li><li>提前做完任务但学时没到目标 = 未达标 = 0 积分（计时权威，由你拍板要不要改）</li></ul></div></div>'
   },
   {
+    name:"v10 · 小休暂停 + 到点自动结算", badge:{t:"v10 · 小休暂停 + 自动结算",c:"#0ea5e9"},
+    tag:"休息不吃窗口，忘了结算也不丢分",
+    cols:[
+      {t:"☕ 小休时小时代暂停", c:"#0ea5e9", items:[
+        "老问题：学习中途按小休，小时代倒计时还在偷偷往后跑，休息把学习窗口吃掉了",
+        "现在：小休一开始，这一段的倒计时同步冻结，休多久到点就顺延多久",
+        "小休中手动结算会被拦下并提示；小休里到点也不会误触发自动结算，休完接着算"]},
+      {t:"🤖 到点自动结算不怕忘", c:"#22a06b", items:[
+        "老问题：时间到了但任务还没点结算，忘了点就白学——账上看不见这部分时间",
+        "现在：到点自动结算时，还在做、还没点结算的任务时间一并计入这一段",
+        "学够了就照常发提前定的积分，不用守着屏幕等结算"]},
+      {t:"🖐 手动结算同样生效", c:"#f59e0b", items:[
+        "中途手动点结算，进行中任务的时间也算进这一段（每段只算自己窗口内的部分，跨段不重复计）",
+        "到点即封顶：结算时间不会超过顺延后的到点，超时补做不算（计时权威不变）",
+        "结算记录里会标注这一段包含多少「进行中未结算」的分钟，账目可查"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#a855f7"><h4>⏳ 卡片显示更清楚</h4><ul><li>小时计划卡片上的「到点时间」按小休顺延后的真实到点显示</li><li>倒计时文案直接写明：到点自动结算、进行中任务时间也一并算入</li><li>小休中显示「☕ 小休中 · 这一段的倒计时已暂停」</li></ul></div>'+
+      '<div class="col" style="--cc:#3b82f6"><h4>🧾 提醒</h4><ul><li>达标标准不变：这一段实际学满目标分钟数才算达标</li><li>自动结算如果达标，照常走「中途消耗自查」再发积分</li></ul></div></div>'
+  },
+  {
+    name:"v11 · 听课三步", badge:{t:"v11 · 🎓 听课三步",c:"#22a06b"},
+    tag:"预习→听课→整理，把'被动复制'变成'主动筛选'",
+    cols:[
+      {t:"⏳ 预习（封顶计时）", c:"#3b82f6", items:[
+        "预习默认 30 分钟封顶，到点弹提醒「该停了，做减法」，超时如实记录",
+        "预习清单三条：先读课程目标 → 再读要点总结 → 其余当小说快速翻",
+        "预习结束必须写一句「这节课要解决的核心问题」——带着钩子去上课"]},
+      {t:"🪑 听课（空白纸模式）", c:"#f59e0b", items:[
+        "课前 30 秒准备清单：水备好 / 手机放远 / 空白纸在手，三项全勾才开始计时",
+        "听课界面就是一张白纸 + 正向计时，核心问题全程挂在眼前",
+        "只记关键词重点，界面故意不给讲义位置，防分心"]},
+      {t:"✍️ 整理 + 🎁 积分", c:"#22a06b", items:[
+        "整理默认 30 分钟封顶：用自己的逻辑重构笔记，可读 > 美观",
+        "完成必须写「核心逻辑链」，自动进时间轴（计入学习）和历史记录",
+        "单独积分制：三步齐发大奖（开课时提前定，默认 15 分），跳步/放弃不发；最近 7 天小结常驻"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#a855f7"><h4>🧭 方法内核</h4><ul><li>信息处理从「被动复制」转为「主动筛选」：每步都有输出强制项（核心问题/逻辑链）</li><li>每一步都有时间上限——上限本身就是减法</li><li>时长全部可调（预习 5 分钟也行），适应不同学科，实践验证优先于照搬</li><li>方法出处：<a href="https://www.bilibili.com/video/BV1DA411N78G" target="_blank" style="color:#7dd3fc">B站【让我效率翻倍的听网课方法！】</a></li></ul></div>'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>🔗 与现有体系打通</h4><ul><li>时间轴自动记一条「🎓 听课三步 · 课程名」，计入学习分钟</li><li>积分走统一账本（类型 lecture），兑换通用</li><li>刷新页面不丢：进行中的课持久保存，秒表接着走</li></ul></div></div>'
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 9.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 11.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+

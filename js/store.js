@@ -82,6 +82,7 @@
       splitEnabled: true,     // 🧭 逐题拆解工具开关（语音/文字引导式做题，复用小题倒计时与三档积分）
       hourPlanDefaultMin: 30, // ⏱ 小时计划：每段的默认时长（分钟），开始时可临时改
       hourDistractCut: 100, // ⏱ 小时计划：中途消耗自查——出现一次扣这段奖励积分的百分比（默认100=扣光）
+      lectureBonusPts: 15,  // 🎓 听课三步：三步齐发的大奖默认积分（开课时可临时改）
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },
@@ -102,6 +103,8 @@
       activeRest: null,     // ☕ 当前休息 {id,startAt,duration,type,typeName,reward}
       plannedHourPlans: [], // 📌 明天预定的时段 [{start,dur,req,ide,ext,pts}]
       sports: [],           // 🏃 运动安排 [{id,name,items:[{id,text,points,done,rewarded,settled}]}]
+      lectures: [],         // 🎓 听课三步记录 [{id,course,phase,previewMin,attendMin,consMin,pts,question,note,chain,awarded,abandoned,...}]
+      activeLecture: null,  // 🎓 进行中的听课三步
       ended: false
     };
   }
