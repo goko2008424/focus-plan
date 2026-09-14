@@ -837,6 +837,7 @@
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="sub-note" data-task="' + task.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn task-lec-btn" data-act="sub-lecture" data-task="' + task.id + '" data-sub="' + s.id + '" title="🎧 给这题开课（预习→听课→整理，走完自动勾掉它）">🎧</button>' +
           '<button class="task-timer-btn" data-act="sub-split" data-task="' + task.id + '" data-sub="' + s.id + '" title="🧭 逐题拆解（语音/文字引导）">🧭</button>' +
+          '<button class="task-timer-btn" data-act="sub-rep" data-task="' + task.id + '" data-sub="' + s.id + '" title="🔁 只把这题安排到另一天重做（带着它所属的任务组）">🔁</button>' +
           '<button class="task-timer-btn" data-act="sub-edit" data-task="' + task.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="sub-del" data-task="' + task.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
           (s.summary && s.summary.text ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
@@ -1012,6 +1013,7 @@
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="g-sub-note" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn task-lec-btn" data-act="g-sub-lecture" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🎧 给这题开课（预习→听课→整理，走完自动勾掉它）">🎧</button>' +
           '<button class="task-timer-btn" data-act="g-sub-split" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🧭 逐题拆解（语音/文字引导）">🧭</button>' +
+          '<button class="task-timer-btn" data-act="g-sub-rep" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🔁 只把这题安排到另一天重做（带着它所属的任务组）">🔁</button>' +
           '<button class="task-timer-btn" data-act="g-sub-edit" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="g-sub-del" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
           (s.summary && s.summary.text ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
@@ -1393,7 +1395,7 @@
           if (target && task) {
             const ok = App.calendar.copyTaskToDay(task, listKey, target, std);
             App.ui.toast(ok
-              ? '🔁 已安排 ' + S().fmtDateCN(S().keyToDate(target)).slice(5, 12) + ' 重做（日历页可改）'
+              ? '🔁 已安排 ' + S().shortDateCN(target) + ' 重做（日历页可改）'
               : '目标日期已有同名任务，未重复安排');
           }
           App.ui.closeModal();
@@ -1768,7 +1770,7 @@
     if (!items.length) { done(); return; }
     const rows = items.map(function (x, i) {
       return '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13.5px;color:#374151">' +
-        '<input type="checkbox" data-debt="' + i + '" /> <span>[' + S().fmtDateCN(S().keyToDate(x.dayKey)).slice(5, 12) + '] ' +
+        '<input type="checkbox" data-debt="' + i + '" /> <span>[' + S().shortDateCN(x.dayKey) + '] ' +
         S().esc(x.it.text) + ' <b style="color:#e2545d">(' + x.it.points + ' 分)</b></span></label>';
     }).join('');
     const modal = App.ui.openModal('🌱 拓展欠账清算（宽限到期）',
@@ -1914,7 +1916,7 @@
         '<textarea id="end-review" style="width:100%;min-height:64px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13.5px;resize:vertical">' +
         S().esc((day.review && day.review.text) || '') + '</textarea></div>';
 
-      const modal = App.ui.openModal(dayKey === S().todayKey() ? '🏁 结束今天' : '🏁 结算 ' + S().fmtDateCN(S().keyToDate(dayKey)).slice(5, 12) + '（熬夜跨天，先结昨天）', body,
+      const modal = App.ui.openModal(dayKey === S().todayKey() ? '🏁 结束今天' : '🏁 结算 ' + S().shortDateCN(dayKey) + '（熬夜跨天，先结昨天）', body,
         '<button class="btn btn-primary" data-act="ok">确认结束</button><button class="btn" data-act="cancel">取消</button>');
       autoSave(modal.querySelector('#end-review'), function (v) {
         if (v.trim()) { day.review = { text: v, at: new Date().toISOString() }; }
@@ -2731,6 +2733,17 @@
   }
 
   /* 🎧 从任务进入听课三步（任务即课程；明天的任务也能开，时间记在今天） */
+  /** 把「某一道题的重做安排」弹窗叫起来（弹窗 + 算法都在 calendar.js，这里只管找到那道题） */
+  function repSubModal(listKey, taskId, subId, groupId, dayKey) {
+    if (!App.calendar || !App.calendar.repeatSubModal) { App.ui.toast('重做安排暂时不可用'); return; }
+    const key = dayKey || S().todayKey();
+    const task = ((S().getDay(key).tasks[listKey]) || []).find(function (t) { return t.id === taskId; });
+    if (!task) return;
+    const sub = App.calendar.findSubById(task, groupId || null, subId);
+    if (!sub) return;
+    App.calendar.repeatSubModal(task, listKey, groupId || null, sub, key);
+  }
+
   /** 从小任务（组里的题 / 单独小任务）开课：课程名=题目，听课预算=它的限时
       —— 任务组里的每一题、以及单独加的小任务，都能像整条任务一样走「预习→听课→整理」 */
   function startLectureFromSub(listKey, taskId, subId, groupId, fromTomorrow) {
@@ -2817,6 +2830,8 @@
         if (act2 === 'g-sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
         if (act2 === 'sub-lecture') { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, null, false); return; }
         if (act2 === 'g-sub-lecture') { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group, false); return; }
+        if (act2 === 'sub-rep') { repSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, null, S().todayKey()); return; }
+        if (act2 === 'g-sub-rep') { repSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group, S().todayKey()); return; }
 
         if (act2 === 'g-edit') { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         if (act2 === 'g-del') { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
@@ -2838,7 +2853,10 @@
     const day = S().getDay(dayKey);
     const box = document.getElementById('tomorrow-columns');
     document.getElementById('tomorrow-date').textContent = '📅 明天（提前填写）：' + S().fmtDateCN(dayKey);
-    box.innerHTML = COLS.map(function (col) {
+    box.innerHTML = '<div class="day-toolbar">' +
+      '<button class="btn btn-small" data-act="paste">📋 从其他天转移任务</button>' +
+      '<span class="day-toolbar-hint">别的日子（含今天没做完的）整批搬到这里；搬完按情况把做过的叉掉</span></div>' +
+      COLS.map(function (col) {
       const list = day.tasks[col.key];
       const rows = list.map(function (t) {
         const pts = taskPoints(t, col.key);
@@ -2912,6 +2930,9 @@
       if (act === 'g-cd-start') { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
       if (act === 'sub-lecture' && listKey) { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, null, true); return; }
       if (act === 'g-sub-lecture' && listKey) { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group, true); return; }
+      if (act === 'sub-rep' && listKey) { repSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, null, S().tomorrowKey()); return; }
+      if (act === 'g-sub-rep' && listKey) { repSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group, S().tomorrowKey()); return; }
+      if (act === 'paste') { pasteTasksModal(S().tomorrowKey()); return; }
       if (act === 'sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
       if (act === 'g-sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
       if (act === 'g-claim') { return; }
@@ -3081,12 +3102,13 @@
     const data = S().data();
     const target = S().getDay(targetDayKey);
     const todayK = S().todayKey(), tomorrowK = S().tomorrowKey();
-    const days = Object.keys(data.days || {}).filter(function (k) {
-      return k !== todayK && k !== tomorrowK && k !== targetDayKey;
-    }).sort();
+    // 来源 = 除目标日以外的任何一天（今天没做完的也能搬去明天）
+    const days = Object.keys(data.days || {}).filter(function (k) { return k !== targetDayKey; }).sort();
     if (!days.length) { App.ui.toast('还没有可粘贴的往日'); return; }
     const modal = App.ui.openModal('📋 从往日粘贴任务',
-      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把某一天整批任务（含小题/任务组）复制到「今天」，任务保持原分类栏；粘贴后按自己的完成情况把做过的 ❌ 掉即可。</p>' +
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把某一天的任务（含小题/任务组）复制到「' +
+      (targetDayKey === todayK ? '今天' : (targetDayKey === tomorrowK ? '明天' : S().shortDateCN(targetDayKey))) +
+      '」，保持原分类栏；搬完按自己的完成情况把做过的 ❌ 掉即可。</p>' +
       '<div class="field"><label>选择要粘贴的日期</label><select id="paste-date">' +
       days.map(function (k) {
         const n = ((data.days[k].tasks || {}).required || []).length;

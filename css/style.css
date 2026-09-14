@@ -578,7 +578,10 @@ details.ledger-day[open] summary { border-bottom: 1px dashed var(--line); paddin
 /* ---------- 日历任务上下文（小任务/任务组） ---------- */
 .t-ctx { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .t-ctx.grp { color: #a855f7; font-weight: 600; }
-.t-ctx.sub { padding-left: 14px; }
+.t-ctx.sub { padding-left: 14px; display: flex; align-items: center; gap: 6px; }
+/* 每道题后面也能 🔁 单独安排到另一天（v49） */
+.t-ctx.sub > span { flex: 1 1 auto; word-break: break-all; }
+.t-ctx.sub .task-timer-btn { padding: 0 6px; font-size: 11px; flex: none; border-radius: 6px; }
 
 /* ---------- 🎁 积分兑换商店 ---------- */
 .rd-modal .modal { max-width: 560px; }

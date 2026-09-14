@@ -49,6 +49,9 @@
     const ss = s % 60;
     return (h > 0 ? h + ':' + pad(m) : pad(m)) + ':' + pad(ss);
   }
+  /** 只取「9月17日」这种短日期。⚠️ 参数和 fmtDateCN 一样是 key 字符串（'2026-09-17'），
+      不是 Date 对象——传 Date 会变成 NaN 月，所以统一走这里，别在外面手写 slice */
+  function shortDateCN(k) { return fmtDateCN(k).replace(/^\d{4}年/, '').replace(/ 周.$/, ''); }
   function fmtDateCN(k) {
     const d = keyToDate(k);
     const w = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
@@ -313,7 +316,7 @@
     uid: uid, esc: esc, pad2: pad,
     dateKey: dateKey, todayKey: todayKey, tomorrowKey: tomorrowKey,
     keyToDate: keyToDate, minOfDay: minOfDay, hhmmOf: hhmmOf,
-    fmtDur: fmtDur, fmtClock: fmtClock, fmtDateCN: fmtDateCN,
+    fmtDur: fmtDur, fmtClock: fmtClock, fmtDateCN: fmtDateCN, shortDateCN: shortDateCN,
     settings: function () { return data.settings; },
     data: function () { return data; },
     ledger: function () { return data.ledger; }
