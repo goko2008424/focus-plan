@@ -100,6 +100,7 @@ const SLIDES = [
           '<div class="tl" data-i="13"><div class="n">v13</div><div class="t">兑换商店+主题</div></div>'+
           '<div class="tl" data-i="14"><div class="n">v14</div><div class="t">听课即任务</div></div>'+
           '<div class="tl" data-i="15"><div class="n">v15</div><div class="t">听课住进任务</div></div>'+
+          '<div class="tl" data-i="16"><div class="n">v16</div><div class="t">悬浮窗出浏览器</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -388,11 +389,31 @@ const SLIDES = [
     ]
   },
   {
+    name:"v16 · 悬浮窗出浏览器", badge:{t:"v16 · 🪟 悬浮窗出浏览器",c:"#3b82f6"},
+    tag:"计时不再被关在网页里",
+    cols:[
+      {t:"🪟 拖出浏览器", c:"#3b82f6", items:[
+        "点悬浮窗上的「⇱ 拖出」，变成独立小窗",
+        "可拖到屏幕任何位置、永远置顶",
+        "切到别的软件、最小化浏览器，计时照常走字",
+        "刷新页面后收回页内（浏览器不允许网页偷偷开窗），再点一次即可"]},
+      {t:"🧭 下方抽屉：本组进度 + 连做", c:"#a855f7", items:[
+        "抽屉可收起，默认只留一行「🎯 导数专项组 1/3 · 第2题」",
+        "展开看整组清单：哪题做完、哪题在做、各多少分钟",
+        "「✅ 做完这题」→「▶ 下一题」，同一组里一路连做不用回网页",
+        "整组做完弹「☕ 去休息 / ▶ 再安排点」"]},
+      {t:"⏰ 到点提醒 + 手机补偿", c:"#22a06b", items:[
+        "小时代结束、休息结束：发系统通知，网页挂后台也提醒",
+        "手机上浏览器不支持开小窗，自动退回页内悬浮窗",
+        "手机计时中自动申请防息屏，屏幕不会自己睡过去"]}
+    ]
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 15.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 16.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+

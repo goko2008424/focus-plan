@@ -6,7 +6,22 @@
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=42" />
+  <link rel="stylesheet" href="css/style.css?v=43" />
+  <style id="pip-style">
+    /* ===== 🪟 只在小窗（Document Picture-in-Picture）里生效：让悬浮窗铺满整个小窗 ===== */
+    html.pip, html.pip body { background: var(--bg, #f5f7fa); margin: 0; padding: 0; }
+    html.pip #timer-float.in-pip {
+      position: static; left: auto; top: auto; right: auto; bottom: auto;
+      width: 100%; max-width: none; border: none; border-radius: 0;
+      box-shadow: none; background: transparent; padding: 10px 12px 14px;
+      animation: none; overflow: visible;
+    }
+    html.pip #timer-float.in-pip .tf-drag-hint { display: none !important; }
+    html.pip #timer-float.in-pip .tf-head { cursor: default; }
+    html.pip #timer-float.in-pip .btn { font-size: 12px; padding: 5px 9px; }
+    html.pip #timer-float.in-pip .tf-line { font-size: 12.5px; margin-bottom: 3px; }
+    html.pip #timer-float.in-pip .tf-dw-item { font-size: 12px; }
+  </style>
 </head>
 <body>
   <header id="app-header">
@@ -56,7 +71,7 @@
 
   <!-- 计时悬浮窗（任务进行中显示，可拖动） -->
   <div id="timer-float" class="hidden">
-    <div class="tf-head" id="tf-head">🪟 计时悬浮窗 <span class="tf-drag-hint">（按住可拖动）</span></div>
+    <div class="tf-head" id="tf-head">🪟 计时悬浮窗 <span class="tf-drag-hint">（按住可拖动）</span><button id="tf-pip" class="tf-pip-btn" title="拖出浏览器：变成独立小窗口，可拖到屏幕任何位置、永远置顶">⇱ 拖出</button></div>
     <div id="tf-forward">
       <div class="tf-line">预计完成内容：<b id="tf-content">--</b></div>
       <div class="tf-line">预计时间：<b id="tf-plan">--</b></div>
@@ -79,6 +94,8 @@
         <button id="cd-stop" class="btn btn-small btn-primary">⏹ 结束</button>
       </div>
     </div>
+    <!-- 🧭 下方抽屉：本组进度 / 下一题 / 拆解（可收起，不占屏） -->
+    <div id="tf-drawer" class="hidden"></div>
   </div>
 
   <main>
@@ -233,18 +250,18 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=42"></script>
-  <script src="js/ui.js?v=42"></script>
-  <script src="js/tasks.js?v=42"></script>
-  <script src="js/timeline.js?v=42"></script>
-  <script src="js/stats.js?v=42"></script>
-  <script src="js/settings.js?v=42"></script>
-  <script src="js/sport.js?v=42"></script>
-  <script src="js/lecture.js?v=42"></script>
-  <script src="js/calendar.js?v=42"></script>
-  <script src="js/link.js?v=42"></script>
-  <script src="js/demo.js?v=42"></script>
-  <script src="js/app.js?v=42"></script>
+  <script src="js/store.js?v=43"></script>
+  <script src="js/ui.js?v=43"></script>
+  <script src="js/tasks.js?v=43"></script>
+  <script src="js/timeline.js?v=43"></script>
+  <script src="js/stats.js?v=43"></script>
+  <script src="js/settings.js?v=43"></script>
+  <script src="js/sport.js?v=43"></script>
+  <script src="js/lecture.js?v=43"></script>
+  <script src="js/calendar.js?v=43"></script>
+  <script src="js/link.js?v=43"></script>
+  <script src="js/demo.js?v=43"></script>
+  <script src="js/app.js?v=43"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {

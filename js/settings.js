@@ -76,6 +76,11 @@
       '<span class="unit">分钟（你主动小休一次休多久）</span></div>' +
       '<p class="hint">原理见「📖 指南」里的《强化休息系统》：完成任务不安排休息、休息放在任务内；最有效的是提前、高频、短时、放空的休息。</p>' +
       '</div>' +
+      '<div class="set-group"><h4>🪟 计时悬浮窗（能不能拖出浏览器）</h4>' +
+      switchRow('set-float-pip', '把计时悬浮窗拖出浏览器：独立小窗、可拖到屏幕任何位置、永远置顶', s.floatPiP) +
+      switchRow('set-notify', '⏰ 到点发系统通知（小时代结束 / 休息结束时，网页挂后台也能提醒）', s.notifyOnEnd) +
+      '<p class="hint">拖出浏览器后，小窗里也是同一份数据：切到别的软件、甚至最小化浏览器，计时照常在走。<b>电脑版 Chrome / Edge 支持，手机上浏览器不允许，会自动退回页内悬浮窗</b>（手机上我做了防息屏）。刷新页面后小窗会收回页内，再点一次悬浮窗上的「⇱ 拖出」或任务行的「▶ 开始计时」就好——浏览器不允许网页自己偷偷开窗。</p>' +
+      '</div>' +
       '<div class="set-group"><h4>🧭 逐题拆解（可扩展小工具 · 独立开关）</h4>' +
       switchRow('set-split', '开启「🧭 逐题拆解」语音引导工具', s.splitEnabled) +
       '<p class="hint">这是为我自己效率做的可扩展小功能，跟上面三个模式互不干扰。订正一道题时：先出声思考这道题的思路（可语音转文字）→ 判断思路「明确/不明确」→ 明确了就自己写步骤、对答案；不明确就先看答案、复述、回忆串通。它<b>复用每个小题自己的倒计时和三档积分</b>（提前×2 / 按时×1.5 / 超时×1），不另搞一套积分。</p>' +
@@ -109,6 +114,14 @@
     bind('set-rest-points', function () { s.restRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-sr-rest-min', function () { s.srRestMin = Math.max(1, +this.value || 2); S().save(); });
     bind('set-split', function () { s.splitEnabled = this.checked; S().save(); });
+    bind('set-float-pip', function () {
+      s.floatPiP = this.checked; S().save();
+      if (!this.checked && App.tasks && App.tasks.pipBack) App.tasks.pipBack();
+    });
+    bind('set-notify', function () {
+      s.notifyOnEnd = this.checked; S().save();
+      if (this.checked && App.tasks && App.tasks.askNotify) App.tasks.askNotify();
+    });
     renderRedeem();
     bindDataButtons();
   }
