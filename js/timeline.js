@@ -42,6 +42,14 @@
       return true;
     });
 
+    if (!day.timeline || !day.timeline.length) {
+      grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:var(--muted);font-size:13.5px">' +
+        '🕰 这天还没有时间记录——去任务页开始计时，或点上方"导出/导入"补账。<br>' +
+        '<span style="font-size:12px">也可以直接点击右侧时间轴空白处，手动添加一段时间。</span></div>';
+      document.getElementById('tl-date').value = selDate;
+      renderSummary(day);
+      return;
+    }
     filtered.forEach(function (r) {
       const el = document.createElement('div');
       el.className = 'tl-record cat-' + r.category + (r.auto ? ' auto-mark' : '');

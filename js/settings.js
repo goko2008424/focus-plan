@@ -44,6 +44,19 @@
       numRow('set-hour-cut', '中途消耗自查扣积分（出现一次扣这段的%）', s.hourDistractCut, '%') +
       '<p class="hint">开始一小时计划时可改。这一段的时长内，你分配 必须/理想/拓展 各学多久；达标后自查中途有没有干消耗性的事（看手机/刷屏等），有就按上面这个百分比扣掉这段奖励积分（默认100%＝出现过就扣光）。</p>' +
       '</div>' +
+      '<div class="set-group"><h4>🎨 主题外观</h4><div class="theme-row">' +
+      [
+        ['', '☀️ 默认浅色', '#f4f6f8'],
+        ['ocean', '🌊 海洋', '#0284c7'],
+        ['sakura', '🌸 樱花', '#e56b8c'],
+        ['forest', '🌲 森林', '#2f9e63'],
+        ['dark', '🌙 深色', '#17203a'],
+        ['purple', '🌌 暗夜紫', '#a78bfa']
+      ].map(function (t) {
+        return '<button class="theme-chip' + ((s.theme || '') === t[0] ? ' on' : '') + '" data-th="' + t[0] + '">' +
+          '<span class="theme-dot" style="background:' + t[2] + '"></span>' + t[1] + '</button>';
+      }).join('') +
+      '</div><p class="hint">换主题即时生效，选择会记住。深色主题下所有页面自动适配。</p></div>' +
       '<div class="set-group"><h4>🔘 行为开关</h4>' +
       switchRow('set-ext-append', '拓展任务完成后可继续追加', s.extAppendable) +
       switchRow('set-rollover', '每日未完成任务自动顺延到明天', s.rollover) +
@@ -84,6 +97,14 @@
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
     bind('set-ext-strict', function () { s.extStrict = this.checked; S().save(); });
+    document.querySelectorAll('.theme-chip[data-th]').forEach(function (c) {
+      c.onclick = function () {
+        s.theme = c.dataset.th;
+        S().save();
+        applyTheme();
+        render();
+      };
+    });
     bind('set-mode', function () { s.recordMode = this.value; S().save(); });
     bind('set-rest-points', function () { s.restRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-sr-rest-min', function () { s.srRestMin = Math.max(1, +this.value || 2); S().save(); });
@@ -155,27 +176,51 @@
   }
 
   /* ---------- 兑换操作（顶部积分按钮触发） ---------- */
+  /* 兑换项 emoji 猜测：按关键词给个好看的图标 */
+  function itemEmoji(item) {
+    const t = item || '';
+    if (/游戏|steam|epic/i.test(t)) return '🎮';
+    if (/零食|奶茶|咖啡|吃|喝|蛋糕|冰淇淋/.test(t)) return '🍰';
+    if (/睡|懒觉|午休/.test(t)) return '😴';
+    if (/视频|剧|电影|动画|番/.test(t)) return '📺';
+    if (/玩一小时|玩半小时|娱乐|休息/.test(t)) return '🕹️';
+    if (/买/.test(t)) return '🛍️';
+    if (/外出|出去玩|公园|游乐/.test(t)) return '🎡';
+    return '🎁';
+  }
+
   function redeemModal() {
     const s = S().settings();
     const balance = S().pointsTotal();
-    const table = s.redeemTable.filter(function (r) { return r.points > 0; });
+    const table = s.redeemTable.filter(function (r) { return r.points > 0; })
+      .slice()
+      .sort(function (a, b) { return a.points - b.points; });
     if (!table.length) {
       App.ui.toast('兑换表还是空的，去"设置"里添加兑换项吧');
       return;
     }
-    const body = '<div class="field"><label>当前积分余额</label>' +
-      '<p style="font-weight:800;color:#22a06b;font-size:20px">' + balance + ' 分</p></div>' +
-      '<div class="field"><label>选择要兑换的内容</label>' +
-      '<div style="display:grid;gap:8px">' +
+    const body = '' +
+      '<div class="rd-balance"><span class="rd-balance-label">当前可用积分</span>' +
+      '<span class="rd-balance-num">' + balance + '</span><span class="rd-balance-unit">分</span></div>' +
+      '<div class="rd-grid">' +
       table.map(function (r) {
         const afford = balance >= r.points;
-        return '<button class="btn" data-act="redeem" data-pts="' + r.points + '" data-item="' + S().esc(r.item) + '"' +
-          (afford ? '' : ' disabled style="opacity:.45"') + '>' +
-          r.points + ' 分 → ' + S().esc(r.item) + (afford ? '' : '（积分不足）') + '</button>';
+        const pct = Math.min(100, Math.round(balance / r.points * 100));
+        return '<div class="rd-card ' + (afford ? 'ok' : 'lock') + '">' +
+          '<div class="rd-emoji">' + itemEmoji(r.item) + '</div>' +
+          '<div class="rd-item">' + S().esc(r.item) + '</div>' +
+          '<div class="rd-cost">' + r.points + ' 分</div>' +
+          '<div class="rd-bar"><i style="width:' + pct + '%"></i></div>' +
+          (afford
+            ? '<button class="btn btn-primary rd-btn" data-act="redeem" data-pts="' + r.points + '" data-item="' + S().esc(r.item) + '">🎁 立刻兑换</button>'
+            : '<div class="rd-locked">🔒 还差 ' + (r.points - balance) + ' 分</div>') +
+          '</div>';
       }).join('') +
-      '</div></div>';
-    App.ui.openModal('🎁 积分兑换', body,
-      '<button class="btn" data-act="cancel">取消</button>', { lock: true });
+      '</div>' +
+      '<p class="hint" style="margin-top:10px">灰色的是还没攒够的——继续赚，进度条会一点点填满。兑换会计入流水账（历史页可查）。</p>';
+    const m = App.ui.openModal('🎁 积分兑换商店', body,
+      '<button class="btn" data-act="cancel">关闭</button>', { lock: true });
+    m.classList.add('rd-modal');
     App.ui.bindActions({
       redeem: function (btn) {
         const pts = +btn.dataset.pts;
@@ -183,13 +228,18 @@
         App.ui.confirm('用 ' + pts + ' 积分兑换「' + item + '」？', '兑换', function () {
           S().addLedger(S().todayKey(), 'redeem', { points: -pts, note: '兑换：' + item });
           App.ui.closeModal();
-          App.ui.toast('已兑换「' + item + '」，扣 ' + pts + ' 分');
-          App.app.refreshStats();
           App.ui.floatAt(document.getElementById('stat-points'), '-' + pts + '分', 'neg');
+          App.ui.toast('🎉 已兑换「' + item + '」，扣 ' + pts + ' 分，好好享受！');
+          App.app.refreshStats();
         });
       },
       cancel: App.ui.closeModal
     });
+  }
+
+  /* ---------- 🎨 主题应用 ---------- */
+  function applyTheme() {
+    document.body.dataset.theme = S().settings().theme || '';
   }
 
   /* ---------- 初始化 ---------- */
@@ -202,6 +252,7 @@
   }
 
   App.settings = {
-    init: init, render: render, renderRedeem: renderRedeem, redeemModal: redeemModal
+    init: init, render: render, renderRedeem: renderRedeem, redeemModal: redeemModal, applyTheme: applyTheme,
+    itemEmoji: itemEmoji
   };
 })();

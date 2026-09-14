@@ -122,7 +122,19 @@
     const start = new Date(lastCell);
     start.setDate(lastCell.getDate() - 7 * 53 - 1); // 整 53 周 ≈ 一年
     // GitHub 式：列=周，行=周一..周日
-    let html = '<div class="hm-wrap"><div class="hm-grid" style="display:flex;gap:3px;overflow-x:auto">';
+    let html = '<div class="hm-wrap">';
+    // 月份标签行：与周列对齐，遇到某月第一天就标注
+    let monthLabels = '', cur2 = new Date(start), lastMonth = -1, colIdx = 0;
+    while (cur2 <= lastCell) {
+      if (cur2.getMonth() !== lastMonth) {
+        lastMonth = cur2.getMonth();
+        monthLabels += '<div class="hm-month" style="margin-left:' + (colIdx * 15) + 'px">' + (lastMonth + 1) + '月</div>';
+      }
+      colIdx++;
+      cur2.setDate(cur2.getDate() + 7);
+    }
+    html += '<div class="hm-months" style="position:relative;height:16px;font-size:10px;color:var(--muted)">' + monthLabels + '</div>';
+    html += '<div class="hm-grid" style="display:flex;gap:3px;overflow-x:auto">';
     const cur = new Date(start);
     let weekCells = [];
     const weeks = [];
@@ -144,7 +156,10 @@
     }
     if (weekCells.length) weeks.push('<div class="hm-week">' + weekCells.join('') + '</div>');
     html += weeks.join('') + '</div>' +
-      '<div class="hm-meta">过去一年有效学习 <b>' + S().fmtDur(totalMin) + '</b> · 颜色越深学得越久 · 点格子跳到那天</div></div>';
+      '<div class="hm-meta">过去一年有效学习 <b>' + S().fmtDur(totalMin) + '</b> · 点格子跳到那天 · ' +
+      '<span style="display:inline-flex;align-items:center;gap:3px;margin-left:6px">少' +
+      HEAT_COLORS.map(function (col) { return '<span style="width:10px;height:10px;border-radius:2px;display:inline-block;background:' + col + '"></span>'; }).join('') +
+      '多</span></div></div>';
     return html;  }
 
   /* ---------- 月历 ---------- */
@@ -198,7 +213,11 @@
       byCat[c] = (byCat[c] || 0) + m;
       total += m;
     });
-    if (total < 1) return '';
+    if (total < 1) {
+      return '<div style="border:1px dashed var(--line);border-radius:12px;padding:14px;margin:10px 0;text-align:center">' +
+        '<p style="font-size:13px;color:var(--muted)">🕰 这天还没有时间记录</p>' +
+        '<p class="hint">去任务页开始计时、或到时间轴补上休息/吃饭，饼图就会在这里出现。</p></div>';
+    }
     const CATS = App.ui.CATS;
     const segs = Object.keys(byCat).map(function (c) { return { c: c, m: byCat[c] }; })
       .sort(function (a, b) { return b.m - a.m; });

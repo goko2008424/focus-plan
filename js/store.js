@@ -81,6 +81,7 @@
       srEnableTime: true,     // 强化休息系统：定时自动提醒开关（用户可关）
       srCooldownMin: 5,       // 强化休息系统：两次自动提醒的最小间隔（避免冲突连推）
       splitEnabled: true,     // 🧭 逐题拆解工具开关（语音/文字引导式做题，复用小题倒计时与三档积分）
+      theme: '',             // 🎨 主题外观（空=默认浅色；ocean/sakura/forest/dark/purple）
       hourPlanDefaultMin: 30, // ⏱ 小时计划：每段的默认时长（分钟），开始时可临时改
       hourDistractCut: 100, // ⏱ 小时计划：中途消耗自查——出现一次扣这段奖励积分的百分比（默认100=扣光）
       lectureBonusPts: 15,  // 🎓 听课三步：三步齐发的大奖默认积分（开课时可临时改）
@@ -184,7 +185,10 @@
         ensureDay(todayKey());
         save();
       }
-      if (typeof App.app !== 'undefined') App.app.refreshAll();
+      if (typeof App.app !== 'undefined') {
+        App.app.refreshAll();
+        if (App.app.refreshStats) App.app.refreshStats(); // 异步载入后顶栏积分同步
+      }
       else App.tasks && App.tasks.renderAll && App.tasks.renderAll();
     });
     if (!data) { data = defaultData(); ensureDay(todayKey()); }

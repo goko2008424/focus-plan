@@ -247,7 +247,6 @@ details.task-details summary:hover { text-decoration: underline; }
 .honor-item{display:flex;flex-direction:column;align-items:center;gap:8px}
 .honor-avatar{width:76px;height:76px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.3);box-shadow:0 6px 16px rgba(0,0,0,.25)}
 .honor-name{font-size:13.5px;font-weight:700;color:var(--ink)}
-.redeem-log-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
 .task-timer-btn.noted { color: var(--primary); font-weight: 700; }
 .sub-meta.noted-tag { color: var(--primary); font-weight: 600; background: rgba(34,160,107,0.1); border-radius: 6px; padding: 0 5px; }
 .sub-item .btn-small { padding: 2px 10px; font-size: 12px; }
@@ -513,7 +512,6 @@ details.task-details summary:hover { text-decoration: underline; }
 }
 
 /* 休闲时间填充动画 */
-.leisure-pulse { animation: pulseFill .6s ease; }
 @keyframes pulseFill { 0% { transform: scale(1); } 40% { transform: scale(1.12); color: #ffd166; } 100% { transform: scale(1); } }
 
 /* ============ ⏱ 小时计划卡片 ============ */
@@ -581,3 +579,107 @@ details.ledger-day[open] summary { border-bottom: 1px dashed var(--line); paddin
 .t-ctx { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .t-ctx.grp { color: #a855f7; font-weight: 600; }
 .t-ctx.sub { padding-left: 14px; }
+
+/* ---------- 🎁 积分兑换商店 ---------- */
+.rd-modal .modal { max-width: 560px; }
+.rd-balance { display: flex; align-items: baseline; gap: 8px; justify-content: center; padding: 8px 0 14px; }
+.rd-balance-label { font-size: 13px; color: var(--muted); }
+.rd-balance-num { font-size: 34px; font-weight: 800; background: linear-gradient(90deg, #22a06b, #3b82f6); -webkit-background-clip: text; background-clip: text; color: transparent; font-variant-numeric: tabular-nums; }
+.rd-balance-unit { font-size: 13px; color: var(--muted); }
+.rd-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.rd-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; text-align: center; background: #fff; transition: transform .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 6px; }
+.rd-card.ok { border-color: #b7e4cd; box-shadow: 0 4px 14px rgba(34, 160, 107, .12); }
+.rd-card.ok:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(34, 160, 107, .2); }
+.rd-card.lock { background: #f5f6f8; opacity: .85; }
+.rd-emoji { font-size: 26px; }
+.rd-item { font-size: 14px; font-weight: 700; color: var(--ink); word-break: break-all; min-height: 20px; }
+.rd-cost { font-size: 12px; color: var(--muted); }
+.rd-bar { height: 7px; background: #eceff3; border-radius: 4px; overflow: hidden; }
+.rd-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3b82f6, #22a06b); border-radius: 4px; }
+.rd-btn { width: 100%; }
+.rd-locked { font-size: 12px; color: #98a1ad; padding: 6px 0; }
+@media (max-width: 520px) { .rd-grid { grid-template-columns: 1fr; } }
+
+/* ============ 🎨 主题系统 ============ */
+/* 浅色三兄弟：只换变量，全局跟走 */
+body[data-theme="ocean"] {
+  --bg: #e9f4fa; --card: #ffffff; --ink: #12303e; --muted: #6b8fa3;
+  --line: #cfe4ee; --brand: #0c4a6e; --primary: #0284c7;
+}
+body[data-theme="sakura"] {
+  --bg: #fdf2f5; --card: #ffffff; --ink: #43302e; --muted: #a3788a;
+  --line: #f2d8e0; --brand: #8c4a5e; --primary: #e56b8c;
+}
+body[data-theme="forest"] {
+  --bg: #eff6ee; --card: #ffffff; --ink: #1e3323; --muted: #7d9483;
+  --line: #d5e6d5; --brand: #1d4a30; --primary: #2f9e63;
+}
+/* 深色双雄：换变量 + 组件硬编码色兜底 */
+body[data-theme="dark"] {
+  --bg: #0f1523; --card: #17203a; --ink: #e8edf7; --muted: #93a0b8;
+  --line: #26314b; --brand: #0a0f1c; --primary: #60a5fa;
+  color-scheme: dark;
+}
+body[data-theme="purple"] {
+  --bg: #131024; --card: #1d1836; --ink: #ece7fa; --muted: #a99fc9;
+  --line: #2d2650; --brand: #0d0a1c; --primary: #a78bfa;
+  color-scheme: dark;
+}
+body[data-theme="dark"] .card, body[data-theme="purple"] .card,
+body[data-theme="dark"] .modal, body[data-theme="purple"] .modal,
+body[data-theme="dark"] .day-card, body[data-theme="purple"] .day-card,
+body[data-theme="dark"] .btn, body[data-theme="purple"] .btn,
+body[data-theme="dark"] .task-timer-btn, body[data-theme="purple"] .task-timer-btn,
+body[data-theme="dark"] input, body[data-theme="purple"] input,
+body[data-theme="dark"] textarea, body[data-theme="purple"] textarea,
+body[data-theme="dark"] select, body[data-theme="purple"] select,
+body[data-theme="dark"] .chart, body[data-theme="purple"] .chart,
+body[data-theme="dark"] .rd-card, body[data-theme="purple"] .rd-card,
+body[data-theme="dark"] .sub-block, body[data-theme="purple"] .sub-block,
+body[data-theme="dark"] details.ledger-day, body[data-theme="purple"] details.ledger-day,
+body[data-theme="dark"] details.ledger-all, body[data-theme="purple"] details.ledger-all,
+body[data-theme="dark"] details.task-details, body[data-theme="purple"] details.task-details,
+body[data-theme="dark"] .cal-col, body[data-theme="purple"] .cal-col,
+body[data-theme="dark"] .cal-task, body[data-theme="purple"] .cal-task,
+body[data-theme="dark"] .stat-bar, body[data-theme="purple"] .stat-bar {
+  background: var(--card) !important;
+  color: var(--ink) !important;
+  border-color: var(--line) !important;
+}
+body[data-theme="dark"] .btn:hover, body[data-theme="purple"] .btn:hover { background: #223052; }
+body[data-theme="dark"] .tl-hour:nth-child(even), body[data-theme="purple"] .tl-hour:nth-child(even) { background: rgba(255,255,255,.03); }
+body[data-theme="dark"] .rd-bar, body[data-theme="purple"] .rd-bar { background: rgba(255,255,255,.1); }
+body[data-theme="dark"] .rd-card.lock, body[data-theme="purple"] .rd-card.lock { background: rgba(255,255,255,.04); }
+body[data-theme="dark"] .hm-cell, body[data-theme="purple"] .hm-cell { outline-color: rgba(255,255,255,.4); }
+
+/* 主题选择芯片 */
+.theme-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-chip { display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--ink); }
+.theme-chip.on { border-color: var(--primary); background: rgba(59,130,246,.08); font-weight: 700; }
+.theme-dot { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(0,0,0,.15); }
+
+/* ---------- 兑换记录卡片 ---------- */
+.rlog-card { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; background: var(--card); }
+.rlog-emoji { width: 38px; height: 38px; border-radius: 50%; background: rgba(245, 158, 11, .14); display: flex; align-items: center; justify-content: center; font-size: 19px; flex: 0 0 auto; }
+.rlog-main { flex: 1; min-width: 0; }
+.rlog-item { font-size: 14px; font-weight: 700; color: var(--ink); word-break: break-all; }
+.rlog-date { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.rlog-cost { font-weight: 800; color: #e2545d; font-variant-numeric: tabular-nums; }
+.rlog-total { font-size: 13px; color: var(--muted); text-align: right; padding: 6px 2px 0; }
+
+/* ---------- 📱 窄屏导航：横向滑动，不再挤压成竖排 ---------- */
+@media (max-width: 700px) {
+  #main-nav {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+  #main-nav .nav-btn {
+    flex: 0 0 auto;
+    writing-mode: horizontal-tb !important;
+    white-space: nowrap;
+  }
+  #main-nav::-webkit-scrollbar { height: 0; }
+}

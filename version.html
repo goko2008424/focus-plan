@@ -97,6 +97,7 @@ const SLIDES = [
           '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">小休暂停+自动结算</div></div>'+
           '<div class="tl" data-i="11"><div class="n">v11</div><div class="t">听课三步</div></div>'+
           '<div class="tl" data-i="12"><div class="n">v12</div><div class="t">日历+间隔重做</div></div>'+
+          '<div class="tl" data-i="13"><div class="n">v13</div><div class="t">兑换商店+主题</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -333,11 +334,28 @@ const SLIDES = [
       '<div class="col" style="--cc:#0ea5e9"><h4>🔗 数据无需迁移</h4><ul><li>未来任意一天的任务和「明天的任务」同一套存储，旧数据全兼容</li><li>顺延、回收站等原有机制照常工作</li></ul></div></div>'
   },
   {
+    name:"v13 · 兑换商店 + 主题 + 打磨夜", badge:{t:"v13 · 🎁 兑换商店 + 🎨 主题",c:"#a855f7"},
+    tag:"通宵打磨：颜值即正义",
+    cols:[
+      {t:"🎁 积分兑换商店", c:"#a855f7", items:[
+        "兑换弹窗重做成卡片商店：每个奖品一张卡，emoji 图标自动匹配",
+        "进度条显示攒了多少、还差几分；攒够的亮绿边一键兑换",
+        "顶部积分变动加了数字滚动动画"]},
+      {t:"🎨 六套主题", c:"#3b82f6", items:[
+        "默认浅色 / 海洋 / 樱花 / 森林 / 深色 / 暗夜紫，设置页一键切换",
+        "换主题即刻生效、选择会记住；深色主题全站自动适配"]},
+      {t:"🧹 打磨与修复", c:"#22a06b", items:[
+        "修复饼图变量崩溃（页面全空的元凶）和统计模块重名冲突",
+        "老数据自动补新设置默认值；积分流水/按日记录整体折叠",
+        "热力图加月份标签和色阶图例；指南全面更新到最新功能"]}
+    ]
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 12.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 13.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+
