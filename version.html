@@ -99,6 +99,7 @@ const SLIDES = [
           '<div class="tl" data-i="12"><div class="n">v12</div><div class="t">日历+间隔重做</div></div>'+
           '<div class="tl" data-i="13"><div class="n">v13</div><div class="t">兑换商店+主题</div></div>'+
           '<div class="tl" data-i="14"><div class="n">v14</div><div class="t">听课即任务</div></div>'+
+          '<div class="tl" data-i="15"><div class="n">v15</div><div class="t">听课住进任务</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -369,11 +370,29 @@ const SLIDES = [
     ]
   },
   {
+    name:"v15 · 听课住进任务", badge:{t:"v15 · 🎧 听课住进任务",c:"#a855f7"},
+    tag:"听课页没了——三步直接长在任务行下面",
+    cols:[
+      {t:"🎧 每条任务都能开课", c:"#a855f7", items:[
+        "不用再勾「这是听课任务」：任何一条任务右边都有 🎧，今天明天都有",
+        "点一下，三步面板直接展开在那条任务下面，不用跳页",
+        "预算（预习/听课/整理/大奖分）在面板上随手改，会记住你上次用的"]},
+      {t:"🗑 删掉了单独的听课页", c:"#e2545d", items:[
+        "「🎓 听课」导航按钮和整页界面都去掉了，少一个要记的入口",
+        "上课历史搬到「历史」页，和积分流水放一起",
+        "三步走完照样自动勾掉那条任务，积分不重复算"]},
+      {t:"🔧 顺手修的", c:"#22a06b", items:[
+        "听课阶段的计时器原来不刷新（卡住不走），现在实时走字",
+        "「明天」的任务点 🎧 也能开课，会提示时间记在今天",
+        "缓存版本号统一到 v42（修掉 index 和 sw.js 版本号不一致的隐患）"]}
+    ]
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 14.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 15.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+

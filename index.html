@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=41" />
+  <link rel="stylesheet" href="css/style.css?v=42" />
 </head>
 <body>
   <header id="app-header">
@@ -17,7 +17,6 @@
       </div>
       <nav id="main-nav">
         <button class="nav-btn active" data-view="tasks">任务</button>
-        <button class="nav-btn" data-view="lecture">🎓 听课</button>
         <button class="nav-btn" data-view="calendar">📅 日历</button>
         <button class="nav-btn" data-view="notes" id="nav-notes" style="display:none" title="本机网课笔记工坊（仅限装有笔记服务的电脑）">🎙 笔记</button>
         <button class="nav-btn" data-view="sport">🏃 运动</button>
@@ -108,11 +107,6 @@
       </div>
     </section>
 
-    <!-- 听课三步视图 -->
-    <section id="view-lecture" class="view">
-      <div id="lecture-view"></div>
-    </section>
-
     <!-- 日历视图 -->
     <section id="view-calendar" class="view">
       <div id="calendar-view"></div>
@@ -189,6 +183,11 @@
         <div id="redeem-list"></div>
       </div>
       <div class="card">
+        <h3>🎓 听课记录</h3>
+        <p class="hint">在「任务」页点任意一条任务右边的 🎧 就能开课（今天、明天都行）。走完「预习 → 听课 → 整理」三步才发大奖。</p>
+        <div id="lec-history"></div>
+      </div>
+      <div class="card">
         <h3>按日记录</h3>
         <div id="day-history"></div>
       </div>
@@ -234,18 +233,18 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=41"></script>
-  <script src="js/ui.js?v=41"></script>
-  <script src="js/tasks.js?v=41"></script>
-  <script src="js/timeline.js?v=41"></script>
-  <script src="js/stats.js?v=41"></script>
-  <script src="js/settings.js?v=41"></script>
-  <script src="js/sport.js?v=41"></script>
-  <script src="js/lecture.js?v=41"></script>
-  <script src="js/calendar.js?v=41"></script>
-  <script src="js/link.js?v=41"></script>
-  <script src="js/demo.js?v=41"></script>
-  <script src="js/app.js?v=41"></script>
+  <script src="js/store.js?v=42"></script>
+  <script src="js/ui.js?v=42"></script>
+  <script src="js/tasks.js?v=42"></script>
+  <script src="js/timeline.js?v=42"></script>
+  <script src="js/stats.js?v=42"></script>
+  <script src="js/settings.js?v=42"></script>
+  <script src="js/sport.js?v=42"></script>
+  <script src="js/lecture.js?v=42"></script>
+  <script src="js/calendar.js?v=42"></script>
+  <script src="js/link.js?v=42"></script>
+  <script src="js/demo.js?v=42"></script>
+  <script src="js/app.js?v=42"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {

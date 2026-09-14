@@ -683,3 +683,40 @@ body[data-theme="dark"] .hm-cell, body[data-theme="purple"] .hm-cell { outline-c
   }
   #main-nav::-webkit-scrollbar { height: 0; }
 }
+
+/* ============ 🎓 听课三步面板（内联在任务行下面，v42） ============ */
+.task-lec-btn { color: #7c5cff; }
+.task-row.lec-running { background: rgba(124,92,255,.07); }
+.lec-inline {
+  margin: -2px 0 10px 0; padding: 10px 12px 11px;
+  border: 1px solid rgba(124,92,255,.35); border-top: none;
+  border-radius: 0 0 10px 10px; background: rgba(124,92,255,.06);
+}
+.lec-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink); margin-bottom: 8px; }
+.lec-head b { color: #7c5cff; }
+.lec-step { font-size: 11.5px; color: var(--muted); }
+.lec-spacer { flex: 1 1 auto; }
+.lec-bwrap { display: inline-flex; align-items: center; gap: 6px; }
+.lec-bl { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: var(--muted); }
+.lec-b { width: 46px; padding: 2px 4px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.lec-bhint { font-size: 11.5px; color: var(--muted); }
+.lec-clock { font-size: 19px; font-weight: 800; margin: 2px 0 8px; }
+.lec-hint { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+.lec-chk-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 13.5px; cursor: pointer; color: var(--ink); }
+.lec-chk-row input { width: 16px; height: 16px; flex: none; }
+.lec-q { font-size: 13px; background: rgba(59,130,246,.08); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; margin: 0 0 8px; color: var(--ink); }
+.lec-ta { width: 100%; min-height: 110px; border: 1px solid var(--line); border-radius: 8px; padding: 9px; font-size: 13.5px; resize: vertical; background: var(--card); color: var(--ink); }
+.lec-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+/* 历史页：听课记录 */
+.lec-hist-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 7px 2px; border-bottom: 1px solid var(--line); }
+.lec-hist-date { font-size: 11.5px; color: var(--muted); min-width: 96px; }
+.lec-hist-min { font-size: 11.5px; color: var(--muted); }
+.lec-hist-flag { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--extra); }
+.lec-hist-chain { font-size: 12.5px; color: var(--muted); padding: 2px 2px 7px; }
+.lec-hist-more { font-size: 11.5px; color: var(--muted); padding: 6px 2px; }
+/* 深色主题下的对比度 */
+body[data-theme="dark"] .lec-inline, body[data-theme="purple"] .lec-inline {
+  border-color: rgba(167,139,250,.42); background: rgba(167,139,250,.12);
+}
+body[data-theme="dark"] .lec-head b, body[data-theme="purple"] .lec-head b,
+body[data-theme="dark"] .task-lec-btn, body[data-theme="purple"] .task-lec-btn { color: #b9a3ff; }

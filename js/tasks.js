@@ -1655,14 +1655,17 @@
         (planned ? ' ｜ 进度 <b style="color:' + (pct >= 100 ? 'var(--req)' : '#22a06b') + '">' + pct + '%</b>' : '') +
         '</div>';
     }
-    return '<div class="task-row' + (task.done ? ' done' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
+    const lecBtn = '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步：预习 → 听课 → 整理，三步齐了发大奖">🎧</button>';
+    const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(task) : '';
+    return '<div class="task-row' + (task.done ? ' done' : '') + (lecPanel ? ' lec-running' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
       '<span class="task-text" data-act="edit">' + S().esc(task.text) + '</span>' +
       ptsInput +
+      lecBtn +
       btn +
       '</div>' +
-      statLine +
-      subBlockHTML(task) +
+      lecPanel +
+      statLine +      subBlockHTML(task) +
       groupBlockHTML(task);
   }
 
@@ -2257,6 +2260,19 @@
     if (e) e.onclick = function () { endHourPlan(); };
   }
 
+  /* 🎧 从任务进入听课三步（任务即课程；明天的任务也能开，时间记在今天） */
+  function startLectureFromTask(listKey, taskId) {
+    const todayDay = S().getDay(S().todayKey());
+    const tomDay = S().getDay(S().tomorrowKey());
+    let task = (todayDay.tasks[listKey] || []).filter(function (x) { return x.id === taskId; })[0];
+    let fromTomorrow = false;
+    if (!task) {
+      task = (tomDay.tasks[listKey] || []).filter(function (x) { return x.id === taskId; })[0];
+      fromTomorrow = !!task;
+    }
+    if (!task) { App.ui.toast('找不到这条任务'); return; }
+    if (App.lecture && App.lecture.startFromTask) App.lecture.startFromTask(task, fromTomorrow);
+  }
   function bindTodayEvents() {
     const box = document.getElementById('task-columns');
     // 单独定价：修改任务积分
@@ -2303,6 +2319,7 @@
       }
       const listKey = row.dataset.list, taskId = row.dataset.id;
       const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
+      if (act === 'lecture') { startLectureFromTask(listKey, taskId); return; }
       if (act === 'check') toggleTask(listKey, taskId);
       else if (act === 'edit') editTaskModal(listKey, taskId, S().todayKey(), false);
       else if (act === 'start') startTimer(listKey, taskId);
@@ -2325,17 +2342,19 @@
             '<input type="number" class="task-points" data-act="points" min="0" value="' + pts + '" />' +
             '<span class="pts-unit">分</span></span>'
           : '';
-        return '<div class="task-row" data-list="' + col.key + '" data-id="' + t.id + '">' +
+        const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(t) : '';
+        return '<div class="task-row' + (lecPanel ? ' lec-running' : '') + '" data-list="' + col.key + '" data-id="' + t.id + '">' +
           '<span class="task-check" style="visibility:hidden">✓</span>' +
           '<span class="task-text" data-act="edit">' + S().esc(t.text) + '</span>' +
           ptsInput +
+          '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步（会记在今天的时间轴，走完勾掉这条明天的任务）">🎧</button>' +
           '<button class="task-timer-btn" data-act="edit" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" title="删除">🗑</button>' +
           '</div>' +
+          lecPanel +
           subBlockHTML(t) +
           groupBlockHTML(t);
-      }).join('')
-      return '<div class="task-col ' + col.style + '" data-col="' + col.key + '">' +
+      }).join('');      return '<div class="task-col ' + col.style + '" data-col="' + col.key + '">' +
         '<div class="task-col-head"><h3>' + col.name + '</h3>' +
         '<span class="badge">' + list.length + ' 条</span></div>' +
         '<div class="task-col-head"><span class="desc">' + col.desc + '</span></div>' +
@@ -2375,6 +2394,7 @@
       if (act === 'sub-add' && listKey) { addSubModal(listKey, actBtn.dataset.task, null, S().tomorrowKey()); return; }
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
+      if (act === 'lecture' && listKey && row) { startLectureFromTask(listKey, row.dataset.id); return; }
       if (act === 'cd-start' && listKey) { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
       if (act === 'sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'g-sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey(), actBtn.dataset.group); return; }
@@ -2421,8 +2441,8 @@
       '<option value="main">主线推进（直接推进课程，纯学习，计入「有效学习」）</option>' +
       '<option value="aux">辅助推进（复盘 / 整理 / 写计划等，计入「辅助」）</option>' +
       '<option value="long">长期推进（长期自我提升，如兴趣/技能，计入「扩展」）</option>' +
-      '</select></div>',
-      '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
+      '</select></div>' +
+            '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
     const ta = modal.querySelector('#add-text');
     ta.focus();
     App.ui.bindActions({
@@ -2472,7 +2492,7 @@
       '<option value="aux"' + (task.aux ? ' selected' : '') + '>辅助推进（复盘/整理等）</option>' +
       '<option value="long"' + (task.long ? ' selected' : '') + '>长期推进（自我提升，计入「扩展」）</option>' +
       '</select></div>' +
-      '</div>',
+      '</div>' +
       '<button class="btn btn-primary" data-act="save">保存</button>' +
       '<button class="btn btn-danger" data-act="del">删除任务</button>' +
       '<button class="btn" data-act="cancel">取消</button>');
@@ -2680,6 +2700,8 @@
   function renderAll() {
     renderToday();
     renderTomorrow();
+    // 🎧 三步面板的按钮/预算是动态拼进任务行的，渲染完要重新接一次事件
+    if (App.lecture && App.lecture.bindInline) App.lecture.bindInline();
     if (typeof App.app !== 'undefined') App.app.refreshStats();
   }
 

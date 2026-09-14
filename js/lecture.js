@@ -41,51 +41,70 @@
     return !L.skipPreview && !L.skipAttend && !L.skipCons;
   }
 
-  /* ---------- 开始：定课程与三步预算 ---------- */
-  function startModal() {
-    const day = today();
-    if (day.activeLecture) { App.ui.toast('已有一节课在进行中，先完成或放弃它'); return; }
-    const st = S().settings();
-    const dPts = st.lectureBonusPts != null ? st.lectureBonusPts : 15;
-    const modal = App.ui.openModal('🎓 开始听课三步',
-      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">预习只读目标与总结（到点就停，做减法）→ 听课用空白纸记重点 → 课后用自己的逻辑重构笔记。' +
-      '<b>三步都走完才发大奖</b>，跳步/放弃拿不到。</p>' +
-      '<p class="hint" style="margin-bottom:10px"><b>和「任务」怎么分工？</b>上课这件事本身 → 用这里走三步（自动进时间轴）；课后要做的事（作业、订正、要重做的题）→ 到「任务」或「📅 日历」里安排。两边别重复安排同一件事。</p>' +
-      '<div class="field"><label>课程名（如：化学 · 盐类水解）</label><input id="lec-course" style="width:100%;' + INPUT_STYLE + '" placeholder="这节课叫什么" /></div>' +
-      '<div class="field-row">' +
-      '<div class="field"><label>⏳ 预习上限（分钟）</label><input type="number" id="lec-pmin" min="1" value="30" /></div>' +
-      '<div class="field"><label>🪑 听课时长（分钟，参考）</label><input type="number" id="lec-amin" min="1" value="45" /></div>' +
-      '<div class="field"><label>⏳ 整理上限（分钟）</label><input type="number" id="lec-cmin" min="1" value="30" /></div>' +
-      '</div>' +
-      '<div class="field"><label>🎁 三步齐发奖励积分（提前定好）</label><input type="number" id="lec-pts" min="0" value="' + dPts + '" /></div>' +
-      '<p class="hint">听课本体不封顶（课多长听多长）；预习/整理到点会提醒收尾，超时如实记录。</p>',
-      '<button class="btn btn-primary" data-act="ok">🎯 开始预习</button><button class="btn" data-act="cancel">取消</button>');
-    const cEl = modal.querySelector('#lec-course');
-    if (cEl) cEl.focus();
-    App.ui.bindActions({
-      ok: function () {
-        const course = (modal.querySelector('#lec-course').value || '').trim();
-        if (!course) { App.ui.toast('先写课程名'); return; }
-        const pmin = Math.max(1, +modal.querySelector('#lec-pmin').value || 30);
-        const amin = Math.max(1, +modal.querySelector('#lec-amin').value || 45);
-        const cmin = Math.max(1, +modal.querySelector('#lec-cmin').value || 30);
-        const pts = Math.max(0, +modal.querySelector('#lec-pts').value || 0);
-        day.activeLecture = {
-          id: S().uid(), course: course,
-          previewMin: pmin, attendMin: amin, consMin: cmin, pts: pts,
-          phase: 'preview',
-          previewStartAt: Date.now(),
-          checklist: [false, false, false],
-          overdueToasted: false,
-          createdAt: S().nowIso ? S().nowIso() : new Date().toISOString()
-        };
-        S().save();
-        App.ui.closeModal();
-        render();
-        App.ui.toast('🎓 预习开始！只读目标与总结，到点就停');
-      },
-      cancel: App.ui.closeModal
+  /* ---------- 从任务一键进入：自动带课程名和时长（任务即课程） ---------- */
+  /* 三步走完 → 自动勾掉关联任务（任务即课程）。积分已在「三步大奖」发过，这里只打勾不重复计分 */
+  function autoCheckTask(L) {
+    if (!L || !L.taskId) return '';
+    let hit = null;
+    [S().todayKey(), S().tomorrowKey()].forEach(function (k) {
+      const d = S().getDay(k);
+      ['required', 'ideal', 'extra'].forEach(function (col) {
+        ((d.tasks && d.tasks[col]) || []).forEach(function (x) { if (x.id === L.taskId) hit = x; });
+      });
     });
+    if (!hit || hit.done) return '';
+    hit.done = true;
+    hit.doneByLecture = true;
+    S().save();
+    if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+    return hit.text;
+  }
+
+  /* ---------- 三步预算：记住上次用的，下次开课直接带上 ---------- */
+  const DEF_BUDGET = { previewMin: 30, attendMin: 45, consMin: 30, pts: 15 };
+  function defaults() {
+    const st = S().settings();
+    const d = st.lectureDefaults || {};
+    return {
+      previewMin: Math.max(1, +d.previewMin || DEF_BUDGET.previewMin),
+      attendMin: Math.max(1, +d.attendMin || DEF_BUDGET.attendMin),
+      consMin: Math.max(1, +d.consMin || DEF_BUDGET.consMin),
+      pts: Math.max(0, d.pts != null ? +d.pts : (st.lectureBonusPts != null ? st.lectureBonusPts : DEF_BUDGET.pts))
+    };
+  }
+  function rememberBudget(L) {
+    const st = S().settings();
+    st.lectureDefaults = { previewMin: L.previewMin, attendMin: L.attendMin, consMin: L.consMin, pts: L.pts || 0 };
+    S().save();
+  }
+
+  /** 这条任务是不是正在进行的那节课 */
+  function isActive(taskId) {
+    const L = today().activeLecture;
+    return !!(L && L.taskId === taskId);
+  }
+
+  /* ---------- 从任务直接开课：不弹窗，面板直接长在这条任务下面 ---------- */
+  function startFromTask(task, fromTomorrow) {
+    const day = today();
+    if (day.activeLecture) {
+      App.ui.toast('已经有一节课在进行中（' + day.activeLecture.course + '），先完成或放弃它');
+      return;
+    }
+    const d = defaults();
+    const pts = task.points != null ? task.points : d.pts;
+    day.activeLecture = {
+      id: S().uid(), course: task.text, taskId: task.id,
+      previewMin: d.previewMin, attendMin: task.lecMin || d.attendMin, consMin: d.consMin, pts: pts || 0,
+      phase: 'preview', previewStartAt: Date.now(),
+      checklist: [false, false, false], overdueToasted: false,
+      createdAt: S().nowIso ? S().nowIso() : new Date().toISOString()
+    };
+    S().save();
+    refresh();
+    App.ui.toast(fromTomorrow
+      ? '🎓 预习开始！（记在今天的时间轴；走完三步会勾掉「明天」那条任务）'
+      : '🎓 预习开始！只读目标与总结，到点就停');
   }
 
   /* ---------- 步进 ---------- */
@@ -146,7 +165,7 @@
         S().save();
         timelinePush(L); // 📅 开始听就进时间轴
         App.ui.closeModal();
-        render();
+        refresh();
         App.ui.toast('🪑 开始听课！只记重点，别在讲义上批注');
       },
       cancel: App.ui.closeModal
@@ -166,7 +185,7 @@
     L.consStartAt = Date.now();
     L.overdueToasted = false;
     S().save();
-    render();
+    refresh();
     App.ui.toast('✍️ 进入整理：用自己的逻辑重构笔记，可读 > 美观');
   }
 
@@ -196,12 +215,14 @@
           App.store.addLedger(S().todayKey(), 'lecture', { points: bonus, note: '🎓 「' + L.course + '」听课三步齐了，大奖 +' + bonus + ' 分' });
         }
         timelinePush(L);
+        const autoDone = autoCheckTask(L);
         App.ui.closeModal();
-        render();
+        refresh();
         if (App.app && App.app.refreshStats) App.app.refreshStats();
-        App.ui.toast(bonus > 0
+        App.ui.toast((bonus > 0
           ? ('🎉 三步齐了！「' + L.course + '」完成，大奖 +' + bonus + ' 分')
-          : ('📝 「' + L.course + '」已记录（有三步没走全，没发大奖）'));
+          : ('📝 「' + L.course + '」已记录（有三步没走全，没发大奖）'))
+          + (autoDone ? ' ｜ 任务已自动打勾 ✓' : ''));
       },
       cancel: App.ui.closeModal
     });
@@ -231,7 +252,7 @@
         App.ui.toast('已跳过整理（无大奖）。课程已记录');
       }
       S().save();
-      render();
+      refresh();
     });
   }
 
@@ -249,7 +270,7 @@
       day.activeLecture = null;
       timelinePush(L);
       S().save();
-      render();
+      refresh();
       App.ui.toast('已放弃并存档。下次换个预算再试');
     });
   }
@@ -279,106 +300,147 @@
     S().save();
   }
 
-  /* ---------- 渲染 ---------- */
-  function render() {
+  /* ---------- 渲染：三步面板直接长在任务行下面 ---------- */
+  function refresh() {
+    if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+  }
+
+  /** 某条任务行下面的三步面板；不是进行中的那条 → 返回空串 */
+  function inlineHTML(task) {
     const day = ensure(today());
-    const wrap = document.getElementById('lecture-view');
-    if (!wrap) return;
     const L = day.activeLecture;
-    let html = '';
-    if (!L) {
-      html += '<div class="card"><h3>🎓 听课三步</h3>' +
-        '<p class="hint">预习 30 分钟封顶只读目标与总结 → 听课空白纸记重点 → 课后用自己的逻辑重构笔记。' +
-        '<b>三步齐了才发大奖</b>——把"被动复制"变成"主动筛选"。<br>' +
-        '<a href="https://www.bilibili.com/video/BV1DA411N78G" target="_blank" style="color:var(--primary);font-size:12px">📺 方法出处：B站【让我效率翻倍的听网课方法！】</a>（方法高度个性化，时长预算按自己的节奏改）</p>' +
-        '<button class="btn btn-primary" id="lec-start">🎓 开始听课三步</button></div>';
+    if (!L || L.taskId !== task.id) return '';
+    const stepNo = L.phase === 'preview' ? 1 : (L.phase === 'attend' ? 2 : 3);
+    let budget;
+    if (L.phase === 'preview') {
+      budget = '<span class="lec-bwrap">' +
+        '<label class="lec-bl">预<input type="number" class="lec-b" data-k="previewMin" min="1" value="' + L.previewMin + '" /></label>' +
+        '<label class="lec-bl">听<input type="number" class="lec-b" data-k="attendMin" min="1" value="' + L.attendMin + '" /></label>' +
+        '<label class="lec-bl">整<input type="number" class="lec-b" data-k="consMin" min="1" value="' + L.consMin + '" /></label>' +
+        '<label class="lec-bl">🎁<input type="number" class="lec-b" data-k="pts" min="0" value="' + (L.pts || 0) + '" /></label>' +
+        '<span class="lec-bhint">分（可改）</span></span>';
     } else {
-      html += renderActive(L);
+      budget = '<span class="lec-bhint">预算 预' + L.previewMin + ' / 听' + L.attendMin + ' / 整' + L.consMin +
+        ' 分 · 大奖 ' + (L.pts || 0) + ' 分</span>';
     }
-    // 今日已完成
-    const list = (day.lectures || []).slice().reverse().filter(function (x) { return x.endAt; });
-    if (list.length) {
-      html += '<div class="card" style="margin-top:12px"><h3>📚 今天的课</h3>';
-      list.forEach(function (x) {
+    return '<div class="lec-inline" data-lec-id="' + L.id + '">' +
+      '<div class="lec-head"><b>🎓 听课三步</b>' +
+      '<span class="lec-step">第 ' + stepNo + '/3 步 · ' + phaseLabel(L.phase) + '</span>' +
+      '<span class="lec-spacer"></span>' + budget + '</div>' +
+      phaseInner(L) +
+      '</div>';
+  }
+
+  /** 任务页渲染完后接事件（tasks.js 会调用） */
+  function bindInline() {
+    const day = today();
+    const L = day.activeLecture;
+    if (!L) return;
+    const wrap = document.querySelector('.lec-inline[data-lec-id="' + L.id + '"]');
+    if (!wrap) return;
+    bindActive(wrap, L);
+    wrap.querySelectorAll('.lec-b').forEach(function (inp) {
+      inp.onchange = function () {
+        const k = inp.dataset.k;
+        const floor = k === 'pts' ? 0 : 1;
+        L[k] = Math.max(floor, +inp.value || 0);
+        S().save();
+        rememberBudget(L);
+        refresh();
+      };
+    });
+  }
+
+  /** 「历史」页用的听课记录（最近 30 天） */
+  function historyHTML() {
+    const rows = [];
+    const keys = [];
+    for (let i = 0; i < 30; i++) { const d = new Date(); d.setDate(d.getDate() - i); keys.push(S().dateKey(d)); }
+    keys.forEach(function (k) {
+      ((S().getDay(k).lectures) || []).slice().reverse().forEach(function (x) {
+        if (x.endAt) rows.push({ k: k, x: x });
+      });
+    });
+    let html = '';
+    if (!rows.length) {
+      html = '<p class="hint">还没有听课记录。到「任务」页点任意一条任务右边的 🎧，走完「预习 → 听课 → 整理」三步，这里就会出现记录（三步齐了才发大奖）。</p>';
+    } else {
+      html += '<div class="lec-hist">';
+      rows.slice(0, 25).forEach(function (r) {
+        const x = r.x;
         const mins = Math.round((phaseSeconds(x, 'preview') + phaseSeconds(x, 'attend') + phaseSeconds(x, 'cons')) / 60);
         const flag = x.abandoned ? '🚫 放弃' : (x.awarded > 0 ? '🎁 大奖 +' + x.awarded + ' 分' : '📄 未走全');
-        html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line);flex-wrap:wrap">' +
-          '<b style="color:var(--ink)">' + S().esc(x.course) + '</b>' +
-          '<span style="font-size:12px;color:var(--muted)">预' + Math.round(phaseSeconds(x, 'preview') / 60) + '分 · 听' + Math.round(phaseSeconds(x, 'attend') / 60) + '分 · 整' + Math.round(phaseSeconds(x, 'cons') / 60) + '分 · 合计 ' + mins + ' 分钟</span>' +
-          '<span style="margin-left:auto;font-size:12px;font-weight:700;color:' + (x.awarded > 0 ? 'var(--extra)' : 'var(--muted)') + '">' + flag + '</span></div>' +
-          (x.chain ? '<div style="font-size:12.5px;color:var(--muted);padding:2px 2px 6px">🔗 ' + S().esc(x.chain) + '</div>' : '');
+        html += '<div class="lec-hist-row">' +
+          '<span class="lec-hist-date">' + S().fmtDateCN(r.k) + '</span>' +
+          '<b>' + S().esc(x.course) + '</b>' +
+          '<span class="lec-hist-min">预' + Math.round(phaseSeconds(x, 'preview') / 60) +
+          ' · 听' + Math.round(phaseSeconds(x, 'attend') / 60) +
+          ' · 整' + Math.round(phaseSeconds(x, 'cons') / 60) + ' 分 ＝ ' + mins + ' 分钟</span>' +
+          '<span class="lec-hist-flag">' + flag + '</span></div>' +
+          (x.chain ? '<div class="lec-hist-chain">🔗 ' + S().esc(x.chain) + '</div>' : '');
       });
+      if (rows.length > 25) html += '<div class="lec-hist-more">只显示最近 25 条（共 ' + rows.length + ' 条）</div>';
       html += '</div>';
     }
-    // 最近 7 天小结
     let week = 0, weekMin = 0, weekBonus = 0;
-    const keys = [];
-    for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() - i); keys.push(S().dateKey(d)); }
-    keys.forEach(function (k) {
+    const wkeys = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() - i); wkeys.push(S().dateKey(d)); }
+    wkeys.forEach(function (k) {
       (S().getDay(k).lectures || []).forEach(function (x) {
-        if (x.abandoned) return;
+        if (!x.endAt || x.abandoned) return;
         week++;
         weekMin += Math.round((phaseSeconds(x, 'preview') + phaseSeconds(x, 'attend') + phaseSeconds(x, 'cons')) / 60);
         weekBonus += x.awarded || 0;
       });
     });
     if (week > 0) {
-      html += '<div class="card" style="margin-top:12px"><h3>📊 最近 7 天</h3>' +
-        '<p style="font-size:13px;color:var(--muted)">完成 <b style="color:var(--ink)">' + week + '</b> 节三步 · 总投入 ' + S().fmtDur(weekMin) +
-        (weekBonus > 0 ? ' · 赢得大奖 ' + weekBonus + ' 分' : '') + '</p></div>';
+      html += '<p class="hint" style="margin-top:10px">📊 最近 7 天：完成 <b style="color:var(--ink)">' + week + '</b> 节三步 · 总投入 ' +
+        S().fmtDur(weekMin) + (weekBonus > 0 ? ' · 赢得大奖 ' + weekBonus + ' 分' : '') + '</p>';
     }
-    wrap.innerHTML = html;
-
-    // 绑定
-    const sb = wrap.querySelector('#lec-start');
-    if (sb) sb.onclick = startModal;
-    if (L) bindActive(wrap, L);
+    return html;
   }
 
-  function renderActive(L) {
-    let inner = '';
+  /* 面板内的阶段内容（紧凑版，住在任务行下面） */
+  function phaseInner(L) {
     if (L.phase === 'preview') {
       const cap = L.previewMin * 60000;
       const left = Math.max(0, L.previewStartAt + cap - Date.now());
       const overdue = left <= 0;
-      inner = '<div id="lec-clock" style="font-size:26px;font-weight:800;color:' + (overdue ? 'var(--req)' : 'var(--primary)') + '">' +
+      return '<div class="lec-clock" id="lec-clock" style="color:' + (overdue ? 'var(--req)' : 'var(--primary)') + '">' +
         (overdue ? '⏰ 超时 ' + fmtClock(-left) + ' —— 该停了，做减法！' : fmtClock(left) + ' 后该去上课') + '</div>' +
-        '<p class="hint">预习清单（只做这三件事，其余当小说翻）：</p>' +
+        '<div class="lec-hint">只做这三件事，其余当小说翻：</div>' +
         PREVIEW_ITEMS.map(function (t, i) {
           const on = (L.checklist || [])[i];
-          return '<label style="display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:13.5px;cursor:pointer">' +
-            '<input type="checkbox" class="lec-chk" data-i="' + i + '"' + (on ? ' checked' : '') + ' style="width:16px;height:16px" /> <span>' + t + '</span></label>';
+          return '<label class="lec-chk-row"><input type="checkbox" class="lec-chk" data-i="' + i + '"' + (on ? ' checked' : '') + ' /> <span>' + t + '</span></label>';
         }).join('') +
-        '<div class="btn-row" style="margin-top:10px">' +
-        '<button class="btn btn-primary" id="lec-preview-done">❓ 写核心问题 → 去上课</button>' +
-        '<button class="btn btn-small" id="lec-skip" style="margin-left:6px">⏭ 跳过预习</button></div>';
-    } else if (L.phase === 'attend') {
-      inner = '<div id="lec-clock" style="font-size:26px;font-weight:800;color:var(--primary)">' + fmtClock(phaseSeconds(L, 'attend') * 1000) + '</div>' +
-        (L.prepDone ? '<div style="font-size:12px;color:var(--extra)">✅ 课前准备已完成</div>' : '<div style="font-size:12px;color:var(--muted)">（没走课前准备清单，可能直接跳进来的）</div>') +
-        (L.question ? '<div style="font-size:13.5px;background:rgba(59,130,246,.08);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0">🎯 带着问题听：<b>' + S().esc(L.question) + '</b></div>' : '') +
-        '<p class="hint">空白纸模式：只记关键词和重点，别抄整句，别在讲义上批注。</p>' +
-        '<textarea id="lec-note" style="width:100%;min-height:140px;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;resize:vertical;background:#fff;color:var(--ink)" placeholder="白纸区：只写重点……"></textarea>' +
-        '<div class="btn-row" style="margin-top:10px">' +
-        '<button class="btn btn-primary" id="lec-attend-done">🔔 下课了，停表去整理</button>' +
-        '<button class="btn btn-small" id="lec-skip" style="margin-left:6px">⏭ 跳过听课</button></div>';
-    } else if (L.phase === 'consolidate') {
-      const cap = L.consMin * 60000;
-      const left = Math.max(0, L.consStartAt + cap - Date.now());
-      const overdue = left <= 0;
-      inner = '<div id="lec-clock" style="font-size:26px;font-weight:800;color:' + (overdue ? 'var(--req)' : 'var(--primary)') + '">' +
-        (overdue ? '⏰ 整理超时 ' + fmtClock(-left) + ' —— 差不多了，写逻辑链收尾' : '整理剩 ' + fmtClock(left)) + '</div>' +
-        '<p class="hint">用自己的逻辑重构，不跟讲义结构走；可读性 > 美观，允许简写和符号。</p>' +
-        '<textarea id="lec-note" style="width:100%;min-height:140px;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;resize:vertical;background:#fff;color:var(--ink)" placeholder="重构后的笔记……">' + S().esc(L.note || '') + '</textarea>' +
-        '<div class="btn-row" style="margin-top:10px">' +
-        '<button class="btn btn-primary" id="lec-cons-done">✍️ 写核心逻辑链，完成' + (allThreeDone(L) ? '（领大奖 +' + (L.pts || 0) + ' 分）' : '') + '</button>' +
-        '<button class="btn btn-small" id="lec-skip" style="margin-left:6px">⏭ 跳过整理</button></div>';
+        '<div class="lec-actions">' +
+        '<button class="btn btn-small btn-primary" id="lec-preview-done">❓ 写核心问题 → 去上课</button>' +
+        '<button class="btn btn-small" id="lec-skip">⏭ 跳过预习</button>' +
+        '<button class="btn btn-small btn-danger" id="lec-abandon">🚫 放弃</button></div>';
     }
-    const stepNo = L.phase === 'preview' ? 1 : (L.phase === 'attend' ? 2 : 3);
-    return '<div class="card"><h3>🎓 听课三步 · ' + S().esc(L.course) +
-      ' <span style="font-size:12px;color:var(--muted)">第 ' + stepNo + '/3 步 · ' + phaseLabel(L.phase) +
-      ' · 预算 预' + L.previewMin + '/听' + L.attendMin + '/整' + L.consMin + ' 分 · 大奖 ' + (L.pts || 0) + ' 分</span></h3>' +
-      inner +
-      '<button class="btn btn-small btn-danger" id="lec-abandon" style="margin-top:10px">🚫 放弃这节课（不发积分）</button></div>';
+    if (L.phase === 'attend') {
+      return '<div class="lec-clock" id="lec-clock" style="color:var(--primary)">听课中 ' + fmtClock(phaseSeconds(L, 'attend') * 1000) + '</div>' +
+        (L.question
+          ? '<div class="lec-q">🎯 带着问题听：<b>' + S().esc(L.question) + '</b></div>'
+          : '<div class="lec-hint">空白纸模式：只记关键词和重点，别抄整句。</div>') +
+        '<textarea id="lec-note" class="lec-ta" placeholder="白纸区：只写重点……"></textarea>' +
+        '<div class="lec-actions">' +
+        '<button class="btn btn-small btn-primary" id="lec-attend-done">🔔 下课了，停表去整理</button>' +
+        '<button class="btn btn-small" id="lec-skip">⏭ 跳过听课</button>' +
+        '<button class="btn btn-small btn-danger" id="lec-abandon">🚫 放弃</button></div>';
+    }
+    const cap = L.consMin * 60000;
+    const left = Math.max(0, L.consStartAt + cap - Date.now());
+    const overdue = left <= 0;
+    return '<div class="lec-clock" id="lec-clock" style="color:' + (overdue ? 'var(--req)' : 'var(--primary)') + '">' +
+      (overdue ? '⏰ 整理超时 ' + fmtClock(-left) + ' —— 差不多了，写逻辑链收尾' : '整理剩 ' + fmtClock(left)) + '</div>' +
+      '<div class="lec-hint">用自己的逻辑重构，不跟讲义结构走；可读性 &gt; 美观。</div>' +
+      '<textarea id="lec-note" class="lec-ta" placeholder="重构后的笔记……">' + S().esc(L.note || '') + '</textarea>' +
+      '<div class="lec-actions">' +
+      '<button class="btn btn-small btn-primary" id="lec-cons-done">✍️ 写核心逻辑链，完成' +
+      (allThreeDone(L) ? '（领大奖 +' + (L.pts || 0) + ' 分）' : '') + '</button>' +
+      '<button class="btn btn-small" id="lec-skip">⏭ 跳过整理</button>' +
+      '<button class="btn btn-small btn-danger" id="lec-abandon">🚫 放弃</button></div>';
   }
 
   let noteTimer = null;
@@ -411,9 +473,12 @@
   setInterval(function () {
     const day = App.store ? S().getDay(S().todayKey()) : null;
     const L = day && day.activeLecture;
-    if (!L || (L.phase !== 'preview' && L.phase !== 'consolidate')) return;
+    if (!L) return;
     const el = document.getElementById('lec-clock');
     if (!el) return;
+    // 听课阶段：正计时（原来漏了 attend，计时器不走，一并修掉）
+    if (L.phase === 'attend') { el.textContent = '听课中 ' + fmtClock(phaseSeconds(L, 'attend') * 1000); return; }
+    if (L.phase !== 'preview' && L.phase !== 'consolidate') return;
     const cap = (L.phase === 'preview' ? L.previewMin : L.consMin) * 60000;
     const startAt = L.phase === 'preview' ? L.previewStartAt : L.consStartAt;
     const left = cap - (Date.now() - startAt);
@@ -434,8 +499,12 @@
   }, 1000);
 
   function init() {
-    render();
+    /* 三步面板现在长在任务页里，init 不需要预渲染 */
   }
 
-  App.lecture = { init: init, render: render };
+  App.lecture = {
+    init: init, render: refresh, refresh: refresh,
+    startFromTask: startFromTask, isActive: isActive,
+    inlineHTML: inlineHTML, bindInline: bindInline, historyHTML: historyHTML
+  };
 })();

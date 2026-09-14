@@ -126,6 +126,10 @@
         '<div class="rlog-total">共 ' + redeems.length + ' 次兑换 · 累计花了 <b>' + spentTotal + '</b> 分</div>'
       : '<p class="hint">还没有兑换过东西。以后点顶部积分数字「兑换」，扣掉的分会都在这里。</p>';
 
+    // 🎓 听课记录（三步面板现在长在任务页里，记录汇总到这里）
+    const lh = document.getElementById('lec-history');
+    if (lh) lh.innerHTML = (App.lecture && App.lecture.historyHTML) ? App.lecture.historyHTML() : '';
+
     // 按日记录
     const dayKeys = Object.keys(S().data().days).filter(function (k) {
       const day = S().getDay(k);
