@@ -6,10 +6,55 @@
 
   const App = (window.App = window.App || {});
 
+  /* ---------- 弹窗 / Toast 挂在哪个文档 ----------
+     悬浮窗被拖出浏览器（小窗）时，用户看的是小窗 —— 弹窗和提示必须开在小窗里，
+     否则他得切回主页面才能继续操作（2026-09-14 用户反馈："点了以后得回到原先的页面"）。
+     判断依据：小窗开着 且 主页面此刻没聚焦（用户正在小窗里操作）。 */
+  let floatActAt = 0;                 // 最后一次"在悬浮窗里点击"的时间
+  function markFloatAction() { floatActAt = Date.now(); }
+  function pipDocIfAny() {
+    const T = App.tasks;
+    if (T && T.isPip && T.isPip() && T.floatDoc) {
+      try { return T.floatDoc(); } catch (e) { /* 忽略 */ }
+    }
+    return null;
+  }
+  /** 弹窗/提示该开在哪个文档：优先"用户刚刚在悬浮窗里点的"，
+      其次"主页面被切到后台"，最后才是主文档。 */
+  function uiDoc() {
+    const d = pipDocIfAny();
+    if (d && (Date.now() - floatActAt < 2500 || document.hidden)) return d;
+    return document;
+  }
+  function willUsePip() { return uiDoc() !== document; }
+  /** 当前弹窗实际在哪个文档（有弹窗就按它在的地方查，避免查错文档） */
+  function currentDoc() {
+    const has = function (dd) {
+      if (!dd) return false;
+      const r = dd.getElementById('modal-root');
+      return !!(r && r.querySelector('.modal'));
+    };
+    if (has(document)) return document;
+    const pd = pipDocIfAny();
+    if (has(pd)) return pd;
+    return uiDoc();
+  }
+  /** 查弹窗里的元素（等价于"在弹窗所在文档里 querySelector"） */
+  function query(sel) { return currentDoc().querySelector(sel); }
+  /** 在小窗里懒建 #modal-root / #toast-root（主文档里 index.html 已经有） */
+  function layerEl(id) {
+    const d = uiDoc();
+    let el = d.getElementById(id);
+    if (!el) { el = d.createElement('div'); el.id = id; d.body.appendChild(el); }
+    return el;
+  }
+
   /* ---------- 弹窗 ---------- */
   function openModal(title, bodyHTML, actionsHTML, opts) {
     opts = opts || {};
-    const root = document.getElementById('modal-root');
+    const root = layerEl('modal-root');
+    // 弹窗开在小窗里时，先把小窗临时放大一点，不然 330px 宽太挤
+    if (App.tasks && App.tasks.pipNeedSpace) App.tasks.pipNeedSpace(true);
     root.innerHTML = '';
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
@@ -41,11 +86,14 @@
     return modal;
   }
   function closeModal() {
-    document.getElementById('modal-root').innerHTML = '';
+    const clear = function (d) { if (!d) return; const r = d.getElementById('modal-root'); if (r) r.innerHTML = ''; };
+    clear(document);
+    if (App.tasks && App.tasks.floatDoc) { try { clear(App.tasks.floatDoc()); } catch (e) { /* 忽略 */ } }
+    if (App.tasks && App.tasks.pipNeedSpace) App.tasks.pipNeedSpace(false);   // 小窗恢复原尺寸
   }
   /** 绑定弹窗内 [data-act] 按钮：map = { act: fn } */
   function bindActions(map) {
-    const list = document.querySelectorAll('#modal-root [data-act]');
+    const list = uiDoc().querySelectorAll('#modal-root [data-act]');
     for (let i = 0; i < list.length; i++) {
       list[i].onclick = function () {
         const fn = map[this.dataset.act];
@@ -65,7 +113,7 @@
 
   /* ---------- Toast ---------- */
   function toast(msg, ms) {
-    const root = document.getElementById('toast-root');
+    const root = layerEl('toast-root');
     const el = document.createElement('div');
     el.className = 'toast';
     el.textContent = msg;
@@ -87,6 +135,7 @@
     setTimeout(function () { el.remove(); }, 1050);
   }
   function floatAt(originEl, text, cls) {
+    if (!originEl) return;
     const r = originEl.getBoundingClientRect();
     floatText(text, r.left + r.width / 2 - 18, r.top - 8, cls);
   }
@@ -201,6 +250,8 @@
   App.ui = {
     openModal: openModal, closeModal: closeModal, bindActions: bindActions, confirm: confirm,
     toast: toast, floatText: floatText, floatAt: floatAt,
+    // 弹窗"开在哪个文档"这套：给 tasks.js 用（拆解界面等要按弹窗所在文档查元素）
+    query: query, markFloatAction: markFloatAction, willUsePip: willUsePip, uiDoc: uiDoc,
     CATS: CATS, svgEl: svgEl, barChart: barChart, lineChart: lineChart
   };
 })();

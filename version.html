@@ -75,6 +75,16 @@
   </div>
 
 <script>
+// 封面/收尾里的「从 1.0 到 N.0」从 SLIDES 自动算，避免以后又忘了改（曾长期停在 9.0）
+function maxVer() {
+  let m = 1;
+  SLIDES.forEach(function (s) {
+    const g = /^v(\d+)/.exec(s.name || '');
+    if (g) m = Math.max(m, +g[1]);
+  });
+  return m;
+}
+
 const SLIDES = [
   {
     name:"封面", cls:"cover",
@@ -82,7 +92,7 @@ const SLIDES = [
       return '<div style="text-align:center">'+
         '<span class="kicker" style="margin-bottom:22px">FOCUS-PLAN · 版本更新史</span>'+
         '<div class="big">专注计划</div>'+
-        '<h1 style="font-size:34px;margin:18px 0 6px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 9.0 的每一次进化</h1>'+
+        '<h1 style="font-size:34px;margin:18px 0 6px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 ' + maxVer() + '.0 的每一次进化</h1>'+
         '<p class="sub" style="margin-top:14px">你的个人学习账本 · 系统是账本，你是会计</p>'+
         '<div class="timeline" id="timeline">'+
           '<div class="tl" data-i="1"><div class="n">v1</div><div class="t">基础版</div></div>'+
@@ -101,6 +111,7 @@ const SLIDES = [
           '<div class="tl" data-i="14"><div class="n">v14</div><div class="t">听课即任务</div></div>'+
           '<div class="tl" data-i="15"><div class="n">v15</div><div class="t">听课住进任务</div></div>'+
           '<div class="tl" data-i="16"><div class="n">v16</div><div class="t">悬浮窗出浏览器</div></div>'+
+          '<div class="tl" data-i="17"><div class="n">v17</div><div class="t">每一题都能听课</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -405,7 +416,32 @@ const SLIDES = [
       {t:"⏰ 到点提醒 + 手机补偿", c:"#22a06b", items:[
         "小时代结束、休息结束：发系统通知，网页挂后台也提醒",
         "手机上浏览器不支持开小窗，自动退回页内悬浮窗",
-        "手机计时中自动申请防息屏，屏幕不会自己睡过去"]}
+        "手机计时中自动申请防息屏，屏幕不会自己睡过去",
+        "（v44 修订）修掉「点⇲收回后悬浮窗不见了」：收回时先把悬浮窗同步搬回页面再关小窗，元素万一被销毁会自动重造",
+        "（v45 自检修订）又抓出 4 个：自愈重造后悬浮窗按钮会变成死按钮（暂停/小休/结束全失效）、手机计时结束后屏幕不再放行、小窗里点结束弹窗被挡在主页面后面、直接小任务缺拆解入口",
+        "（v46）弹窗跟着你看的窗口走：在小窗里点「🧭 拆解」，拆解界面就开在小窗里，不用切回网页；听课三步也搬进了悬浮窗（抽屉里点「🎓 给这条任务开课」，面板直接长在计时下面）；指南重新排版（一个功能一条，不再糊成一大段）；版本页的「从 1.0 到 N.0」改成自动算，不会再写死了"]}
+    ]
+  },
+  {
+    name:"v17 · 每一题都能听课", badge:{t:"v17 · 🎧 每一题都能听课",c:"#a855f7"},
+    tag:"听课不再只属于整条任务——任务组里的每一道小题也能开课",
+    cols:[
+      {t:"🎧 小任务也能开课", c:"#a855f7", items:[
+        "任务组里的每一题、单独加的小任务，右边都有 🎧",
+        "点一下，三步面板直接展开在这一条下面（不跳页、不占屏）",
+        "课程名自动=题目，听课预算自动=这题的限时（5 分的题就听 5 分）",
+        "三步走完自动勾掉这一题，组进度跟着 +1，积分不重复算"]},
+      {t:"🪟 小窗里和网页版一样全", c:"#3b82f6", items:[
+        "悬浮窗里的听课面板补齐了：预算能改、预习清单能勾、白板能写",
+        "和网页版那张结构完全一致，不用来回切页面看",
+        "听课进行中也能拖出小窗（预习/整理都是倒计时，正需要一直看得见）",
+        "小窗里的按钮都是活的：下课、跳过、放弃、勾清单都能点"]},
+      {t:"🧠 顺手修的", c:"#22a06b", items:[
+        "抽屉里的开课按钮变聪明：正在做某一题时显示「🎓 开课（这题）」",
+        "小任务行的图标收窄了一点，题目不会被挤没",
+        "统一了 lecture.js / style.css 的换行符（之前是混着的，改代码容易出错）",
+        "（v48 自检修订）修掉「删掉正在上课的任务/小题后，课还在计时、页面上却找不到面板」——现在删除会把那节课一起优雅收尾并提示你",
+        "（v48）小任务开课的预习/整理预算按题长封顶：一道 5 分的题不再配 30 分钟预习"]}
     ]
   },
   {
@@ -413,7 +449,7 @@ const SLIDES = [
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 16.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 ' + maxVer() + '.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+

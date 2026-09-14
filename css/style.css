@@ -720,3 +720,67 @@ body[data-theme="dark"] .lec-inline, body[data-theme="purple"] .lec-inline {
 }
 body[data-theme="dark"] .lec-head b, body[data-theme="purple"] .lec-head b,
 body[data-theme="dark"] .task-lec-btn, body[data-theme="purple"] .task-lec-btn { color: #b9a3ff; }
+
+/* ============ 🪟 拖出浏览器按钮 + 悬浮窗下方抽屉（v43） ============ */
+.tf-pip-btn {
+  float: right; font-size: 11px; font-weight: 700; color: #7c5cff;
+  background: rgba(124,92,255,.12); border: 1px solid rgba(124,92,255,.35);
+  border-radius: 999px; padding: 2px 9px; cursor: pointer; margin-top: -1px;
+}
+.tf-pip-btn:hover { background: rgba(124,92,255,.2); }
+#tf-drawer { margin-top: 9px; border-top: 1px dashed var(--line); padding-top: 8px; }
+#tf-drawer.hidden { display: none; }
+.tf-dw-head { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; font-size: 12.5px; }
+.tf-dw-t { font-weight: 700; color: var(--brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-dw-p { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+.tf-dw-a { font-size: 11px; color: var(--muted); }
+.tf-dw-next { margin-top: 7px; }
+.tf-dw-next .btn { width: 100%; font-size: 12px; }
+.tf-dw-done { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--extra); }
+.tf-dw-done .btn { display: block; width: 100%; margin-top: 6px; font-size: 12px; }
+.tf-dw-list { margin: 7px 0 2px; max-height: 132px; overflow: auto; }
+.tf-dw-item { font-size: 12.5px; padding: 3px 2px; color: var(--muted); display: flex; gap: 6px; align-items: baseline; }
+.tf-dw-item.done { color: var(--muted); text-decoration: line-through; }
+.tf-dw-item.fail { color: var(--req); }
+.tf-dw-item.run { color: var(--ink); font-weight: 700; }
+.tf-dw-min { margin-left: auto; font-size: 11px; opacity: .8; }
+.tf-dw-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.tf-dw-acts .btn { font-size: 12px; padding: 5px 9px; }
+body[data-theme="dark"] .tf-pip-btn, body[data-theme="purple"] .tf-pip-btn { color: #b9a3ff; border-color: rgba(167,139,250,.45); }
+
+/* ============ 🎓 悬浮窗里的听课面板 + 小窗里的弹窗（v46） ============ */
+#tf-lec { margin-top: 9px; border-top: 1px dashed var(--line); padding-top: 8px; }
+#tf-lec.hidden { display: none; }
+#tf-lec .lec-clock { font-size: 17px; margin: 2px 0 6px; }
+#tf-lec .lec-actions { margin-top: 7px; }
+#tf-lec .lec-ta { min-height: 84px; font-size: 13px; }
+html.pip #modal-root { position: static; }
+html.pip .modal-mask { position: fixed; inset: 0; overflow: auto; padding: 10px; align-items: flex-start; }
+html.pip .modal { max-width: none; max-height: 92vh; overflow: auto; padding: 14px 15px 12px; }
+html.pip .modal h3 { font-size: 15px; margin-bottom: 8px; }
+html.pip .modal .btn { font-size: 12px; padding: 5px 9px; }
+html.pip #toast-root { position: fixed; left: 0; right: 0; bottom: 8px; z-index: 9999; }
+
+/* ============ 🎧 小任务也能开听课三步（v47） ============ */
+.sub-wrap { display: block; }
+.sub-wrap.lec-on { background: rgba(124,92,255,.05); border-radius: 8px; }
+/* 小任务行图标变多了（开始/评语/听课/拆解/编辑/删除）→ 收窄一点，别把题目挤没了 */
+.sub-item .task-timer-btn { padding: 2px 7px; font-size: 12px; border-radius: 6px; }
+/* 长在某一题下面的听课面板：比整条任务那张小一号，紧凑但内容一样全 */
+.sub-wrap .lec-inline {
+  margin: 2px 0 7px; padding: 9px 11px 10px;
+  border: 1px solid rgba(124,92,255,.35); border-radius: 9px;
+}
+.sub-wrap .lec-head { font-size: 12.5px; margin-bottom: 6px; }
+.sub-wrap .lec-clock { font-size: 16px; margin: 2px 0 6px; }
+.sub-wrap .lec-chk-row { font-size: 12.5px; padding: 3px 2px; }
+.sub-wrap .lec-ta { min-height: 88px; font-size: 13px; }
+/* 悬浮窗（小窗只有 330px 宽）里的听课面板：去掉外框、预算允许换行 */
+.lec-float { border: none; background: transparent; padding: 0; margin: 0; }
+.lec-float .lec-head { gap: 6px; margin-bottom: 7px; }
+.lec-float .lec-bwrap { flex-wrap: wrap; gap: 4px; }
+.lec-float .lec-b { width: 42px; }
+.lec-float .lec-bhint { font-size: 11px; }
+body[data-theme="dark"] .sub-wrap.lec-on, body[data-theme="purple"] .sub-wrap.lec-on {
+  background: rgba(167,139,250,.1);
+}

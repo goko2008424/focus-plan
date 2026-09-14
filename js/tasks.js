@@ -150,6 +150,8 @@
      手机 / 不支持 PiP 的浏览器：自动退回页内悬浮窗（同一个元素，只是留在页面里）。
      小窗里内容就是同一个 #timer-float，所以按钮、状态天然同步，不存在两份。 */
   let pipWin = null;          // 小窗对象；null = 悬浮窗在页内
+  let floatTpl = null;        // 启动时留一份悬浮窗的干净模板，掉了能重造
+  let floatDragBound = false; // 文档级拖动监听只挂一次
   let pendingNext = null;     // 做完一题后待接的下一题 {taskKey,taskId,groupId,subId,text,minutes}
   let groupDoneInfo = null;   // 整组做完后的提示 {taskText, groupName, taskKey, taskId}
   const PIP_VARS = ['--bg', '--card', '--ink', '--muted', '--line', '--primary', '--req', '--extra', '--ideal', '--long', '--brand'];
@@ -157,9 +159,28 @@
   function pipSupported() { return !!(window.documentPictureInPicture); }
   function inPip() { return !!(pipWin && !pipWin.closed); }
   function floatDoc() { return inPip() ? pipWin.document : document; }
-  /** 悬浮窗里的元素：可能在主文档，也可能在小窗文档，统一从这里取 */
-  function fx(id) { const d = floatDoc(); return d ? d.getElementById(id) : null; }
-  function floatRoot() { return fx('timer-float'); }
+  /** 悬浮窗里的元素：可能在主文档，也可能在小窗文档。
+      统一按「悬浮窗自己所在的文档」来找，绝不用 document.getElementById 直取。 */
+  function fx(id) { const r = floatRoot(); return r ? r.ownerDocument.getElementById(id) : null; }
+  /** 取悬浮窗根元素；万一它被小窗一起销毁了，用启动时的模板重造一个（自愈） */
+  function floatRoot() {
+    if (inPip()) {
+      const el = pipWin.document.getElementById('timer-float');
+      if (el) return el;
+      pipWin = null;      // 小窗还开着但元素没了 → 小窗这条路已废，退回页内重造
+    }
+    let f = document.getElementById('timer-float');
+    if (!f && floatTpl) {
+      f = floatTpl.cloneNode(true);
+      f.classList.remove('in-pip');
+      f.classList.add('hidden');
+      f.style.left = ''; f.style.top = ''; f.style.right = ''; f.style.bottom = '';
+      document.body.appendChild(f);
+      bindFloat(f);
+      App.ui.toast('🪟 悬浮窗掉了，已经帮你放回页面里', 3000);
+    }
+    return f;
+  }
 
   let pipNagShown = false;
   /** explicit=true = 用户主动点了「⇱ 拖出」——只有这时才提示"不支持"，免得每次开计时都弹 */
@@ -176,7 +197,9 @@
       return;
     }
     if (inPip()) return;
-    if (!timer && !cdTimer) return;   // 没在计时就别开小窗
+    // 听课三步进行中也允许拖出去（预习/整理都是倒计时，正需要一直看得见）
+    const lecOn = !!(App.lecture && App.lecture.current && App.lecture.current());
+    if (!timer && !cdTimer && !lecOn) return;   // 既没计时也没听课，就别开小窗
     window.documentPictureInPicture.requestWindow({ width: 330, height: 350 }).then(function (pw) {
       pipWin = pw;
       const doc = pw.document;
@@ -207,15 +230,19 @@
       sc.textContent = 'setInterval(function(){ if (window.__tick) window.__tick(); }, 250);';
       doc.body.appendChild(sc);
       pw.addEventListener('pagehide', function () {
-        try { f.classList.remove('in-pip'); document.body.appendChild(f); } catch (e) { /* 忽略 */ }
-        pipWin = null;
-        applyFloatPos();
-        showTimerBar();
+        // 用户用系统关闭按钮关小窗时走这里（点「⇲ 收回」则走 restoreFloat，不依赖这个事件）
+        if (pipWin !== pw) return;
+        restoreFloat();
       });
       applyFloatPos();
       showTimerBar();
       App.ui.toast('🪟 悬浮窗已经拖出浏览器了，拖到屏幕任意角落都行', 3000);
-    }).catch(function () { pipWin = null; App.ui.toast('开小窗失败，继续用页内悬浮窗'); });
+    }).catch(function (e) {
+      // 开窗失败，或者开窗过程中出了别的错：一律退回页内，绝不留烂状态
+      window.__pipErr = e;                     // 留个痕迹，方便排查
+      restoreFloat();
+      App.ui.toast('开小窗没成功，继续用页内悬浮窗');
+    });
   }
 
   /* ================= 🧭 悬浮窗下方的抽屉：本组进度 / 下一题 / 拆解 ================= */
@@ -285,7 +312,10 @@
       html += '<div class="tf-dw-acts">' +
         (cdTimer ? '<button class="btn btn-small btn-primary" data-dw="finish">✅ 做完这题</button>' +
                    '<button class="btn btn-small" data-dw="skip">⏭ 跳过这题</button>' +
-                   (S().settings().splitEnabled !== false && ctx.group ? '<button class="btn btn-small" data-dw="split">🧭 拆解这道题</button>' : '') : '') +
+                   (S().settings().splitEnabled !== false ? '<button class="btn btn-small" data-dw="split">🧭 拆解这道题</button>' : '') : '') +
+        ((App.lecture && App.lecture.current && App.lecture.current()) ? '' :
+          (ctx.task ? '<button class="btn btn-small" data-dw="lec">🎓 开课' +
+            (cdTimer && cdTimer.subId ? '（这题）' : '（这条任务）') + '</button>' : '')) +
         '<button class="btn btn-small" data-dw="back">📋 回网页</button>' +
         '</div>';
     }
@@ -299,8 +329,42 @@
       if (a === 'finish') { quickFinishSub(); return; }
       if (a === 'skip') { quickSkipSub(); return; }
       if (a === 'split') { const c = cdTimer; if (c) openSplit(c.taskKey, c.taskId, c.subId, c.groupId); return; }
+      if (a === 'lec') {
+        const cx = drawerCtx();
+        if (!cx || !cx.task) { App.ui.toast('先开一条小任务的计时，再从这里开课'); return; }
+        // 正在做某道小题 → 就给这道小题开课（课程名=题目，听课预算=它的限时）
+        if (cdTimer && cdTimer.subId) {
+          const f2 = findSubInTask(cx.task, cdTimer.subId);
+          if (f2 && f2.sub && App.lecture.startFromSub) {
+            App.lecture.startFromSub(cx.task, f2.sub, cdTimer.groupId || null);
+            return;
+          }
+        }
+        if (App.lecture && App.lecture.startFromTask) App.lecture.startFromTask(cx.task);
+        return;
+      }
       if (a === 'back') { backToPage(); return; }
     };
+  }
+
+  /** 悬浮窗在小窗里时，主页面的弹窗可能被挡在后面 → 先把页面叫到前面，
+      否则用户点了「⏹ 结束」会觉得没反应（2026-09-14 自检发现） */
+  function bringPageForModal() {
+    if (!inPip()) return;
+    // 弹窗会开在小窗里 → 别把焦点抢回页面（否则用户刚要看的窗口反而被压下去）
+    if (App.ui && App.ui.willUsePip && App.ui.willUsePip()) return;
+    try { window.focus(); } catch (e) { /* 浏览器可能拒绝，忽略 */ }
+  }
+
+  /** 🎓 悬浮窗里的听课面板：和任务行下面那个共用同一份状态，只是换了个地方显示 */
+  function renderFloatLec() {
+    const box = fx('tf-lec');
+    if (!box) return;
+    const L = (App.lecture && App.lecture.current) ? App.lecture.current() : null;
+    if (!L || !App.lecture.floatPanelHTML) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.classList.remove('hidden');
+    box.innerHTML = App.lecture.floatPanelHTML();
+    if (App.lecture.bindFloatLec) App.lecture.bindFloatLec(box);
   }
 
   /** 回到网页（小窗不关，方便你两边看） */
@@ -423,16 +487,62 @@
     try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) { /* 忽略 */ }
   }
 
-  /** 把悬浮窗收回页面里（关小窗 / 用户手动收） */
-  function pipBack() {
-    if (inPip()) { pipWin.close(); return; }
+  /** 把悬浮窗搬回主页面：无论现在在不在小窗、元素还在不在，都保证回到能用的状态。
+      注意顺序——**先把元素搬回来再关窗**：某些浏览器 close() 不触发 pagehide，
+      靠事件回调搬回来会丢元素（2026-09-14 用户实测踩到）。 */
+  function restoreFloat() {
+    const oldWin = pipWin;
+    let f = null;
+    if (oldWin && !oldWin.closed) {
+      try { f = oldWin.document.getElementById('timer-float'); } catch (e) { /* 忽略 */ }
+    }
+    if (!f) f = document.getElementById('timer-float');
+    pipWin = null;                                   // 先摘掉，之后所有 fx() 都走主文档
+    if (f) {
+      f.classList.remove('in-pip');
+      if (f.parentNode !== document.body) document.body.appendChild(f);
+    }
+    if (oldWin && !oldWin.closed) { try { oldWin.close(); } catch (e) { /* 忽略 */ } }
+    applyFloatPos();
+    showTimerBar();                                  // 这时 floatRoot() 会补上缺的元素
   }
+  /** 把悬浮窗收回页面里（关小窗 / 用户手动收） */
+  function pipBack() { restoreFloat(); }
+  /** 小窗里要弹窗时临时放大一点，关掉再收回去（330px 宽的窗放不下弹窗内容） */
+  function pipNeedSpace(on) {
+    if (!inPip()) return;
+    try {
+      if (typeof pipWin.resizeTo === 'function') pipWin.resizeTo(on ? 480 : 330, on ? 640 : 350);
+    } catch (e) { /* 浏览器可能不支持，忽略 */ }
+  }
+
   function pipToggle() { if (inPip()) pipBack(); else pipOpen(true); }
 
-    function initFloatDrag() {
-    const f = floatRoot();
-    const head = fx('tf-head');
+  /** 悬浮窗里那 7 个按钮。原来绑在 app.js 启动时，只对"当时那个元素"有效——
+      悬浮窗被搬进小窗再自愈重造后按钮就全死了，所以统一收到这里绑。 */
+  function bindFloatButtons(f) {
+    if (!f) return;
+    const set = function (id, fn) { const el = f.querySelector('#' + id); if (el) el.onclick = fn; };
+    set('timer-pause', function () { togglePause(); });
+    set('timer-rest', function () { startSmallRest(); });
+    set('timer-stop', function () { if (timer) stopTimer(); });
+    set('cd-pause', function () { toggleCdPause(); });
+    set('cd-rest', function () { startSmallRest(); });
+    set('cd-split', function () {
+      if (!cdTimer) { App.ui.toast('当前没有在拆解的题'); return; }
+      if (!cdTimer.fromSplit) { App.ui.toast('这个倒计时不是逐题拆解'); return; }
+      openSplit(cdTimer.taskKey, cdTimer.taskId, cdTimer.subId, cdTimer.groupId || null);
+    });
+    set('cd-stop', function () { cdFinish(); });
+  }
+
+  function bindFloat(f) {
+    const head = f && f.ownerDocument.getElementById('tf-head');
     if (!f || !head) return;
+    bindFloatButtons(f);       // ★ 每次（含自愈重造）都重新绑一遍
+    // 悬浮窗里任何点击都记一笔 → 之后弹出的窗口就知道该开在小窗里（用户正在看它）
+    f.addEventListener('click', function () { if (App.ui.markFloatAction) App.ui.markFloatAction(); }, true);
+    f.addEventListener('touchstart', function () { if (App.ui.markFloatAction) App.ui.markFloatAction(); }, true);
     let dragging = false, dx = 0, dy = 0;
     function down(e) {
       if (inPip()) return;                     // 小窗是独立窗口，拖系统标题栏就行
@@ -461,12 +571,14 @@
       dragging = false;
       if (f.style.left) localStorage.setItem('focusPlan.floatPos', f.style.left + ',' + f.style.top);
     }
-    const pb = fx('tf-pip');
+    const pb = f.ownerDocument.getElementById('tf-pip');
     if (pb) pb.onclick = function (e) { e.stopPropagation(); pipToggle(); };
     head.addEventListener('mousedown', down);
+    head.addEventListener('touchstart', down, { passive: false });
+    if (floatDragBound) return;      // 文档级监听只挂一次，重造元素时不重复叠加
+    floatDragBound = true;
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
-    head.addEventListener('touchstart', down, { passive: false });
     document.addEventListener('touchmove', move, { passive: false });
     document.addEventListener('touchend', up);
   }
@@ -479,9 +591,17 @@
     const pb2 = fx('tf-pip');
     if (pb2) pb2.textContent = inPip() ? '⇲ 收回' : '⇱ 拖出';
     if (timer || cdTimer) wakeKeep();   // 📱 手机：计时中别让屏幕睡过去
+    renderFloatLec();
     renderDrawer();
-    const fwd = document.getElementById('tf-forward');
-    const cd = document.getElementById('tf-cd');
+    // 什么都没在进行（连听课也没有）→ 悬浮窗收起来，别留个空窗在屏幕上
+    const lecOn = !!(App.lecture && App.lecture.current && App.lecture.current());
+    if (!timer && !cdTimer && !pendingNext && !groupDoneInfo && !lecOn) {
+      if (inPip()) { pipWin.close(); } else { f.classList.add('hidden'); }
+      return;
+    }
+    const fwd = fx('tf-forward');
+    const cd = fx('tf-cd');
+    if (!fwd || !cd) return;            // 元素还没就位就别往下走（不要再抛异常）
     if (timer) {
       fwd.classList.remove('hidden');
       fx('tf-content').textContent = timer.planContent;
@@ -506,6 +626,8 @@
   }
   function hideTimerBar() {
     if (timer || cdTimer || pendingNext || groupDoneInfo) return;   // 还有下一步要提示 → 别收
+    if (App.lecture && App.lecture.current && App.lecture.current()) return;   // 听课进行中 → 悬浮窗留着
+    wakeFree();                    // ★ 计时全停了 → 放掉防息屏锁，手机别一直亮着
     // 计时全停了：小窗一起收掉（不留一个空窗在屏幕上）
     if (inPip()) { pipWin.close(); return; }
     const f = floatRoot();
@@ -591,6 +713,7 @@
   /* ---------- 完成计时（对比确认弹窗 + 总结） ---------- */
   function stopTimer() {
     if (!timer) return;
+    bringPageForModal();
     const usedMs = elapsedMs();
     const actualMin = Math.max(1, Math.ceil(usedMs / 60000));
     const planMin = timer.planMinutes;
@@ -702,19 +825,23 @@
         const running = cdTimer && cdTimer.subId === s.id;
         const cls = s.done === true ? ' done' : (s.done === false ? ' fail' : (running ? ' running' : ''));
         const stateTxt = s.done === true ? ' ✓完成' : (s.done === false ? ' ✗未完成' : '');
-        return '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
+        // 小任务也能开听课三步 → 面板直接长在这一题下面（v47）
+        const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(task, s) : '';
+        return '<div class="sub-wrap' + (lecPanel ? ' lec-on' : '') + '">' +
+          '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
           '<span class="sub-text">' + S().esc(s.text) + '</span>' +
           '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
           (running
             ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="cd-start" data-task="' + task.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="sub-note" data-task="' + task.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
+          '<button class="task-timer-btn task-lec-btn" data-act="sub-lecture" data-task="' + task.id + '" data-sub="' + s.id + '" title="🎧 给这题开课（预习→听课→整理，走完自动勾掉它）">🎧</button>' +
           '<button class="task-timer-btn" data-act="sub-split" data-task="' + task.id + '" data-sub="' + s.id + '" title="🧭 逐题拆解（语音/文字引导）">🧭</button>' +
           '<button class="task-timer-btn" data-act="sub-edit" data-task="' + task.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="sub-del" data-task="' + task.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
           (s.summary && s.summary.text ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
           (s.splitlog && s.splitlog.length ? '<span class="sub-meta noted-tag">🧭 已拆解</span>' : '') +
-          '</div>';
+          '</div>' + lecPanel + '</div>';
       }).join('') +
       '<button class="sub-add" data-act="sub-add" data-task="' + task.id + '">＋ 添加小任务</button>' +
       '</div>';
@@ -764,6 +891,36 @@
     t.push(entry);
   }
 
+  /** 删任务/小题时，如果删掉的正是「正在上的那节课」→ 这节课没法再继续了。
+      存档掉、关掉它，并告诉用户；否则会出现「课还在计时，页面上却找不到面板」的怪状态。 */
+  function dropLectureIfDeleted(taskId, subId, groupId) {
+    const d = S().getDay(S().todayKey());
+    const L = d.activeLecture;
+    if (!L) return false;
+    let hit = false;
+    if (subId) hit = L.subId === subId;                                  // 删的是某一题
+    else if (groupId) hit = L.taskId === taskId && L.groupId === groupId; // 删的是整个任务组
+    else hit = L.taskId === taskId;                                       // 删的是整条任务（含它的题）
+    if (!hit) return false;
+    L.abandoned = true;
+    L.droppedByDelete = true;
+    L.endAt = Date.now();
+    if (L.phase === 'preview' && L.previewEndAt == null) L.previewEndAt = Date.now();
+    if (L.phase === 'attend' && L.attendEndAt == null) L.attendEndAt = Date.now();
+    if (L.phase === 'consolidate' && L.consEndAt == null) L.consEndAt = Date.now();
+    d.lectures = d.lectures || [];
+    d.lectures.push(L);
+    (d.timeline || []).forEach(function (r) {
+      if (r.lectureId === L.id) r.content = r.content.replace(' · 进行中', ' · 已取消');
+    });
+    d.activeLecture = null;
+    S().save();
+    if (App.lecture && App.lecture.refresh) App.lecture.refresh();
+    else { App.tasks.renderAll(); showTimerBar(); }
+    App.ui.toast('正在上的「' + L.course + '」跟着一起取消了（已计时间已存档）', 3200);
+    return true;
+  }
+
   function delSub(taskKey, taskId, subId, dayKey) {
     const day = S().getDay(dayKey || S().todayKey());
     const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
@@ -782,6 +939,7 @@
       S().save();
       App.ui.toast('已删除 · 可到回收站恢复');
       App.tasks.renderAll();
+      dropLectureIfDeleted(taskId, subId, null);
     });
   }
 
@@ -842,19 +1000,23 @@
         const running = cdTimer && cdTimer.groupId === g.id && cdTimer.subId === s.id;
         const cls = s.done === true ? ' done' : (s.done === false ? ' fail' : (running ? ' running' : ''));
         const stateTxt = s.done === true ? ' ✓完成' : (s.done === false ? ' ✗未完成' : '');
-        return '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
+        // 组里的每一题也能开听课三步（v47）
+        const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(task, s) : '';
+        return '<div class="sub-wrap' + (lecPanel ? ' lec-on' : '') + '">' +
+          '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
           '<span class="sub-text">' + S().esc(s.text) + '</span>' +
           '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
           (running
             ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="g-cd-start" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="g-sub-note" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
+          '<button class="task-timer-btn task-lec-btn" data-act="g-sub-lecture" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🎧 给这题开课（预习→听课→整理，走完自动勾掉它）">🎧</button>' +
           '<button class="task-timer-btn" data-act="g-sub-split" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🧭 逐题拆解（语音/文字引导）">🧭</button>' +
           '<button class="task-timer-btn" data-act="g-sub-edit" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="g-sub-del" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="删除">🗑</button>' +
           (s.summary && s.summary.text ? '<span class="sub-meta noted-tag">✍️ 已写评语</span>' : '') +
           (s.splitlog && s.splitlog.length ? '<span class="sub-meta noted-tag">🧭 已拆解</span>' : '') +
-          '</div>';
+          '</div>' + lecPanel + '</div>';
       }).join('');
       const rewardTxt = allDone
         ? '<span class="group-reward done">✅ 全部做完</span>'
@@ -923,6 +1085,7 @@
       task.groups.splice(idx, 1);
       if (cdTimer && cdTimer.groupId === groupId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
       S().save(); App.ui.toast('已删除 · 可到回收站恢复'); App.tasks.renderAll();
+      dropLectureIfDeleted(taskId, null, groupId);
     });
   }
 
@@ -938,6 +1101,7 @@
       subs.splice(idx, 1);
       if (cdTimer && cdTimer.groupId === groupId && cdTimer.subId === subId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
       S().save(); App.ui.toast('已删除 · 可到回收站恢复'); App.tasks.renderAll();
+      dropLectureIfDeleted(taskId, subId, null);
     });
   }
 
@@ -1072,6 +1236,7 @@
   /* 手动结束 / 到点后结束 → 完成确认弹窗（用时对比 + 小总结） */
   function cdFinish() {
     if (!cdTimer) return;
+    bringPageForModal();
     const cd = cdTimer;
     const elapsed = Date.now() - cd.startedAt - cd.pausedMs;
     const over = elapsed - cd.minutes * 60000;
@@ -1274,6 +1439,7 @@
 
   function openSplit(taskKey, taskId, subId, groupId) {
     if (S().settings().splitEnabled === false) { App.ui.toast('🧭 逐题拆解没开，去 设置 → 🧭 打开'); return; }
+    bringPageForModal();
     // 同一题已在倒计时中（如从计时悬浮窗「🧭 回拆解」进来）→ 不重置计时，直接回到拆解界面
     const sameCd = cdTimer && cdTimer.taskId === taskId && cdTimer.subId === subId;
     if (!sameCd) startCdTimer(taskKey, taskId, subId, groupId); // 复用同一套倒计时 + 三档积分
@@ -1296,14 +1462,14 @@
     }
     // 单一委托：所有步骤的按钮都由这里按 id 分发（避免监听叠加）
     function renderStage(bodyHtml, handlers) {
-      const body = document.querySelector('#split-body');
+      const body = App.ui.query ? App.ui.query('#split-body') : document.querySelector('#split-body');
       if (body) body.innerHTML = metaMain + bodyHtml;
       window._splitHandlers = handlers;
       renderLive();
     }
     function recOn() {
       if (stopRec) { stopRec(); stopRec = null; return; }
-      const ta = document.getElementById('split-txt');
+      const ta = (App.ui.query ? App.ui.query('#split-txt') : document.getElementById('split-txt'));
       if (!ta) return;
       let done = ta.value ? ta.value.trim() : '';  // 已确认的文本（含之前手打的）
       let live = '';                               // 实时预览片段
@@ -1317,7 +1483,7 @@
         live = '';
         paint();
         stopRec = null;
-        const b = document.getElementById('split-rec');
+        const b = (App.ui.query ? App.ui.query('#split-rec') : document.getElementById('split-rec'));
         if (b) b.textContent = '🎙 开始录音';
       }, function (st) {
         if (st === 'unsupported' && ta) ta.placeholder = '浏览器不支持语音，改用手打';
@@ -1339,9 +1505,9 @@
         '<div><button class="btn btn-primary" id="split-next">' + nextLabel + '</button>' +
         '<button class="btn" id="split-close">结束拆解</button></div>',
         {
-          'split-rec': function () { recOn(); document.getElementById('split-rec').textContent = stopRec ? '⏹ 停止录音' : '🎙 开始录音'; },
-          'split-clear': function () { if (stopRec) { stopRec(); stopRec = null; } const t = document.getElementById('split-txt'); if (t) t.value = ''; },
-          'split-next': function () { logTxt(stepName, document.getElementById('split-txt').value); nextFn(); },
+          'split-rec': function () { recOn(); (App.ui.query ? App.ui.query('#split-rec') : document.getElementById('split-rec')).textContent = stopRec ? '⏹ 停止录音' : '🎙 开始录音'; },
+          'split-clear': function () { if (stopRec) { stopRec(); stopRec = null; } const t = (App.ui.query ? App.ui.query('#split-txt') : document.getElementById('split-txt')); if (t) t.value = ''; },
+          'split-next': function () { logTxt(stepName, (App.ui.query ? App.ui.query('#split-txt') : document.getElementById('split-txt')).value); nextFn(); },
           'split-close': closeSplit
         });
     }
@@ -1378,7 +1544,7 @@
     function finishA() { logFinal('已按「思路明确」路径完成整题拆解'); }
     function finishB() { logFinal('已按「看答案复述」路径完成整题拆解'); }
     function renderLive() {
-      const el = document.querySelector('#split-cd');
+      const el = App.ui.query ? App.ui.query('#split-cd') : document.querySelector('#split-cd');
       if (!el || !cdTimer) return;
       const ms = Math.max(0, cdElapsedMs());
       const over = ms - cdTimer.minutes * 60000;
@@ -1401,7 +1567,8 @@
         '<div id="split-body"></div>' +
         '</div>',
       '<button class="btn" data-act="close">关闭</button>', { wide: true });
-    const box = document.querySelector('#split-stage');
+    const box = App.ui.query ? App.ui.query('#split-stage') : document.querySelector('#split-stage');
+    if (!box) return;
     box.addEventListener('click', function (e) {
       const t = e.target && e.target.closest && e.target.closest('[id]');
       const id = t && t.id;
@@ -2564,6 +2731,39 @@
   }
 
   /* 🎧 从任务进入听课三步（任务即课程；明天的任务也能开，时间记在今天） */
+  /** 从小任务（组里的题 / 单独小任务）开课：课程名=题目，听课预算=它的限时
+      —— 任务组里的每一题、以及单独加的小任务，都能像整条任务一样走「预习→听课→整理」 */
+  function startLectureFromSub(listKey, taskId, subId, groupId, fromTomorrow) {
+    if (!App.lecture || !App.lecture.startFromSub) return;
+    const day = S().getDay(fromTomorrow ? S().tomorrowKey() : S().todayKey());
+    const task = day.tasks[listKey] && day.tasks[listKey].find(function (t) { return t.id === taskId; });
+    if (!task) return;
+    const f = findSubInTask(task, subId);
+    if (!f || !f.sub) return;
+    App.lecture.startFromSub(task, f.sub, groupId || (f.group && f.group.id) || null, fromTomorrow);
+  }
+
+  /** 听课三步走完 → 勾掉关联的小任务（时间轴/积分在听课时已记过，这里只打勾不重复算） */
+  function finishSubByLecture(L) {
+    if (!L || !L.subId) return '';
+    let hit = null;
+    [S().todayKey(), S().tomorrowKey()].forEach(function (k) {
+      const d = S().getDay(k);
+      ['required', 'ideal', 'extra'].forEach(function (col) {
+        ((d.tasks && d.tasks[col]) || []).forEach(function (t) {
+          const f = findSubInTask(t, L.subId);
+          if (f && f.sub) hit = f.sub;
+        });
+      });
+    });
+    if (!hit || hit.done === true) return '';
+    hit.done = true;
+    hit.doneByLecture = true;
+    S().save();
+    if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+    return hit.text;
+  }
+
   function startLectureFromTask(listKey, taskId) {
     const todayDay = S().getDay(S().todayKey());
     const tomDay = S().getDay(S().tomorrowKey());
@@ -2615,6 +2815,8 @@
         if (act2 === 'g-cd-start') { startCdTimer(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
         if (act2 === 'sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, null); return; }
         if (act2 === 'g-sub-split') { openSplit(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group); return; }
+        if (act2 === 'sub-lecture') { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, null, false); return; }
+        if (act2 === 'g-sub-lecture') { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group, false); return; }
 
         if (act2 === 'g-edit') { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
         if (act2 === 'g-del') { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().todayKey()); return; }
@@ -2708,6 +2910,8 @@
       if (act === 'g-edit' && listKey) { editGroupModal(listKey, actBtn.dataset.task, actBtn.dataset.group, S().tomorrowKey()); return; }
       if (act === 'g-del' && listKey) { delGroup(listKey, actBtn.dataset.task, actBtn.dataset.group, S().tomorrowKey()); return; }
       if (act === 'g-cd-start') { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
+      if (act === 'sub-lecture' && listKey) { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, null, true); return; }
+      if (act === 'g-sub-lecture' && listKey) { startLectureFromSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, actBtn.dataset.group, true); return; }
       if (act === 'sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
       if (act === 'g-sub-split') { App.ui.toast('明天的小任务，到了明天再用 🧭 拆解吧'); return; }
       if (act === 'g-claim') { return; }
@@ -2721,6 +2925,7 @@
           if (idx >= 0) { trashPush({ kind: 'task', dayKey: S().tomorrowKey(), col: listKey, payload: JSON.parse(JSON.stringify(list[idx])) }); list.splice(idx, 1); S().save(); }
           App.ui.toast('已删除 · 可到回收站恢复');
           App.tasks.renderAll();
+          dropLectureIfDeleted(taskId, null, null);
         });
       }
     };
@@ -2835,6 +3040,7 @@
           App.ui.toast('已删除 · 可到回收站恢复');
           App.ui.closeModal();
           App.tasks.renderAll();
+          dropLectureIfDeleted(taskId, null, null);
         });
       },
       cancel: App.ui.closeModal
@@ -3017,8 +3223,15 @@
     // ⏱ 小时计划常驻 tick：连续学习累计 + 到点自动结算 + 实时刷新倒计时
     setInterval(function () { hourPlanAutoTick(); }, 1000);
     // 手机锁屏/切后台会释放防息屏锁，回前台且有计时时重新拿一次
+    window.addEventListener('pagehide', function () { wakeFree(); });
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && (timer || cdTimer)) wakeKeep();
+      if (document.hidden) return;
+      if (!timer && !cdTimer) return;
+      wakeKeep();
+      showTimerBar();   // 兜一次：万一悬浮窗被小窗带走或丢了，这里会把它补回页面
+    });
+    window.addEventListener('focus', function () {
+      if ((timer || cdTimer) && floatRoot() && floatRoot().classList.contains('hidden')) showTimerBar();
     });
   }
 
@@ -3034,6 +3247,11 @@
     toggleCdPause: toggleCdPause, cdFinish: cdFinish,
     startCdTimer: startCdTimer,
     pipOpen: pipOpen, pipBack: pipBack, pipToggle: pipToggle, isPip: inPip,
+    pipNeedSpace: pipNeedSpace, floatDoc: floatDoc, refreshFloat: showTimerBar,
+    bindFloatButtons: bindFloatButtons,
+    wakeFree: wakeFree, bringPageForModal: bringPageForModal,
+    finishSubByLecture: finishSubByLecture, startLectureFromSub: startLectureFromSub,
+    dropLectureIfDeleted: dropLectureIfDeleted,
     askNotify: askNotify, notifyNow: notifyNow,
     quickFinishSub: quickFinishSub, startNextSub: startNextSub,
     // 从计时悬浮窗「🧭 回拆解」按钮回来：用当前倒计时的上下文重开拆解界面（不重置计时）
@@ -3044,5 +3262,10 @@
     }
   };
 
-  initFloatDrag();
+  bindFloat(floatRoot());
+  // 留一份干净模板：悬浮窗万一被小窗带走/销毁，能原样重造出来
+  (function () {
+    const f = document.getElementById('timer-float');
+    if (f) { floatTpl = f.cloneNode(true); floatTpl.classList.add('hidden'); }
+  })();
 })();
