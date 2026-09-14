@@ -98,6 +98,7 @@ const SLIDES = [
           '<div class="tl" data-i="11"><div class="n">v11</div><div class="t">听课三步</div></div>'+
           '<div class="tl" data-i="12"><div class="n">v12</div><div class="t">日历+间隔重做</div></div>'+
           '<div class="tl" data-i="13"><div class="n">v13</div><div class="t">兑换商店+主题</div></div>'+
+          '<div class="tl" data-i="14"><div class="n">v14</div><div class="t">听课即任务</div></div>'+
         '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -351,11 +352,28 @@ const SLIDES = [
     ]
   },
   {
+    name:"v14 · 听课即任务", badge:{t:"v14 · 🎓 听课即任务",c:"#22a06b"},
+    tag:"上课这件事，终于住进了任务系统",
+    cols:[
+      {t:"🎓 任务直接就是课程", c:"#22a06b", items:[
+        "添加任务时可勾「这是听课任务」，顺手写好大概上多久",
+        "任务行出现 🎓 时长标记，排明天的课一眼看清上什么、上多久",
+        "编辑任务里随时能改时长，或取消听课标记"]},
+      {t:"🎧 一键进三步", c:"#a855f7", items:[
+        "任务行的 🎧 直接开课，课程名和时长自动带过去，不用重打",
+        "走完「预习→听课→整理」，任务自动打勾，不用回任务页补",
+        "三步大奖照发，积分不重复计算"]},
+      {t:"🧩 分工更清楚", c:"#3b82f6", items:[
+        "「明天」栏也能标听课任务，第二天自动变成今天的课",
+        "必修/理想/拓展都支持，听课不再是个孤立的页面"]}
+    ]
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
         '<div class="big" style="font-size:70px">🚀</div>'+
-        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 13.0</h1>'+
+        '<h1 style="font-size:40px;margin:16px 0 8px;background:none;color:#eaf0ff;background-clip:unset;-webkit-background-clip:unset">从 1.0 到 14.0</h1>'+
         '<p class="sub" style="margin-bottom:10px">你的专注管理，一路在长大</p>'+
         '<div class="single" style="max-width:640px;margin:0 auto;">'+
           '<p>数据永远在你自己的浏览器里，<em class="glow">系统是账本，你是会计</em>。</p>'+
