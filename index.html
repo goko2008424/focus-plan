@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=53" />
+  <link rel="stylesheet" href="css/style.css?v=59" />
   <style id="pip-style">
     /* ===== 🪟 只在小窗（Document Picture-in-Picture）里生效：让悬浮窗铺满整个小窗 ===== */
     html.pip, html.pip body { background: var(--bg, #f5f7fa); margin: 0; padding: 0; }
@@ -252,18 +252,18 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=53"></script>
-  <script src="js/ui.js?v=53"></script>
-  <script src="js/tasks.js?v=53"></script>
-  <script src="js/timeline.js?v=53"></script>
-  <script src="js/stats.js?v=53"></script>
-  <script src="js/settings.js?v=53"></script>
-  <script src="js/sport.js?v=53"></script>
-  <script src="js/lecture.js?v=53"></script>
-  <script src="js/calendar.js?v=53"></script>
-  <script src="js/link.js?v=53"></script>
-  <script src="js/demo.js?v=53"></script>
-  <script src="js/app.js?v=53"></script>
+  <script src="js/store.js?v=59"></script>
+  <script src="js/ui.js?v=59"></script>
+  <script src="js/tasks.js?v=59"></script>
+  <script src="js/timeline.js?v=59"></script>
+  <script src="js/stats.js?v=59"></script>
+  <script src="js/settings.js?v=59"></script>
+  <script src="js/sport.js?v=59"></script>
+  <script src="js/lecture.js?v=59"></script>
+  <script src="js/calendar.js?v=59"></script>
+  <script src="js/link.js?v=59"></script>
+  <script src="js/demo.js?v=59"></script>
+  <script src="js/app.js?v=59"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
@@ -352,5 +352,70 @@
       </div>
     </div>
   </div>
+<script id="build-check">
+/* 交付自检（v54）：把线上实际文件大小和发布时的大小比一遍。
+   有文件没传上去 → 顶部弹红条点名，别再靠猜"为什么改了没生效"。
+   控制台可用：__checkBuild() 重查 / __checkBuild(true) 强制绕过缓存重查 */
+window.__BUILD = 59;
+window.__BUILD_SIZES = {
+  "css/style.css": 41752,
+  "js/app.js": 26741,
+  "js/calendar.js": 32883,
+  "js/demo.js": 8261,
+  "js/lecture.js": 38187,
+  "js/link.js": 20240,
+  "js/settings.js": 16013,
+  "js/sport.js": 25754,
+  "js/stats.js": 22761,
+  "js/store.js": 15148,
+  "js/tasks.js": 225966,
+  "js/timeline.js": 19462,
+  "js/ui.js": 11143,
+  "sw.js": 1490,
+  "version.html": 28042
+};
+(function () {
+  var S = window.__BUILD_SIZES;
+  function warn(bad) {
+    if (document.getElementById('build-warn')) return;
+    var d = document.createElement('div');
+    d.id = 'build-warn';
+    d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#e2545d;color:#fff;' +
+      'font:13px/1.6 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;padding:9px 14px;' +
+      'box-shadow:0 3px 12px rgba(0,0,0,.28)';
+    var names = bad.map(function (x) { return x.f; }).join('、');
+    d.innerHTML = '<button id="build-warn-x" style="float:right;margin:0 0 0 12px;background:rgba(255,255,255,.18);' +
+      'color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:6px;padding:3px 10px;cursor:pointer;font:inherit">' +
+      '✕ 知道了</button><b>⚠️ 线上有 ' + bad.length + ' 个文件还是旧版（没传上去）</b><br>' +
+      '<span style="word-break:break-all">' + names + '</span><br>' +
+      '<span style="opacity:.92">这些改动不会生效。把 focus-plan 里的 js、css 文件夹整个重传一遍，刷新即可。</span>';
+    document.body.appendChild(d);
+    document.getElementById('build-warn-x').onclick = function () { d.remove(); };
+  }
+  function grab(f, q) {
+    return fetch(f + q, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) return { f: f, bad: true };
+      return r.arrayBuffer().then(function (b) { return { f: f, got: b.byteLength, bad: b.byteLength !== S[f] }; });
+    }).catch(function () { return { f: f, bad: false }; });   // 取不到（离线等）不算数
+  }
+  function run(fresh) {
+    if (!/^https?:/.test(location.protocol)) return Promise.resolve([]);
+    var q = fresh ? ('?fresh=' + Date.now() + Math.random()) : '';
+    return Promise.all(Object.keys(S).map(function (f) { return grab(f, q); })).then(function (res) {
+      var bad = res.filter(function (x) { return x.bad; });
+      if (bad.length) warn(bad);
+      if (fresh) {
+        console.log(res.map(function (x) {
+          return (x.bad ? '❌ ' : '✅ ') + x.f + '  线上 ' + (x.got == null ? '?' : x.got) + ' / 应为 ' + S[x.f];
+        }).join('\n'));
+      }
+      return res;
+    });
+  }
+  window.__checkBuild = run;
+  function kick() { setTimeout(function () { run(false); }, 1200); }
+  if (document.readyState === 'complete') kick(); else window.addEventListener('load', kick);
+})();
+</script>
 </body>
 </html>

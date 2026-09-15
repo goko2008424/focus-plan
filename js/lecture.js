@@ -23,19 +23,114 @@
   }
   /** 各步实际用时（秒）。preview/consolidate 封顶=预算，超出部分不鼓励但如实记录 */
   function phaseSeconds(L, name) {
+    // ⏸ 暂停中：把"当前时刻"钉在按下暂停的那一刻 —— 这样秒数真的完全冻住，
+    // 也不会出现 floor(a+b)-floor(b) 的 1 秒取整漂移
+    const nowMs = L.pauseAt || Date.now();
+    let sec = 0;
     if (name === 'preview') {
       if (L.previewStartAt == null) return 0;
-      const end = L.previewEndAt != null ? L.previewEndAt : Date.now();
-      return Math.max(0, Math.floor((end - L.previewStartAt) / 1000));
-    }
-    if (name === 'attend') {
+      const end = L.previewEndAt != null ? L.previewEndAt : nowMs;
+      sec = Math.max(0, Math.floor((end - L.previewStartAt) / 1000));
+    } else if (name === 'attend') {
       if (L.attendStartAt == null) return 0;
-      const end = L.attendEndAt != null ? L.attendEndAt : Date.now();
-      return Math.max(0, Math.floor((end - L.attendStartAt) / 1000));
+      const end = L.attendEndAt != null ? L.attendEndAt : nowMs;
+      sec = Math.max(0, Math.floor((end - L.attendStartAt) / 1000));
+    } else {
+      if (L.consStartAt == null) return 0;
+      const end = L.consEndAt != null ? L.consEndAt : nowMs;
+      sec = Math.max(0, Math.floor((end - L.consStartAt) / 1000));
     }
-    if (L.consStartAt == null) return 0;
-    const end = L.consEndAt != null ? L.consEndAt : Date.now();
-    return Math.max(0, Math.floor((end - L.consStartAt) / 1000));
+    // ⏸ 暂停/小休的时间不算：用户中途去准备、去吃饭、坐下来先调时间，不该白跑
+    if (L.pausedMs) sec -= Math.floor(L.pausedMs / 1000);
+    return Math.max(0, sec);
+  }
+
+  /** 进下一个阶段时把暂停状态清掉（新阶段重新开始计时） */
+  function resetPause(L) { L.pausedMs = 0; L.pauseAt = null; L.restUntil = null; }
+
+  /** ⏸ 暂停：先坐着把预算和时间想清楚再开始，或者中途去吃饭，时间都冻着 */
+  function pauseLecture() {
+    const L = today().activeLecture;
+    if (!L || L.pauseAt) return;
+    L.pauseAt = Date.now();
+    S().save();
+    refresh();
+    App.ui.toast('⏸ 已暂停 —— 时间冻住了，准备好了点「▶ 继续」');
+  }
+
+  /** ▶ 继续 */
+  function resumeLecture() {
+    const L = today().activeLecture;
+    if (!L || !L.pauseAt) return;
+    L.pausedMs = (L.pausedMs || 0) + (Date.now() - L.pauseAt);
+    L.pauseAt = null;
+    L.restUntil = null;
+    S().save();
+    refresh();
+    App.ui.toast('▶ 继续走，刚才暂停的时间没算进去');
+  }
+
+  /** ☕ 小休：暂停并设定休息多久，到点自动继续 */
+  function restLecture(mins) {
+    const L = today().activeLecture;
+    if (!L) return;
+    if (L.pauseAt) { resumeLecture(); }        // 已经暂停着 → 先归零再进小休
+    const L2 = today().activeLecture;
+    if (!L2) return;
+    L2.pauseAt = Date.now();
+    L2.restUntil = Date.now() + Math.max(1, mins) * 60000;
+    S().save();
+    refresh();
+    App.ui.toast('☕ 小休 ' + mins + ' 分钟，休息时间不算听课，到点自动继续');
+  }
+
+  /** 小休时长选择 */
+  function restModal() {
+    const modal = App.ui.openModal('☕ 听课中小休',
+      '<p style="font-size:13px">休息时间<b>不算听课时长</b>（预习/整理的倒计时也一起冻住），到点自动继续。</p>',
+      '<button class="btn" data-act="r5">5 分钟</button>' +
+      '<button class="btn" data-act="r10">10 分钟</button>' +
+      '<button class="btn" data-act="r15">15 分钟</button>' +
+      '<button class="btn" data-act="r20">20 分钟</button>' +
+      '<button class="btn" data-act="cancel">不用了</button>');
+    App.ui.bindActions({
+      r5: function () { App.ui.closeModal(); restLecture(5); },
+      r10: function () { App.ui.closeModal(); restLecture(10); },
+      r15: function () { App.ui.closeModal(); restLecture(15); },
+      r20: function () { App.ui.closeModal(); restLecture(20); },
+      cancel: App.ui.closeModal
+    });
+    return modal;
+  }
+
+  /** 时钟文案：暂停 / 小休 / 正计时 / 倒计时 都在这里出 */
+  function clockInfo(L, kind) {
+    const cap = (kind === 'preview' ? L.previewMin : (kind === 'cons' ? L.consMin : 0)) * 60000;
+    const used = phaseSeconds(L, kind) * 1000;
+    if (L.pauseAt) {
+      if (L.restUntil) {
+        return { txt: '☕ 小休中 · 还剩 ' + fmtClock(Math.max(0, L.restUntil - Date.now())) + '（休息不算听课）', color: 'var(--muted)' };
+      }
+      return { txt: '⏸ 已暂停 —— 时间冻结中，准备好了点「▶ 继续」', color: 'var(--muted)' };
+    }
+    if (kind === 'attend') return { txt: '听课中 ' + fmtClock(used), color: 'var(--primary)' };
+    const left = cap - used;
+    if (left > 0) {
+      return { txt: (kind === 'preview' ? fmtClock(left) + ' 后该去上课' : '整理剩 ' + fmtClock(left)), color: 'var(--primary)' };
+    }
+    return {
+      txt: '⏰ 超时 ' + fmtClock(-left) + (kind === 'preview' ? ' —— 该停了，做减法！' : ' —— 差不多了，写逻辑链收尾'),
+      color: 'var(--req)'
+    };
+  }
+
+  /** 面板上的「暂停 / 小休 / 继续」按钮（页内和悬浮窗共用） */
+  function pauseBtns(L, P) {
+    if (L.pauseAt) {
+      return '<button class="btn btn-small btn-primary" id="' + P + 'lec-resume">▶ 继续</button>';
+    }
+    return '<button class="btn btn-small" id="' + P + 'lec-pause" title="暂停：去准备、去吃饭，时间都不会白跑">⏸ 暂停</button>' +
+      '<button class="btn btn-small" id="' + P + 'lec-rest" title="听课时小休一下，休息不算听课时长">☕ 小休</button>';
   }
   function allThreeDone(L) {
     return !L.skipPreview && !L.skipAttend && !L.skipCons;
@@ -95,9 +190,21 @@
   function beginLecture(o) {
     const day = today();
     if (day.activeLecture) {
-      App.ui.toast('已经有一节课在进行中（' + day.activeLecture.course + '），先完成或放弃它');
+      // ★ v57：以前这里只弹一句一闪而过的 toast，用户以为"点了没反应"。
+      // 现在交给任务模块弹一个明确的二选一窗（换课 / 先上完）
+      if (App.tasks && App.tasks.askSwitchLecture) {
+        App.tasks.askSwitchLecture(o.course, function () { return beginLectureRaw(o); });
+        return null;
+      }
+      App.ui.toast('已经有一节课在进行中（' + day.activeLecture.course + '），先完成或放弃它', 3600);
       return null;
     }
+    return beginLectureRaw(o);
+  }
+
+  /** 真开课（不做"已有课"的守卫）。forceBegin 会先把旧课按放弃存档，再调它 */
+  function beginLectureRaw(o) {
+    const day = today();
     const d = defaults();
     const pts = o.pts != null ? o.pts : d.pts;
     day.activeLecture = {
@@ -107,13 +214,37 @@
       attendMin: o.attendMin || d.attendMin,
       consMin: o.consMin != null ? o.consMin : d.consMin,
       pts: pts || 0,
-      phase: 'preview', previewStartAt: Date.now(),
+      phase: 'preview', previewStartAt: Date.now(), pausedMs: 0, pauseAt: null, restUntil: null,
       checklist: [false, false, false], overdueToasted: false,
       createdAt: S().nowIso ? S().nowIso() : new Date().toISOString()
     };
     S().save();
     refresh();
     return day.activeLecture;
+  }
+
+  /** 把当前那节按"放弃"存档（已听时间照样记，不发奖）。不动别的 */
+  function abandonActive() {
+    const day = today();
+    const L = day.activeLecture;
+    if (!L) return false;
+    L.abandoned = true;
+    L.endAt = Date.now();
+    if (L.phase === 'preview' && L.previewEndAt == null) L.previewEndAt = Date.now();
+    if (L.phase === 'attend' && L.attendEndAt == null) L.attendEndAt = Date.now();
+    if (L.phase === 'consolidate' && L.consEndAt == null) L.consEndAt = Date.now();
+    day.lectures = day.lectures || [];
+    day.lectures.push(L);
+    day.activeLecture = null;
+    timelinePush(L);
+    S().save();
+    return true;
+  }
+
+  /** 强行换课：当前那节按"放弃"存档，再开新的 */
+  function forceBegin(o) {
+    abandonActive();
+    return beginLectureRaw(o);
   }
 
   function startFromTask(task, fromTomorrow) {
@@ -199,6 +330,7 @@
     App.ui.bindActions({
       ok: function () {
         L.phase = 'attend';
+        resetPause(L);
         L.prepDone = true;
         L.attendStartAt = Date.now();
         L.note = L.note || '';
@@ -222,9 +354,11 @@
     L.attendEndAt = Date.now();
     L.attendConfirm = false;
     L.phase = 'consolidate';
+    resetPause(L);
     L.consStartAt = Date.now();
     L.overdueToasted = false;
     S().save();
+    timelinePush(L);   // ★ v55：阶段推进也要写时间轴，否则"听完课还没写整理"那段时间会丢
     refresh();
     App.ui.toast('✍️ 进入整理：用自己的逻辑重构笔记，可读 > 美观');
   }
@@ -233,15 +367,15 @@
   function consolidateDone() {
     const day = today(), L = day.activeLecture;
     if (!L || L.phase !== 'consolidate') return;
-    const modal = App.ui.openModal('🔗 这节课的核心逻辑链',
-      '<p style="font-size:13px">用自己的话把框架串成一句/几句话（这是整理的输出，也是未来复习的钥匙）：</p>' +
-      '<div class="field"><textarea id="lec-chain" style="width:100%;min-height:84px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13.5px;resize:vertical" placeholder="例：水解的前提是有弱离子 → 谁弱谁水解 → 越弱越水解 → 微弱程度决定酸碱性"></textarea></div>',
+    const modal = App.ui.openModal('🔗 这节课的收获（可留空）',
+      '<p style="font-size:13px"><b>想写就写，不想写直接点完成</b> —— 留空不影响积分、不影响记录，也不会卡住这节课。'
+      + '写下的东西之后在「历史」页（🎓 听课记录）能翻到。</p>' +
+      '<div class="field"><textarea id="lec-chain" style="width:100%;min-height:84px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13.5px;resize:vertical" placeholder="（可留空）"></textarea></div>',
       '<button class="btn btn-primary" data-act="ok">' + (allThreeDone(L) ? '🎁 完成三步，领大奖' : '✔ 完成记录') + '</button><button class="btn" data-act="cancel">再改改</button>');
     App.ui.bindActions({
       ok: function () {
         const v = (modal.querySelector('#lec-chain').value || '').trim();
-        if (!v) { App.ui.toast('写一句核心逻辑链，这是整理的收尾'); return; }
-        L.chain = v;
+        L.chain = v;   // ★ v55：留空也照样完成 —— 用户明确说不想被强制写
         L.consEndAt = Date.now();
         L.phase = 'done';
         L.endAt = Date.now();
@@ -256,6 +390,8 @@
         }
         timelinePush(L);
         const autoDone = autoCheckTask(L);
+        // ★ v57：连着听的时候，交给任务模块弹"下一节"
+        if (App.tasks && App.tasks.afterLecture) setTimeout(function () { App.tasks.afterLecture(L, 'done'); }, 80);
         App.ui.closeModal();
         refresh();
         if (App.app && App.app.refreshStats) App.app.refreshStats();
@@ -274,12 +410,12 @@
     App.ui.confirm('跳过这一步，这节课就拿不到三步大奖了（记录照样保留）。确定跳过？', '跳过', function () {
       if (which === 'preview') {
         L.skipPreview = true; L.previewEndAt = Date.now();
-        L.phase = 'attend'; L.prepDone = false; L.attendStartAt = Date.now(); L.note = L.note || '';
+        L.phase = 'attend'; resetPause(L); L.prepDone = false; L.attendStartAt = Date.now(); L.note = L.note || '';
         timelinePush(L);
         App.ui.toast('已跳过预习（无大奖）。听课开始');
       } else if (which === 'attend') {
         L.skipAttend = true; L.attendEndAt = Date.now();
-        L.phase = 'consolidate'; L.consStartAt = Date.now(); L.overdueToasted = false;
+        L.phase = 'consolidate'; resetPause(L); L.consStartAt = Date.now(); L.overdueToasted = false;
         App.ui.toast('已跳过听课（无大奖）。进入整理');
       } else {
         L.skipCons = true; L.consEndAt = Date.now();
@@ -289,6 +425,7 @@
         day.lectures.push(L);
         day.activeLecture = null;
         timelinePush(L);
+        if (App.tasks && App.tasks.afterLecture) setTimeout(function () { App.tasks.afterLecture(L, 'done'); }, 80);
         App.ui.toast('已跳过整理（无大奖）。课程已记录');
       }
       S().save();
@@ -311,6 +448,7 @@
       timelinePush(L);
       S().save();
       refresh();
+      if (App.tasks && App.tasks.afterLecture) setTimeout(function () { App.tasks.afterLecture(L, 'abandon'); }, 80);
       App.ui.toast('已放弃并存档。下次换个预算再试');
     });
   }
@@ -334,6 +472,7 @@
       day.timeline.push({
         id: S().uid(), start: sMin, end: eMin, minutes: Math.min(totalMin, Math.max(1, eMin - sMin)),
         content: content, category: 'study', countAsStudy: true, auto: true, lectureId: L.id,
+        taskId: L.taskId || null,      // 记下来归属，小时计划才能把它算进对应的分类
         note: note
       });
     }
@@ -349,6 +488,13 @@
   /** 正在进行的那节课（没有则 null）——悬浮窗用它决定要不要显示听课面板 */
   function current() {
     return today().activeLecture || null;
+  }
+
+  /** 这节课到目前为止一共用了多少秒（给小时计划的"进行中"统计用，暂停的时间不算） */
+  function activeSeconds() {
+    const L = today().activeLecture;
+    if (!L) return 0;
+    return phaseSeconds(L, 'preview') + phaseSeconds(L, 'attend') + phaseSeconds(L, 'cons');
   }
 
   /** 悬浮窗里的听课面板：和任务行那张用同一份状态、同一套内容
@@ -372,7 +518,7 @@
     }
     return '<div class="lec-inline lec-float" data-fl-lec="' + L.id + '">' +
       '<div class="lec-head"><b>🎓 听课三步</b>' +
-      '<span class="lec-step">' + S().esc(L.course) + ' · 第 ' + stepNo + '/3 步 · ' + phaseLabel(L.phase) + '</span>' +
+      '<span class="lec-step">' + S().esc(L.course) + ' · 第 ' + stepNo + '/3 步 · ' + phaseLabel(L.phase) + '</span>' + queueBadge() +
       '<span class="lec-spacer"></span>' + budget + '</div>' +
       phaseInner(L, 'fl-') +
       '</div>';
@@ -386,6 +532,13 @@
   }
   /** 某条任务 / 小任务行下面的三步面板；不是进行中的那一条 → 返回空串
       传了 sub 就是「小任务」视角（任务组里的题、单独小任务都一样） */
+  /** 🎧 连听 3/12 —— 让用户一眼知道还在连听队列里 */
+  function queueBadge() {
+    let q = null;
+    try { q = (App.tasks && App.tasks.queueInfo) ? App.tasks.queueInfo() : null; } catch (e) { q = null; }
+    if (!q) return '';
+    return '<span class="lec-q">🎧 连听 ' + q.idx + '/' + q.total + '</span>';
+  }
   function inlineHTML(task, sub) {
     const day = ensure(today());
     const L = day.activeLecture;
@@ -406,7 +559,7 @@
     }
     return '<div class="lec-inline" data-lec-id="' + L.id + '">' +
       '<div class="lec-head"><b>🎓 听课三步</b>' +
-      '<span class="lec-step">第 ' + stepNo + '/3 步 · ' + phaseLabel(L.phase) + '</span>' +
+      '<span class="lec-step">第 ' + stepNo + '/3 步 · ' + phaseLabel(L.phase) + '</span>' + queueBadge() +
       '<span class="lec-spacer"></span>' + budget + '</div>' +
       phaseInner(L) +
       '</div>';
@@ -475,41 +628,39 @@
   function phaseInner(L, P) {
     P = P || '';   // id 前缀：页面里是空、悬浮窗里是 fl-
     if (L.phase === 'preview') {
-      const cap = L.previewMin * 60000;
-      const left = Math.max(0, L.previewStartAt + cap - Date.now());
-      const overdue = left <= 0;
-      return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:' + (overdue ? 'var(--req)' : 'var(--primary)') + '">' +
-        (overdue ? '⏰ 超时 ' + fmtClock(-left) + ' —— 该停了，做减法！' : fmtClock(left) + ' 后该去上课') + '</div>' +
+      const ci = clockInfo(L, 'preview');
+      return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:' + ci.color + '">' + ci.txt + '</div>' +
         '<div class="lec-hint">只做这三件事，其余当小说翻：</div>' +
         PREVIEW_ITEMS.map(function (t, i) {
           const on = (L.checklist || [])[i];
           return '<label class="lec-chk-row"><input type="checkbox" class="lec-chk" data-i="' + i + '"' + (on ? ' checked' : '') + ' /> <span>' + t + '</span></label>';
         }).join('') +
         '<div class="lec-actions">' +
+        pauseBtns(L, P) +
         '<button class="btn btn-small btn-primary" id="' + P + 'lec-preview-done">❓ 写核心问题 → 去上课</button>' +
         '<button class="btn btn-small" id="' + P + 'lec-skip">⏭ 跳过预习</button>' +
         '<button class="btn btn-small btn-danger" id="' + P + 'lec-abandon">🚫 放弃</button></div>';
     }
     if (L.phase === 'attend') {
-      return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:var(--primary)">听课中 ' + fmtClock(phaseSeconds(L, 'attend') * 1000) + '</div>' +
+      const ci2 = clockInfo(L, 'attend');
+      return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:' + ci2.color + '">' + ci2.txt + '</div>' +
         (L.question
           ? '<div class="lec-q">🎯 带着问题听：<b>' + S().esc(L.question) + '</b></div>'
           : '<div class="lec-hint">空白纸模式：只记关键词和重点，别抄整句。</div>') +
         '<textarea id="' + P + 'lec-note" class="lec-ta" placeholder="白纸区：只写重点……"></textarea>' +
         '<div class="lec-actions">' +
+        pauseBtns(L, P) +
         '<button class="btn btn-small btn-primary" id="' + P + 'lec-attend-done">🔔 下课了，停表去整理</button>' +
         '<button class="btn btn-small" id="' + P + 'lec-skip">⏭ 跳过听课</button>' +
         '<button class="btn btn-small btn-danger" id="' + P + 'lec-abandon">🚫 放弃</button></div>';
     }
-    const cap = L.consMin * 60000;
-    const left = Math.max(0, L.consStartAt + cap - Date.now());
-    const overdue = left <= 0;
-    return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:' + (overdue ? 'var(--req)' : 'var(--primary)') + '">' +
-      (overdue ? '⏰ 整理超时 ' + fmtClock(-left) + ' —— 差不多了，写逻辑链收尾' : '整理剩 ' + fmtClock(left)) + '</div>' +
-      '<div class="lec-hint">用自己的逻辑重构，不跟讲义结构走；可读性 &gt; 美观。</div>' +
-      '<textarea id="' + P + 'lec-note" class="lec-ta" placeholder="重构后的笔记……">' + S().esc(L.note || '') + '</textarea>' +
+    const ci3 = clockInfo(L, 'cons');
+    return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:' + ci3.color + '">' + ci3.txt + '</div>' +
+      '<div class="lec-hint">这一步<b>可写可不写</b>：想留点东西就写，不想写直接点完成，不影响积分。</div>' +
+      '<textarea id="' + P + 'lec-note" class="lec-ta" placeholder="（可留空）">' + S().esc(L.note || '') + '</textarea>' +
       '<div class="lec-actions">' +
-      '<button class="btn btn-small btn-primary" id="' + P + 'lec-cons-done">✍️ 写核心逻辑链，完成' +
+      pauseBtns(L, P) +
+      '<button class="btn btn-small btn-primary" id="' + P + 'lec-cons-done">✅ 完成整理' +
       (allThreeDone(L) ? '（领大奖 +' + (L.pts || 0) + ' 分）' : '') + '</button>' +
       '<button class="btn btn-small" id="' + P + 'lec-skip">⏭ 跳过整理</button>' +
       '<button class="btn btn-small btn-danger" id="' + P + 'lec-abandon">🚫 放弃</button></div>';
@@ -532,6 +683,12 @@
         refresh();
       };
     });
+    const pa = wrap.querySelector('#' + P + 'lec-pause');
+    if (pa) pa.onclick = pauseLecture;
+    const rs = wrap.querySelector('#' + P + 'lec-resume');
+    if (rs) rs.onclick = resumeLecture;
+    const rt = wrap.querySelector('#' + P + 'lec-rest');
+    if (rt) rt.onclick = restModal;
     const pd = wrap.querySelector('#' + P + 'lec-preview-done');
     if (pd) pd.onclick = previewDone;
     const ad = wrap.querySelector('#' + P + 'lec-attend-done');
@@ -558,6 +715,10 @@
     const day = App.store ? S().getDay(S().todayKey()) : null;
     const L = day && day.activeLecture;
     if (!L) return;
+    // ☕ 小休到点 → 自动继续（时间继续走）
+    if (L.pauseAt && L.restUntil && Date.now() >= L.restUntil) { resumeLecture(); return; }
+    const kind = L.phase === 'preview' ? 'preview' : (L.phase === 'attend' ? 'attend' : (L.phase === 'consolidate' ? 'cons' : null));
+    if (!kind) return;
     // 面板可能同时出现在「任务页」和「悬浮窗（小窗）」两处 → 都刷，别只刷一个
     const els = [];
     document.querySelectorAll('.lec-clock').forEach(function (x) { els.push(x); });
@@ -568,20 +729,12 @@
       } catch (e) { /* 忽略 */ }
     }
     if (!els.length) return;
-    const setTxt = function (t, color) {
-      els.forEach(function (x) { x.textContent = t; if (color) x.style.color = color; });
-    };
-    // 听课阶段：正计时（原来漏了 attend，计时器不走，一并修掉）
-    if (L.phase === 'attend') { setTxt('听课中 ' + fmtClock(phaseSeconds(L, 'attend') * 1000)); return; }
-    if (L.phase !== 'preview' && L.phase !== 'consolidate') return;
-    const cap = (L.phase === 'preview' ? L.previewMin : L.consMin) * 60000;
-    const startAt = L.phase === 'preview' ? L.previewStartAt : L.consStartAt;
-    const left = cap - (Date.now() - startAt);
-    if (left > 0) {
-      if (L.phase === 'preview') setTxt(fmtClock(left) + ' 后该去上课');
-      else setTxt('整理剩 ' + fmtClock(left));
-    } else {
-      setTxt('⏰ 超时 ' + fmtClock(-left) + (L.phase === 'preview' ? ' —— 该停了，做减法！' : ' —— 写逻辑链收尾'), 'var(--req)');
+    const info = clockInfo(L, kind);
+    els.forEach(function (x) { x.textContent = info.txt; x.style.color = info.color; });
+    if (L.pauseAt) return;                  // 暂停/小休时不提醒超时
+    const cap = (kind === 'preview' ? L.previewMin : L.consMin) * 60000;
+    const left = cap - phaseSeconds(L, kind) * 1000;
+    if (left <= 0) {
       if (!L.overdueToasted) {
         L.overdueToasted = true;
         S().save();
@@ -600,6 +753,9 @@
     init: init, render: refresh, refresh: refresh,
     current: current, floatPanelHTML: floatPanelHTML, bindFloatLec: bindFloatLec,
     startFromTask: startFromTask, startFromSub: startFromSub, isActive: isActive,
+    forceBegin: forceBegin, abandonActive: abandonActive, queueBadge: queueBadge,
+    pauseLecture: pauseLecture, resumeLecture: resumeLecture, restLecture: restLecture,
+    activeSeconds: activeSeconds,
     inlineHTML: inlineHTML, bindInline: bindInline, historyHTML: historyHTML
   };
 })();

@@ -52,7 +52,7 @@
     }
     filtered.forEach(function (r) {
       const el = document.createElement('div');
-      el.className = 'tl-record cat-' + r.category + (r.auto ? ' auto-mark' : '');
+      el.className = 'tl-record cat-' + r.category + (r.auto ? ' auto-mark' : '') + (r.hourPlanId ? ' hp-mark' : '');
       el.dataset.id = r.id;
       const top = (r.start / 60) * HOUR_H;
       const height = Math.max(14, ((r.end - r.start) / 60) * HOUR_H);
@@ -60,7 +60,7 @@
       el.style.height = height + 'px';
       el.innerHTML = '<span class="tl-rec-time">' + S().hhmmOf(r.start) + '–' + S().hhmmOf(r.end) +
         ' · ' + S().fmtDur(r.minutes) + '</span><br/>' + (r.auto ? '⏱ ' : '') + S().esc(r.content);
-      el.title = r.content + '（' + App.ui.CATS[r.category].label + '）';
+      el.title = r.content + (r.hourPlanId ? '　👆 点一下看这一段具体做了什么' : '（' + App.ui.CATS[r.category].label + '）');
       grid.appendChild(el);
     });
 
@@ -288,6 +288,40 @@
     if (el) el.remove();
   }
 
+  /* ---------- ⏱ 点时间轴上的「小时代」：看这一段覆盖多少、里面具体做了什么 ----------
+     用户反馈：以前时间轴上「要么只有小时代、要么只有任务」，点开小时代根本不知道干了啥 */
+  function hourPlanDetail(rec, dayKey) {
+    const day = S().getDay(dayKey);
+    const all = (day.hourPlans || []).slice();
+    if (day.activeHourPlan) all.push(day.activeHourPlan);
+    const plan = all.find(function (p) { return p.id === rec.hourPlanId; });
+    const inside = (day.timeline || []).filter(function (r) {
+      return r.id !== rec.id && r.start >= rec.start && r.start < rec.end;
+    }).sort(function (a, b) { return a.start - b.start; });
+    let html = '';
+    if (plan) {
+      const tg = plan.targets || {};
+      html += '<p style="font-size:13px;margin-bottom:6px">这一段：<b>' + S().hhmmOf(rec.start) + ' → ' + S().hhmmOf(rec.end) +
+        '</b>（' + S().fmtDur(rec.end - rec.start) + '）' +
+        (plan.met ? ' · <b style="color:var(--primary)">达标</b>' : (plan.endAt ? ' · 未达标' : ' · 进行中')) + '</p>' +
+        '<p style="font-size:12.5px;color:var(--muted);margin:0 0 4px">目标：必 ' + (tg.required || 0) + ' / 理 ' + (tg.ideal || 0) + ' / 拓 ' + (tg.extra || 0) + ' 分　' +
+        '实际：' + (plan.usedMin != null ? Math.round(plan.usedMin) + ' 分' : '（结算后记录）') + '</p>' +
+        (plan.taskText ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 4px">关联任务：' + S().esc(plan.taskText) + '</p>' : '') +
+        (plan.review && plan.review.text ? '<div class="lec-q">📝 ' + S().esc(plan.review.text) + '</div>' : '');
+    }
+    html += '<div style="font-weight:600;margin:10px 0 4px">这一段具体做了什么（' + inside.length + ' 条）</div>';
+    const totalIn = inside.reduce(function (a, r) { return a + (r.minutes || 0); }, 0);
+    html += inside.length
+      ? inside.map(function (r) {
+        return '<div class="hp-in"><span class="hp-in-t">' + S().hhmmOf(r.start) + '–' + S().hhmmOf(r.end) + '</span>' +
+          '<span class="hp-in-c">' + S().esc(r.content) + '</span>' +
+          '<span class="hp-in-m">' + S().fmtDur(r.minutes) + '</span></div>';
+      }).join('') + '<p style="font-size:11.5px;color:var(--muted);margin-top:6px">合计 ' + S().fmtDur(totalIn) + '</p>'
+      : '<p style="color:var(--muted);font-size:12.5px">这一段下面还没有别的记录——去任务页开始计时，完成后就会出现在这里。</p>';
+    App.ui.openModal('⏱ 这一段的明细', html, '<button class="btn" data-act="cancel">关闭</button>');
+    App.ui.bindActions({ cancel: App.ui.closeModal });
+  }
+
   /* ---------- 记录点击 → 编辑 ---------- */
   function bindRecordClick() {
     const grid = document.getElementById('timeline-grid');
@@ -297,7 +331,9 @@
       if (!recEl) return;
       const day = S().getDay(selDate);
       const rec = day.timeline.find(function (r) { return r.id === recEl.dataset.id; });
-      if (rec) recordModal(rec.start, rec.end, rec, selDate);
+      if (!rec) return;
+      if (rec.hourPlanId) { hourPlanDetail(rec, selDate); return; }   // 小时代 → 看这一段做了什么
+      recordModal(rec.start, rec.end, rec, selDate);
     };
   }
 

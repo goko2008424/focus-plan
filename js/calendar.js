@@ -49,17 +49,28 @@
   /* ---------- 🔁 间隔重做弹窗 ----------
      mode 'copy'：完成任务时安排一次重做（原任务保留）
      mode 'move'：日历里改期（默认把原任务移走，可勾选复制） */
+  const COL_LIST = [['required', '✅ 必须'], ['ideal', '⭐ 理想'], ['extra', '🌱 拓展']];
+  /** 目标分类栏的 <option>（选中当前栏） */
+  function colOptions(curKey) {
+    return COL_LIST.map(function (c) {
+      return '<option value="' + c[0] + '"' + (c[0] === curKey ? ' selected' : '') + '>' + c[1] + '</option>';
+    }).join('');
+  }
+
   function repeatModal(task, colKey, fromKey, mode) {
     const fromLabel = fromKey === todayK() ? '今天' : (fromKey === tomorrowK() ? '明天' : S().shortDateCN(fromKey));
     let pickKey = addDays(todayK(), 3);
     let moveIt = false; // 默认只复制——绝不悄悄删原任务
     const hasKids = (task.subs || []).length || (task.groups || []).length;
     let withKids = true;      // 默认照旧：整条任务连题目一起带走
+    let targetCol = colKey;   // 目标分类栏，默认不变
     const modal = App.ui.openModal('🔁 重做安排 · ' + esc(task.text).slice(0, 20),
       '<p style="font-size:12.5px;color:var(--muted);margin-bottom:8px">整条任务在 ' + fromLabel +
       '。' + (hasKids ? '默认把下面的小任务/任务组<b>一起带过去</b>（不想带就取消下面的勾）。' : '') +
       '只想安排其中<b>某一道题</b>？关掉这个弹窗，点那一题右边的 🔁。</p>' +
       '<div class="field"><label>目标日期</label><input type="date" id="rep-date" value="' + pickKey + '" style="width:180px" /></div>' +
+      '<div class="field"><label>放到哪个分类栏（拓展没做完的可以挪成必须的）</label><select id="rep-col" style="width:180px">' +
+      colOptions(colKey) + '</select></div>' +
       '<div class="field"><label>标准：要做到什么程度（选填，如：全对 / 8分钟内解出）</label>' +
       '<input type="text" id="rep-standard" style="width:100%" value="' + esc(task.standard || '') + '" placeholder="写清楚标准，重做时才知道够不够格" /></div>' +
       (hasKids
@@ -80,6 +91,8 @@
     };
     const moveEl = modal.querySelector('#rep-move');
     if (moveEl) moveEl.onchange = function () { moveIt = moveEl.checked; };
+    const colEl2 = modal.querySelector('#rep-col');
+    if (colEl2) colEl2.onchange = function () { targetCol = colEl2.value || colKey; };
     const kidsEl = modal.querySelector('#rep-kids');
     if (kidsEl) kidsEl.onchange = function () { withKids = kidsEl.checked; };
     App.ui.bindActions({
@@ -87,9 +100,9 @@
         const std = (modal.querySelector('#rep-standard').value || '').trim();
         if (dateEl.value) pickKey = dateEl.value;
         if (pickKey < todayK()) { App.ui.toast('目标日期在过去啦，往后面挑一天'); return; }
-        const n = copyTaskToDay(task, colKey, pickKey, std, withKids);
+        const n = copyTaskToDay(task, colKey, pickKey, std, withKids, targetCol);
         if (!n) { App.ui.toast('目标日期已有同名任务，未重复安排（原任务原地保留）'); return; }
-        if (moveIt && pickKey !== fromKey) removeTask(fromKey, colKey, task.id);
+        if (moveIt && !(pickKey === fromKey && targetCol === colKey)) removeTask(fromKey, colKey, task.id);
         S().save();
         App.ui.closeModal();
         render();
@@ -100,10 +113,12 @@
     });
   }
 
-  function copyTaskToDay(task, colKey, targetKey, standard, withKids) {
+  function copyTaskToDay(task, colKey, targetKey, standard, withKids, targetCol) {
     const keepKids = withKids !== false;
+    const toCol = targetCol || colKey;          // 目标分类栏（默认跟原栏一样）
     const tday = S().getDay(targetKey);
-    if (tday.tasks[colKey].some(function (t) { return t.text === task.text; })) return false;
+    if (!tday.tasks[toCol]) tday.tasks[toCol] = [];
+    if (tday.tasks[toCol].some(function (t) { return t.text === task.text; })) return false;
     const freshSubs = (keepKids ? (task.subs || []) : []).map(function (s) {
       return { id: S().uid(), text: s.text, minutes: s.minutes, points: s.points || 0, done: null };
     });
@@ -117,7 +132,7 @@
     if (standard) nt.standard = standard;
     if (freshSubs.length) nt.subs = freshSubs;
     if (freshGroups.length) nt.groups = freshGroups;
-    tday.tasks[colKey].push(nt);
+    tday.tasks[toCol].push(nt);
     S().save();
     return true;
   }
@@ -138,11 +153,15 @@
     const fromLabel = fromKey === todayK() ? '今天' : (fromKey === tomorrowK() ? '明天' : S().shortDateCN(fromKey));
     let pickKey = addDays(todayK(), 3);
     let moveIt = false;                 // 默认复制，绝不悄悄删原题
+    let targetCol = colKey;             // 目标分类栏，默认不变
     const modal = App.ui.openModal('🔁 这题重做 · ' + esc(sub.text).slice(0, 18),
       '<p style="font-size:12.5px;color:var(--muted);margin-bottom:8px">只安排 <b>这一道题</b>：' +
       '<b>' + esc(task.text) + '</b>' + (gname ? ' → <b>' + esc(gname) + '</b>' : '（单独小任务）') +
       '，现在在 ' + fromLabel + '。目标那天会自动落到同一条任务下面——没有这条任务就新建，<b>组信息一起带过去</b>。</p>' +
       '<div class="field"><label>目标日期</label><input type="date" id="reps-date" value="' + pickKey + '" style="width:180px" /></div>' +
+      '<div class="field"><label>放到哪个分类栏</label><select id="reps-col" style="width:180px">' + colOptions(colKey) + '</select></div>' +
+      '<div class="field"><label>挂到哪条任务下面（改个名字 = 换个主任务；目标那天没有就自动新建）</label>' +
+      '<input type="text" id="reps-task" style="width:100%" value="' + esc(task.text) + '" placeholder="如：化学复习" /></div>' +
       '<div class="field"><label>标准：要做到什么程度（选填，如：全对 / 8分钟内解出）</label>' +
       '<input type="text" id="reps-standard" style="width:100%" value="' + esc(sub.standard || '') + '" placeholder="写清楚标准，重做时才知道够不够格" /></div>' +
       '<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;cursor:pointer;margin-top:4px">' +
@@ -158,33 +177,40 @@
     };
     const moveEl = modal.querySelector('#reps-move');
     if (moveEl) moveEl.onchange = function () { moveIt = moveEl.checked; };
+    const colEl3 = modal.querySelector('#reps-col');
+    if (colEl3) colEl3.onchange = function () { targetCol = colEl3.value || colKey; };
     App.ui.bindActions({
       ok: function () {
         const std = (modal.querySelector('#reps-standard').value || '').trim();
+        const tName = (modal.querySelector('#reps-task').value || '').trim();
         if (dateEl.value) pickKey = dateEl.value;
         if (pickKey < todayK()) { App.ui.toast('目标日期在过去啦，往后面挑一天'); return; }
-        const done = copySubToDay(task, colKey, groupId, sub, pickKey, std, gname);
+        const done = copySubToDay(task, colKey, groupId, sub, pickKey, std, gname, targetCol, tName);
         if (!done) { App.ui.toast('目标那天已经有这道题了，没重复安排'); return; }
-        if (moveIt && pickKey !== fromKey) removeSubFrom(fromKey, colKey, task.id, groupId, sub.id);
+        if (moveIt && !(pickKey === fromKey && targetCol === colKey)) removeSubFrom(fromKey, colKey, task.id, groupId, sub.id);
         S().save();
         App.ui.closeModal();
         if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
         render();
         App.ui.toast('🔁 这题已' + (moveIt ? '移到' : '复制到') + ' ' + dayLabel(pickKey) + '：' +
-          (gname ? gname + ' · ' : '') + sub.text.slice(0, 12) + (std ? '（标准：' + std + '）' : ''));
+          (((tName || task.text) !== task.text) ? ('换到「' + (tName || task.text) + '」下 · ') : '') +
+          (gname ? gname + ' · ' : '') + sub.text.slice(0, 12) + (std ? '（标准：' + std + '）' : ''), 3200);
       },
       cancel: App.ui.closeModal
     });
   }
 
   /** 把一道题（带组归属）放进目标日期的同一条任务里；目标日没有这条任务就新建一条 */
-  function copySubToDay(task, colKey, groupId, sub, targetKey, standard, gname) {
+  function copySubToDay(task, colKey, groupId, sub, targetKey, standard, gname, targetCol, targetTaskName) {
+    const toCol = targetCol || colKey;      // 目标分类栏（默认跟原栏一样）
+    const tname = ((targetTaskName || '').trim()) || task.text;   // 挂到哪条主任务下面（可改名）
     const tday = S().getDay(targetKey);
-    let nt = (tday.tasks[colKey] || []).find(function (t) { return t.text === task.text; });
+    if (!tday.tasks[toCol]) tday.tasks[toCol] = [];
+    let nt = tday.tasks[toCol].find(function (t) { return t.text === tname; });
     if (!nt) {
-      nt = { id: S().uid(), text: task.text, done: false };
-      if (task.points != null) nt.points = task.points;
-      tday.tasks[colKey].push(nt);
+      nt = { id: S().uid(), text: tname, done: false };
+      if (tname === task.text && task.points != null) nt.points = task.points;
+      tday.tasks[toCol].push(nt);
     }
     const fresh = { id: S().uid(), text: sub.text, minutes: sub.minutes, points: sub.points || 0, done: null };
     if (standard) fresh.standard = standard;

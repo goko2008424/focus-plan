@@ -126,6 +126,8 @@
   }
 
   /* ---------- 悬浮窗：显示 / 隐藏 / 拖动 / 位置记忆 ---------- */
+  /** 💡 记住的位置只是个"建议"：不管存了什么（哪怕是坏坐标），
+      最后都强制把悬浮窗摁回视口内——否则用户看到的就是"它消失了"（2026-09-15 实测踩到） */
   function applyFloatPos() {
     const f = floatRoot();
     if (!f) return;
@@ -135,16 +137,34 @@
     }
     const pos = localStorage.getItem('focusPlan.floatPos');
     if (pos) {
-      const p = pos.split(',');
-      f.style.left = p[0] + 'px';
-      f.style.top = p[1] + 'px';
-      f.style.right = 'auto';
-      f.style.bottom = 'auto';
-    } else {
-      f.style.left = 'auto'; f.style.top = 'auto';
-      f.style.right = ''; f.style.bottom = '';
+      const p = String(pos).split(',');
+      let x = parseFloat(p[0]), y = parseFloat(p[1]);
+      if (isFinite(x) && isFinite(y)) {
+        setFloatXY(f, x, y);
+        return;
+      }
     }
+    // 没记录 / 记录坏了 → 丢掉，回默认位置（右下角）
+    localStorage.removeItem('focusPlan.floatPos');
+    f.style.left = 'auto'; f.style.top = 'auto';
+    f.style.right = ''; f.style.bottom = '';
   }
+
+  /** 把悬浮窗摆在 (x,y)，并保证它整个落在视口内（留 6px 边） */
+  function setFloatXY(f, x, y) {
+    const w = f.offsetWidth || 280, h = f.offsetHeight || 120;
+    const maxX = Math.max(6, window.innerWidth - w - 6);
+    const maxY = Math.max(6, window.innerHeight - h - 6);
+    const nx = Math.max(6, Math.min(maxX, x));
+    const ny = Math.max(6, Math.min(maxY, y));
+    f.style.left = nx + 'px';
+    f.style.top = ny + 'px';
+    f.style.right = 'auto';
+    f.style.bottom = 'auto';
+  }
+
+  // 视口变小（转屏/拉窗口）后也别让它留在外面
+  window.addEventListener('resize', function () { if (!inPip()) applyFloatPos(); });
 
   /* ================= 🪟 计时悬浮窗出浏览器（Document Picture-in-Picture） =================
      手机 / 不支持 PiP 的浏览器：自动退回页内悬浮窗（同一个元素，只是留在页面里）。
@@ -153,6 +173,7 @@
   let floatTpl = null;        // 启动时留一份悬浮窗的干净模板，掉了能重造
   let floatDragBound = false; // 文档级拖动监听只挂一次
   let pendingNext = null;     // 做完一题后待接的下一题 {taskKey,taskId,groupId,subId,text,minutes}
+  let lqTimer = null;         // 🎧 连听"下一节"弹窗的 5 秒倒计时
   let groupDoneInfo = null;   // 整组做完后的提示 {taskText, groupName, taskKey, taskId}
   const PIP_VARS = ['--bg', '--card', '--ink', '--muted', '--line', '--primary', '--req', '--extra', '--ideal', '--long', '--brand'];
 
@@ -280,8 +301,15 @@
     const box = fx('tf-drawer');
     if (!box) return;
     const ctx = drawerCtx();
-    if (!ctx) { box.classList.add('hidden'); box.dataset.open = ''; box.innerHTML = ''; return; }
+    const pend = pendingBarHTML();
+    if (!ctx && !pend) { box.classList.add('hidden'); box.dataset.open = ''; box.innerHTML = ''; return; }
     box.classList.remove('hidden');
+    if (!ctx) {
+      // 计时全停了，但还有"待办衔接"（休息/接着做、某题没标结果）→ 别让选项消失
+      box.innerHTML = '<div class="tf-dw-head"><span class="tf-dw-t">🌙 还没安排下一步</span></div>' + pend;
+      bindPendingBar(box);
+      return;
+    }
     const open = box.dataset.open === '1';
     const doneN = ctx.subs.filter(function (s) { return s.done === true; }).length;
     const cur = ctx.curIdx >= 0 ? ctx.subs[ctx.curIdx] : null;
@@ -289,7 +317,7 @@
       '<span class="tf-dw-t">' + (ctx.group ? '🎯 ' + S().esc(ctx.gname) : '📋 小任务') + '</span>' +
       '<span class="tf-dw-p">' + doneN + '/' + ctx.subs.length +
       (cur ? ' · 第 ' + (ctx.curIdx + 1) + ' 题' : '') + '</span>' +
-      '<span class="tf-dw-a">' + (open ? '▾' : '▸') + '</span></div>';
+      '<span class="tf-dw-a">' + (open ? '▾' : '▸') + '</span></div>' + pend;
 
     // —— 待接下一题 / 整组完成（收起时也显示，做完一题立刻知道下一步）
     if (pendingNext) {
@@ -320,6 +348,7 @@
         '</div>';
     }
     box.innerHTML = html;
+    bindPendingBar(box);
     box.onclick = function (e) {
       const t = e.target.closest('[data-dw]');
       if (!t) return;
@@ -340,7 +369,8 @@
             return;
           }
         }
-        if (App.lecture && App.lecture.startFromTask) App.lecture.startFromTask(cx.task);
+        // 整条任务 → 弹"这次连听哪几节"，比直接开整条清楚
+        lecturePickModal((cx.ref && cx.ref.taskKey) || 'required', cx.task.id, false);
         return;
       }
       if (a === 'back') { backToPage(); return; }
@@ -436,22 +466,28 @@
   function groupDonePrompt() {
     const info = groupDoneInfo;
     if (!info) return;
-    const m = App.ui.openModal('🎉 这一组做完了',
+    setPendingChoice('group', info.groupName || info.taskText || '');   // ★ 先落库：关掉也不会丢
+    renderAll();                                            // ★ 立刻画出来 —— 用户直接用 X 关掉弹窗也不会"没有入口"
+    App.ui.openModal('🎉 这一组做完了',
       '<p style="font-size:13.5px">「' + S().esc(info.groupName || info.taskText) + '」整组搞定。</p>' +
-      '<p class="hint">接下来怎么安排？（小窗不关，还能接着看时间）</p>',
+      '<p class="hint">接下来怎么安排？（小窗不关，还能接着看时间）<b>先不选也不会丢</b>——任务页顶部和小窗里一直留着这条。</p>',
       '<button class="btn btn-primary" data-act="rest">☕ 去休息</button>' +
       '<button class="btn" data-act="more">▶ 再安排点</button>' +
-      '<button class="btn" data-act="close">先不选</button>');
+      '<button class="btn" data-act="later">🕘 先不选（留着）</button>');
     App.ui.bindActions({
       rest: function () {
-        App.ui.closeModal(); groupDoneInfo = null;
+        App.ui.closeModal(); clearPendingChoice(); groupDoneInfo = null;
         if (smallRest) { App.ui.toast('已经在休息中'); }
         else if (!timer && !cdTimer && !S().getDay(S().todayKey()).activeHourPlan) { App.ui.toast('想休息就先开始一段计时或小时代吧'); }
         else startSmallRest();
-        showTimerBar();
+        renderAll(); showTimerBar();
       },
-      more: function () { App.ui.closeModal(); groupDoneInfo = null; showTimerBar(); App.ui.toast('回到任务页，点小任务的 ⏱ 就能开下一题'); },
-      close: function () { App.ui.closeModal(); groupDoneInfo = null; showTimerBar(); }
+      more: function () { App.ui.closeModal(); clearPendingChoice(); groupDoneInfo = null; renderAll(); showTimerBar(); App.ui.toast('回到任务页，点小任务的 ⏱ 就能开下一题'); },
+      later: function () {
+        App.ui.closeModal();
+        renderAll();
+        App.ui.toast('好，这条留着 —— 想休息/接着做，任务页顶部或小窗抽屉里就能点', 4200);
+      }
     });
   }
 
@@ -491,6 +527,9 @@
       注意顺序——**先把元素搬回来再关窗**：某些浏览器 close() 不触发 pagehide，
       靠事件回调搬回来会丢元素（2026-09-14 用户实测踩到）。 */
   function restoreFloat() {
+    // 收回 = 回到页面：位置也回到默认（右下角）。小窗里拖过、缩放过，
+    // 位置记录都可能对不上页面坐标系，直接丢掉最省心（用户也更容易找得到）
+    try { localStorage.removeItem('focusPlan.floatPos'); } catch (e) { /* 忽略 */ }
     const oldWin = pipWin;
     let f = null;
     if (oldWin && !oldWin.closed) {
@@ -559,9 +598,10 @@
       const r = f.getBoundingClientRect();
       const cx = e.touches ? e.touches[0].clientX : e.clientX;
       const cy = e.touches ? e.touches[0].clientY : e.clientY;
+      const win = f.ownerDocument.defaultView || window;   // 在小窗里就按小窗的尺寸算边界
       let x = cx - dx, y = cy - dy;
-      x = Math.max(0, Math.min(window.innerWidth - r.width, x));
-      y = Math.max(0, Math.min(window.innerHeight - r.height, y));
+      x = Math.max(0, Math.min(win.innerWidth - r.width, x));
+      y = Math.max(0, Math.min(win.innerHeight - r.height, y));
       f.style.left = x + 'px'; f.style.top = y + 'px';
       f.style.right = 'auto'; f.style.bottom = 'auto';
       if (e.touches && e.cancelable) e.preventDefault();
@@ -569,6 +609,9 @@
     function up() {
       if (!dragging) return;
       dragging = false;
+      // ⚠️ 小窗里的坐标和页面坐标系完全不是一回事：在小窗里拖完存下来，
+      // 收回页面后按它定位就会把悬浮窗摆到看不见的地方 → 小窗里绝不记录
+      if (inPip()) return;
       if (f.style.left) localStorage.setItem('focusPlan.floatPos', f.style.left + ',' + f.style.top);
     }
     const pb = f.ownerDocument.getElementById('tf-pip');
@@ -595,7 +638,7 @@
     renderDrawer();
     // 什么都没在进行（连听课也没有）→ 悬浮窗收起来，别留个空窗在屏幕上
     const lecOn = !!(App.lecture && App.lecture.current && App.lecture.current());
-    if (!timer && !cdTimer && !pendingNext && !groupDoneInfo && !lecOn) {
+    if (!shouldKeepFloat() && !lecOn) {     // 计时/待办/听课都没在进行 → 才收窗
       if (inPip()) { pipWin.close(); } else { f.classList.add('hidden'); }
       return;
     }
@@ -624,8 +667,14 @@
     }
     onTick();
   }
+  /** 悬浮窗现在"该不该留着"：计时 / 待办衔接 都算（两处共用，别再各写一套） */
+  function shouldKeepFloat() {
+    if (timer || cdTimer || pendingNext || groupDoneInfo) return true;
+    const d = S().getDay(S().todayKey());
+    return !!(d.pendingChoice || (d.pendingSubs || []).length);
+  }
   function hideTimerBar() {
-    if (timer || cdTimer || pendingNext || groupDoneInfo) return;   // 还有下一步要提示 → 别收
+    if (shouldKeepFloat()) return;                                            // 计时/待办在 → 别收
     if (App.lecture && App.lecture.current && App.lecture.current()) return;   // 听课进行中 → 悬浮窗留着
     wakeFree();                    // ★ 计时全停了 → 放掉防息屏锁，手机别一直亮着
     // 计时全停了：小窗一起收掉（不留一个空窗在屏幕上）
@@ -896,31 +945,73 @@
       存档掉、关掉它，并告诉用户；否则会出现「课还在计时，页面上却找不到面板」的怪状态。 */
   function dropLectureIfDeleted(taskId, subId, groupId) {
     const d = S().getDay(S().todayKey());
+    // 这次删掉的是不是"某一节"（小题 / 整个组 / 整条任务都算）
+    function isTarget(x) {
+      if (!x) return false;
+      if (subId) return x.subId === subId;
+      if (groupId) return x.taskId === taskId && x.groupId === groupId;
+      return x.taskId === taskId;
+    }
+    // —— ① 连听队列无条件同步剔掉被删的节（删的时候可能并没有在听课）
+    let qChanged = false, droppedCurrent = false;
+    const q = d.lectureQueue;
+    if (q && q.items && q.items.length) {
+      const cur = q.idx || 0;
+      const kept = [];
+      let newCur = -1;          // 当前那节在新数组里的位置
+      let nextAfterCur = -1;    // "当前那节之后还剩下的第一节"在新数组里的位置
+      q.items.forEach(function (x, i) {
+        if (isTarget(x)) { if (i === cur) droppedCurrent = true; return; }
+        if (i === cur) newCur = kept.length;
+        if (nextAfterCur < 0 && i > cur) nextAfterCur = kept.length;
+        kept.push(x);
+      });
+      if (kept.length !== q.items.length) {
+        qChanged = true;
+        if (!kept.length) { d.lectureQueue = null; }
+        else {
+          q.items = kept;
+          // 当前那节还在 → 指回它；被删了 → 指到"它后面那节的前一格"，这样 idx+1 正好接上下一节（不跳节）
+          q.idx = (newCur >= 0) ? newCur : ((nextAfterCur >= 0) ? (nextAfterCur - 1) : (kept.length - 1));
+        }
+      }
+    }
+    // —— ② 正在听的那节被删了 → 按"已取消"存档（已计时间留着）
     const L = d.activeLecture;
-    if (!L) return false;
-    let hit = false;
-    if (subId) hit = L.subId === subId;                                  // 删的是某一题
-    else if (groupId) hit = L.taskId === taskId && L.groupId === groupId; // 删的是整个任务组
-    else hit = L.taskId === taskId;                                       // 删的是整条任务（含它的题）
-    if (!hit) return false;
-    L.abandoned = true;
-    L.droppedByDelete = true;
-    L.endAt = Date.now();
-    if (L.phase === 'preview' && L.previewEndAt == null) L.previewEndAt = Date.now();
-    if (L.phase === 'attend' && L.attendEndAt == null) L.attendEndAt = Date.now();
-    if (L.phase === 'consolidate' && L.consEndAt == null) L.consEndAt = Date.now();
-    d.lectures = d.lectures || [];
-    d.lectures.push(L);
-    (d.timeline || []).forEach(function (r) {
-      if (r.lectureId === L.id) r.content = r.content.replace(' · 进行中', ' · 已取消');
-    });
-    d.activeLecture = null;
+    const hit = !!L && isTarget({ taskId: L.taskId, groupId: L.groupId, subId: L.subId });
+    if (hit) {
+      L.abandoned = true;
+      L.droppedByDelete = true;
+      L.endAt = Date.now();
+      if (L.phase === 'preview' && L.previewEndAt == null) L.previewEndAt = Date.now();
+      if (L.phase === 'attend' && L.attendEndAt == null) L.attendEndAt = Date.now();
+      if (L.phase === 'consolidate' && L.consEndAt == null) L.consEndAt = Date.now();
+      d.lectures = d.lectures || [];
+      d.lectures.push(L);
+      (d.timeline || []).forEach(function (r) {
+        if (r.lectureId === L.id) r.content = r.content.replace(' · 进行中', ' · 已取消');
+      });
+      d.activeLecture = null;
+    }
+    if (!hit && !qChanged) return false;
     S().save();
     if (App.lecture && App.lecture.refresh) App.lecture.refresh();
-    else { App.tasks.renderAll(); showTimerBar(); }
-    App.ui.toast('正在上的「' + L.course + '」跟着一起取消了（已计时间已存档）', 3200);
-    return true;
+    // ★ v58：正在连听的那节被删 → 顶部留一条「▶ 下一节」，别让用户自己找
+    if (hit && d.lectureQueue && droppedCurrent) {
+      const nx = d.lectureQueue.items[d.lectureQueue.idx] || {};
+      setPendingChoice('queue', nx.text || '');
+    }
+    // ★ v58：立刻重绘 + 处理悬浮窗（以前这里漏了，顶部那一条要等"下一次刷新"才出现）
+    App.tasks.renderAll();
+    showTimerBar();
+    if (hit) {
+      App.ui.toast(droppedCurrent
+        ? '正在上的「' + L.course + '」被删掉了 —— 连听剩下的还在，顶部点「▶ 下一节」接着上'
+        : '正在上的「' + L.course + '」跟着一起取消了（已计时间已存档）', 3800);
+    }
+    return hit;
   }
+
 
   function delSub(taskKey, taskId, subId, dayKey) {
     const day = S().getDay(dayKey || S().todayKey());
@@ -1263,6 +1354,7 @@
       (over > 0 ? '  <span style="color:#e2545d">（超时 ' + S().fmtClock(over).replace(/^00:/, '') + '）</span>' : '  <span style="color:#22a06b">（在目标内）</span>');
     const noteEl = '<div class="field"><label>小总结（超时可写一句为什么超时）</label>' +
       '<textarea id="cd-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical"></textarea></div>';
+    settleCdNow(cd);       // ★ v56：先把时间结算掉（进时间轴 + 今日用时），再弹提示
     const modal = App.ui.openModal('⏰ 时间到！', '' +
       '<div class="field"><label>小任务</label><p style="font-size:14px;font-weight:700">' + S().esc(cd.text) + '</p></div>' +
       '<p style="font-size:12.5px;color:#8a919c;margin-bottom:8px">所属任务：' + S().esc(cd.taskText) + '</p>' +
@@ -1273,23 +1365,414 @@
       noteEl,
       '<button class="btn btn-primary" data-act="sub-done">✅ 完成了，领取积分</button>' +
       '<button class="btn" data-act="sub-fail">❌ 没完成</button>' +
-      '<button class="btn" data-act="sub-retry">🔁 再来一轮</button>');
+      '<button class="btn" data-act="sub-retry">🔁 再来一轮</button>' +
+      '<button class="btn" data-act="sub-later">🕘 先不选（留着，不会丢）</button>');
     App.ui.bindActions({
-      'sub-done': function () { markSub(cd, true, modal.querySelector('#cd-note').value.trim()); App.ui.closeModal(); },
-      'sub-fail': function () { markSub(cd, false, modal.querySelector('#cd-note').value.trim()); App.ui.closeModal(); },
+      'sub-done': function () { finishCdResult(cd, true, modal.querySelector('#cd-note').value.trim()); },
+      'sub-fail': function () { finishCdResult(cd, false, modal.querySelector('#cd-note').value.trim()); },
       'sub-retry': function () {
-        cdTimer.startedAt = Date.now();
-        cdTimer.pausedMs = 0;
-        cdTimer.paused = false;
-        cdTimer.finished = false;
-        cdTimer.microRest = false; cdTimer.microEndAt = 0;
-        cdTimer.srRested = false; cdTimer.srReminded70 = false; cdTimer.srForced = false;
-        cdTimer.srLastPromptAt = 0;
-        cdTimer.earnPoints = undefined;
         App.ui.closeModal();
-        showTimerBar();
+        const d2 = S().getDay(S().todayKey());
+        d2.pendingSubs = (d2.pendingSubs || []).filter(function (x) { return x.subId !== cd.subId; });
+        S().save();
+        App.ui.toast('再来一轮 —— 刚才那轮的时间已经记下了');
+        startCdTimer(cd.taskKey, cd.taskId, cd.subId, cd.groupId || null);
+      },
+      'sub-later': function () {
+        // ★ v56：时间已经结算过了，这里只是"暂时不标结果"，不丢
+        App.ui.closeModal();
+        renderDrawer();
+        App.ui.toast('时间已经记下了。这题先留着 —— 任务页顶部或小窗抽屉里点「✅ 完成 / ❌ 没完成」就行', 4200);
       }
     });
+  }
+
+  /* ================= 🎧 连听（v57）：一次勾好几节，上完一节自动接下一节 ================= */
+  /** 把一条任务下所有"能听课"的条目摊平（任务组里的每一题 + 单独小任务） */
+  function lectureItemsOf(task) {
+    const items = [];
+    (task.groups || []).forEach(function (g, gi) {
+      (g.subs || []).forEach(function (s) {
+        items.push({ taskId: task.id, groupId: g.id, subId: s.id, text: s.text,
+          groupName: g.name || ('任务组 ' + (gi + 1)), minutes: s.minutes || 1,
+          points: s.points || 0, done: s.done === true });
+      });
+    });
+    (task.subs || []).forEach(function (s) {
+      items.push({ taskId: task.id, groupId: null, subId: s.id, text: s.text,
+        groupName: '', minutes: s.minutes || 1, points: s.points || 0, done: s.done === true });
+    });
+    return items;
+  }
+
+  /** 🎧 选课弹窗：勾上这次要一起听的几节（默认只勾没听完的） */
+  function lecturePickModal(listKey, taskId, fromTomorrow) {
+    const day = S().getDay(fromTomorrow ? S().tomorrowKey() : S().todayKey());
+    const task = day.tasks[listKey] && day.tasks[listKey].find(function (t) { return t.id === taskId; });
+    if (!task) return;
+    const items = lectureItemsOf(task);
+    if (!items.length) { startLectureFromTask(listKey, taskId); return; }   // 没有小题 → 还是直接开整条
+    if (day.activeLecture) {                       // 已有课在计时 → 先问清楚，别再"点了没反应"
+      askSwitchLecture(task.text, function () {
+        if (App.lecture && App.lecture.abandonActive) App.lecture.abandonActive();  // 旧课存档，别又弹一次确认
+        lecturePickModal(listKey, taskId, fromTomorrow);
+      });
+      return;
+    }
+    let rows = '', lastG = '\u0000';
+    items.forEach(function (it, i) {
+      if (it.groupName !== lastG) {
+        lastG = it.groupName;
+        rows += '<div class="lp-g">' + (it.groupName ? '📁 ' + S().esc(it.groupName) : '📋 单独的小任务') + '</div>';
+      }
+      rows += '<label class="lp-row' + (it.done ? ' done' : '') + '">' +
+        '<input type="checkbox" class="lp-cb" data-i="' + i + '"' + (it.done ? '' : ' checked') + ' />' +
+        '<span class="lp-t">' + S().esc(it.text) + '</span>' +
+        '<span class="lp-m">' + it.minutes + ' 分钟' + (it.points ? ' · +' + it.points + ' 分' : '') + '</span>' +
+        (it.done ? '<span class="lp-d">✓ 完成过</span>' : '') + '</label>';
+    });
+    const html =
+      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:6px">勾上这次要<b>连着听</b>的几节 —— '
+      + '上完一节会自动接下一节，不用来回挑。'
+      + (fromTomorrow ? '（记在今天的时间轴，走完勾掉「明天」那几条）' : '') + '</p>'
+      + '<div class="lp-quick">'
+      + '<button class="btn btn-small" data-q="undone">只留没听完的</button>'
+      + '<button class="btn btn-small" data-q="all">全选</button>'
+      + '<button class="btn btn-small" data-q="none">全不选</button>'
+      + '<span class="lp-sum" id="lp-sum"></span></div>'
+      + '<div class="lp-list">' + rows + '</div>';
+    const modal = App.ui.openModal('🎧 这次要连着听哪几节？', html,
+      '<button class="btn btn-primary" data-act="ok">▶ 开始连听</button>' +
+      '<button class="btn" data-act="cancel">取消</button>');
+    const boxes = function () { return [].slice.call(modal.querySelectorAll('.lp-cb')); };
+    const sum = function () {
+      const on = boxes().filter(function (b) { return b.checked; });
+      const mins = on.reduce(function (a, b) { return a + (items[+b.dataset.i].minutes || 1); }, 0);
+      const el = modal.querySelector('#lp-sum');
+      if (el) el.textContent = '已选 ' + on.length + ' 节 · 预计 ' + mins + ' 分钟';
+    };
+    boxes().forEach(function (b) { b.onchange = sum; });
+    modal.querySelectorAll('[data-q]').forEach(function (b) {
+      b.onclick = function () {
+        const k = b.dataset.q;
+        boxes().forEach(function (x) {
+          const it = items[+x.dataset.i];
+          x.checked = (k === 'all') ? true : ((k === 'none') ? false : !it.done);
+        });
+        sum();
+      };
+    });
+    sum();
+    App.ui.bindActions({
+      ok: function () {
+        const picked = boxes().filter(function (b) { return b.checked; })
+          .map(function (b) { return items[+b.dataset.i]; });
+        if (!picked.length) { App.ui.toast('先勾上至少一节'); return; }
+        App.ui.closeModal();
+        startQueue(picked, listKey, fromTomorrow);
+      },
+      cancel: function () { App.ui.closeModal(); }
+    });
+  }
+
+  function startQueue(items, listKey, fromTomorrow) {
+    if (!items || !items.length) return;
+    const day = S().getDay(S().todayKey());
+    day.lectureQueue = { id: S().uid(), listKey: listKey || 'required', idx: 0,
+      fromTomorrow: !!fromTomorrow, items: items.slice(), startedAt: Date.now() };
+    S().save();
+    playQueueItem(0);
+  }
+  /** 给 lecture.js 的徽标用：连听 3/12 */
+  function queueInfo() {
+    const q = S().getDay(S().todayKey()).lectureQueue;
+    if (!q || !(q.items || []).length) return null;
+    return { idx: Math.min(Math.max(1, (q.idx || 0) + 1), q.items.length), total: q.items.length,
+      cur: q.items[Math.max(0, q.idx || 0)] || null };
+  }
+  function playQueueItem(i, depth) {
+    const day = S().getDay(S().todayKey());
+    const q = day.lectureQueue;
+    if (!q || !q.items[i]) { endQueue('🎬 连听队列走完了'); return; }
+    q.idx = i;
+    S().save();
+    const it = q.items[i];
+    startLectureFromSub(q.listKey || 'required', it.taskId, it.subId, it.groupId, !!q.fromTomorrow);
+    if (!day.activeLecture) {
+      // ★ v58：这一节已经不在了（被删/改过）→ 跳过它接着找下一节能上的
+      if ((depth || 0) < 30 && i + 1 < q.items.length) { playQueueItem(i + 1, (depth || 0) + 1); return; }
+      endQueue('这几节都不在了（可能被删了），连听结束');
+      return;
+    }
+    renderAll(); showTimerBar();
+  }
+  function endQueue(msg) {
+    const day = S().getDay(S().todayKey());
+    day.lectureQueue = null;
+    clearPendingChoice();
+    S().save(); renderAll();
+    if (msg) App.ui.toast(msg, 3600);
+  }
+  /** 一节上完（完成 / 跳过 / 放弃）→ 弹窗自动衔接下一节 */
+  function afterLecture(L, how) {
+    const day = S().getDay(S().todayKey());
+    const q = day.lectureQueue;
+    if (!q) return;
+    const next = (q.idx || 0) + 1;
+    if (next >= q.items.length) { endQueue('🎉 这 ' + q.items.length + ' 节都上完了，连听结束'); return; }
+    queuePrompt(next);
+  }
+  function queuePrompt(next) {
+    const day = S().getDay(S().todayKey());
+    const q = day.lectureQueue;
+    if (!q) return;
+    const total = q.items.length;
+    if (next >= total) { endQueue('🎉 全部上完了'); return; }
+    const it = q.items[next];
+    setPendingChoice('queue', it.text);      // ★ 先落库：关掉弹窗也不丢
+    renderAll();
+    App.ui.openModal('🎧 连听 ' + (next + 1) + '/' + total,
+      '<p style="font-size:13.5px">刚那节搞定了 ✅　下一节：<b>' + S().esc(it.text) + '</b>（' + it.minutes + ' 分钟）</p>' +
+      '<p class="hint">不用回列表挑 —— 点「马上开始」，或者什么都不点，5 秒后自动接着上。</p>',
+      '<button class="btn btn-primary" data-act="go">▶ 马上开始（<span id="lq-n">5</span>）</button>' +
+      '<button class="btn" data-act="pause">🕘 停一下（留着）</button>' +
+      '<button class="btn" data-act="stop">⏹ 结束连听</button>');
+    let n = 5;
+    if (lqTimer) { clearInterval(lqTimer); lqTimer = null; }
+    lqTimer = setInterval(function () {
+      const el = App.ui.query ? App.ui.query('#lq-n') : document.getElementById('lq-n');
+      if (!el) { stopTimer(); return; }   // ★ v58：弹窗被 X/ESC 关掉了 → 停掉倒计时，别再自动开下一节（也别误关别人的弹窗）
+      n--;
+      el.textContent = String(Math.max(0, n));
+      if (n <= 0) go();
+    }, 1000);
+    function stopTimer() { if (lqTimer) { clearInterval(lqTimer); lqTimer = null; } }
+    function go() {
+      stopTimer();
+      App.ui.closeModal();
+      clearPendingChoice();
+      playQueueItem(next);
+    }
+    App.ui.bindActions({
+      go: go,
+      pause: function () { stopTimer(); App.ui.closeModal(); renderAll();
+        App.ui.toast('好，留着 —— 任务页顶部或小窗里点「▶ 下一节」随时接着上', 4000); },
+      stop: function () { stopTimer(); App.ui.closeModal(); endQueue('⏹ 已结束连听（上过的都记着）'); }
+    });
+  }
+  /** 已有课在计时中，用户又点了别的 🎧 → 明确问一句 */
+  function askSwitchLecture(newName, retry) {
+    const day = S().getDay(S().todayKey());
+    const cur = day.activeLecture;
+    if (!cur) { if (retry) retry(); return; }
+    App.ui.openModal('⚠️ 现在正在上「' + S().esc(cur.course) + '」',
+      '<p style="font-size:13.5px">你要开的是「<b>' + S().esc(newName || '新的') + '</b>」。</p>' +
+      '<p class="hint">直接换的话，当前这节按「放弃」存档（已听的时间照样记进时间轴，只是不发大奖）。</p>',
+      '<button class="btn btn-primary" data-act="ok">🔄 换成新选的</button>' +
+      '<button class="btn" data-act="cancel">↩ 先上完当前这节</button>');
+    App.ui.bindActions({
+      ok: function () { App.ui.closeModal(); if (retry) retry(); renderAll(); },
+      cancel: function () { App.ui.closeModal(); App.ui.toast('好，继续上「' + cur.course + '」'); }
+    });
+  }
+
+  /* ================= 🌙 待办衔接条（v56）=================
+     用户实测：小任务到点弹出提示，关掉之后"去休息 / 接着做"的选项就没了，之后也开不了新任务。
+     现在：① 到点立刻把时间结算掉（不等用户选）② 没做选择就留一条常驻的"待办衔接"，
+     网页任务页顶部和小窗抽屉里都能点，随时能接着处理。 */
+  function pendingOf() {
+    const day = S().getDay(S().todayKey());
+    return { choice: day.pendingChoice || null, subs: day.pendingSubs || [] };
+  }
+  /** 还没标"完成/没完成"的小任务（可能不止一条：没标就开下一个，上一条也不会被顶掉） */
+  function pendingSubsList() {
+    const day = S().getDay(S().todayKey());
+    day.pendingSubs = day.pendingSubs || [];
+    return day.pendingSubs;
+  }
+  function dropPendingSub(pid) {
+    const day = S().getDay(S().todayKey());
+    day.pendingSubs = (day.pendingSubs || []).filter(function (x) { return x.id !== pid; });
+    S().save();
+  }
+  function setPendingChoice(kind, text) {
+    const day = S().getDay(S().todayKey());
+    day.pendingChoice = { id: S().uid(), kind: kind, text: text || '', at: Date.now() };
+    S().save();
+  }
+  function clearPendingChoice() {
+    const day = S().getDay(S().todayKey());
+    if (!day.pendingChoice) return;
+    day.pendingChoice = null;
+    S().save();
+  }
+  function pendingChoiceText(c) {
+    if (!c) return '';
+    if (c.kind === 'plan') return '⏸ 这一段结束了 —— 接下来？';
+    if (c.kind === 'queue') return '🎧 连听中 · 下一节：' + (c.text || '');
+    return '🎉 「' + (c.text || '这一组') + '」做完了 —— 接下来？';
+  }
+  /** 待办衔接条：网页任务页 + 悬浮窗抽屉共用同一份 HTML */
+  function pendingBarHTML() {
+    const P = pendingOf();
+    if (!P.choice && !P.subs.length) return '';
+    let h = '<div class="pend-bar">';
+    P.subs.forEach(function (s) {
+      const tag = ' <span style="color:#8a919c">（' + (s.minutes || 1) + ' 分钟已记）</span>';
+      h += '<div class="pend-row"><span class="pend-t">⏱ 「' + S().esc(s.text) + '」已经停了，'
+        + '时间也记好了' + tag + ' —— 这题算完成吗？</span>'
+        + '<button class="btn btn-small btn-primary" data-pend="subdone" data-pid="' + s.id + '">✅ 完成</button>'
+        + '<button class="btn btn-small" data-pend="subfail" data-pid="' + s.id + '">❌ 没完成</button>'
+        + '<button class="btn btn-small" data-pend="subskip" data-pid="' + s.id + '">✕ 不用记</button></div>';
+    });
+    if (P.choice) {
+      h += '<div class="pend-row"><span class="pend-t">' + S().esc(pendingChoiceText(P.choice)) + '</span>'
+        + (P.choice.kind === 'plan'
+          ? '<button class="btn btn-small btn-primary" data-pend="work">📚 继续做任务</button>'
+            + '<button class="btn btn-small" data-pend="rest">☕ 去休息</button>'
+          : (P.choice.kind === 'queue'
+            ? '<button class="btn btn-small btn-primary" data-pend="qnext">▶ 下一节</button>'
+              + '<button class="btn btn-small" data-pend="qstop">⏹ 结束连听</button>'
+            : '<button class="btn btn-small btn-primary" data-pend="next">▶ 接着做（下一题）</button>'
+              + '<button class="btn btn-small" data-pend="rest">☕ 去休息</button>'))
+        + '<button class="btn btn-small" data-pend="later">✕ 先不管</button></div>';
+    }
+    return h + '</div>';
+  }
+  function bindPendingBar(scope) {
+    if (!scope || !scope.querySelectorAll) return;
+    scope.querySelectorAll('[data-pend]').forEach(function (b) {
+      b.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        if (e && e.preventDefault) e.preventDefault();
+        doPendingAction(b.dataset.pend, b.dataset.pid || '');
+      };
+    });
+  }
+  function doPendingAction(a, pid) {
+    const day = S().getDay(S().todayKey());
+    if (a === 'subdone' || a === 'subfail') { resolvePendingSub(pid, a === 'subdone'); return; }
+    if (a === 'subskip') {
+      dropPendingSub(pid); renderAll(); showTimerBar();
+      App.ui.toast('好，这题就不标了（时间已经记下）');
+      return;
+    }
+    if (a === 'later') {
+      // 只把这条收起来，不代表做了选择 —— 之后还能在任务页顶部重新选？不，这条就是"先不管"
+      clearPendingChoice(); groupDoneInfo = null; pendingNext = null;
+      renderAll(); showTimerBar();
+      App.ui.toast('好，先不管。想休息/继续随时在任务页重新开始一段就行');
+      return;
+    }
+    if (a === 'qnext' || a === 'qstop') {
+      const q = S().getDay(S().todayKey()).lectureQueue;
+      clearPendingChoice();
+      if (a === 'qstop' || !q) { endQueue('⏹ 已结束连听'); return; }
+      renderAll();
+      playQueueItem((q.idx || 0) + 1);
+      return;
+    }
+    const kind = day.pendingChoice ? day.pendingChoice.kind : '';
+    clearPendingChoice();
+    groupDoneInfo = null; pendingNext = null;
+    renderAll();
+    if (a === 'work') { startHourPlanModal(); return; }
+    if (a === 'rest') {
+      if (smallRest) { App.ui.toast('已经在休息中'); return; }
+      if (kind === 'plan') startRestModal(); else startSmallRest();
+      return;
+    }
+    if (a === 'next') {
+      if (pendingNext) startNextSub();
+      else App.ui.toast('回到任务页，点小任务的 ⏱ 就能开下一题');
+      return;
+    }
+  }
+  /** 待办的小任务：标完成 / 没完成（时间早在到点时就结算过了，这里只补结果和积分） */
+  function resolvePendingSub(pid, doneFlag) {
+    const day = S().getDay(S().todayKey());
+    const p = (day.pendingSubs || []).find(function (x) { return x.id === pid; });
+    if (!p) return;
+    const task = day.tasks[p.taskKey] && day.tasks[p.taskKey].find(function (t) { return t.id === p.taskId; });
+    const found = task ? findSubInTask(task, p.subId) : null;
+    if (found && found.sub) found.sub.done = doneFlag;
+    const pts = doneFlag ? (p.earnPoints || 0) : 0;
+    if (pts > 0) {
+      S().addLedger(S().todayKey(), 'earn-sub', { points: pts,
+        note: '小任务：' + p.text + '（' + (p.taskText || '') + '）·' + (p.earnTier || ''), taskId: p.taskId });
+      App.ui.floatAt(document.getElementById('stat-points'), '+' + pts + '分');
+    }
+    const rec = (day.timeline || []).find(function (r) { return r.id === p.recId; });
+    if (rec) delete rec.waitMark;
+    const sess = (day.sessions || []).find(function (s) { return s.id === p.sessId; });
+    if (sess) sess.done = doneFlag;
+    dropPendingSub(pid);
+    renderAll(); showTimerBar();
+    App.ui.toast(doneFlag ? ('✅ 记上了' + (pts ? ' +' + pts + ' 分' : '')) : '⛔ 记作没完成（时间已经记下）');
+  }
+  /** ★ 到点立刻结算：写时间轴 + 今日用时，并把计时器清掉（不等用户选"完成/没完成"） */
+  function settleCdNow(cd) {
+    const day = S().getDay(S().todayKey());
+    const stDate = new Date(cd.startedAt);
+    const endDate = new Date();
+    let sMin = stDate.getHours() * 60 + stDate.getMinutes();
+    let eMin = endDate.getHours() * 60 + endDate.getMinutes();
+    if (eMin < sMin) eMin = 1439;
+    const span = Math.max(0, eMin - sMin);
+    const elapsedMin = Math.max(1, Math.round((Date.now() - cd.startedAt - (cd.pausedMs || 0)) / 60000));
+    const mins = Math.max(1, Math.min(elapsedMin, span > 0 ? span : elapsedMin));
+    const rec = {
+      id: S().uid(), start: sMin, end: eMin, minutes: mins, content: cd.text,
+      category: 'study', countAsStudy: true, auto: true, sub: true,
+      taskId: cd.taskId, taskText: cd.taskText, note: '', waitMark: true
+    };
+    day.timeline.push(rec);
+    const sess = {
+      id: S().uid(), taskId: cd.taskId, taskText: cd.taskText,
+      planContent: cd.text, planMinutes: cd.minutes, actualMinutes: mins,
+      actualSeconds: Math.round((Date.now() - cd.startedAt - (cd.pausedMs || 0)) / 1000),
+      sub: true, done: null, note: '', startAt: stDate.toISOString(), endAt: endDate.toISOString(),
+      pausedMs: cd.pausedMs || 0
+    };
+    day.sessions.push(sess);
+    cd.recId = rec.id;
+    cd.sessId = sess.id;
+    pendingSubsList().push({
+      id: S().uid(), taskKey: cd.taskKey, taskId: cd.taskId, groupId: cd.groupId || null, subId: cd.subId,
+      text: cd.text, taskText: cd.taskText, minutes: mins,
+      points: cd.points || 0, earnPoints: cd.earnPoints || 0, earnTier: cd.earnTier || '',
+      recId: rec.id, sessId: sess.id, at: Date.now()
+    });
+    cdTimer = null;                 // ★ 关键：计时器清掉 → 用户可以立刻开新任务
+    stopTickIfIdle();
+    showTimerBar();
+    App.tasks.renderAll();
+    S().save();
+  }
+  /** 用户在弹窗里选了"完成 / 没完成" → 补结果 + 发积分（时间已经结算过） */
+  function finishCdResult(cd, doneFlag, summary) {
+    const day = S().getDay(S().todayKey());
+    const task = day.tasks[cd.taskKey] && day.tasks[cd.taskKey].find(function (t) { return t.id === cd.taskId; });
+    const found = task ? findSubInTask(task, cd.subId) : null;
+    if (found && found.sub) {
+      found.sub.done = doneFlag;
+      if (summary) found.sub.summary = summary;
+    }
+    const pts = (cd.earnPoints != null ? cd.earnPoints : cd.points) || 0;
+    if (doneFlag && pts > 0) {
+      const tierMark = cd.earnFactor > 1 ? cd.earnTier + '，×' + cd.earnFactor : cd.earnTier;
+      S().addLedger(S().todayKey(), 'earn-sub', { points: pts,
+        note: '小任务：' + cd.text + '（' + cd.taskText + '）·' + tierMark, taskId: cd.taskId });
+      App.ui.floatAt(document.getElementById('stat-points'), '+' + pts + '分');
+    }
+    const rec = (day.timeline || []).find(function (r) { return r.id === cd.recId; });
+    if (rec) { rec.note = summary || ''; delete rec.waitMark; }
+    const sess = (day.sessions || []).find(function (s) { return s.id === cd.sessId; });
+    if (sess) { sess.done = doneFlag; sess.note = summary || ''; }
+    const mine = (day.pendingSubs || []).find(function (x) { return x.recId === cd.recId; });
+    if (mine) dropPendingSub(mine.id); else { day.pendingSubs = []; S().save(); }
+    App.ui.closeModal();
+    S().save(); renderAll(); showTimerBar();
   }
 
   function markSub(cd, doneFlag, summary) {
@@ -2147,6 +2630,7 @@
       '<button class="btn btn-small" data-act="paste">📋 从往日粘贴任务</button>' +
       '<button class="btn btn-small" data-act="trash">🗑 回收站（误删恢复）</button>' +
       '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务</span></div>' +
+      pendingBarHTML() +                     // ★ v56：待办衔接（某题没标结果 / 接着做还是休息）
       COLS.map(function (col) {
       const list = day.tasks[col.key];
       const doneN = list.filter(function (t) { return t.done; }).length;
@@ -2164,6 +2648,7 @@
         '</div>';
     }).join('');
     bindTodayEvents();
+    bindPendingBar(box);
     renderStreakBar();
     renderReview(dayKey);
     renderHourPlan(dayKey);
@@ -2253,6 +2738,24 @@
       if (colKey && hourPlanBucket(s.taskId) !== colKey) return;
       ms += (s.actualSeconds != null ? s.actualSeconds / 60 : (s.actualMinutes || 0)); // 秒级精确累加，不丢时间
     });
+    // 🎓 听课三步走的是「时间轴」，不写 sessions —— 所以必须单独补进来，
+    // 否则「听了一小时课，小时代显示实际 0 分钟 · 未达标」（2026-09-15 用户实测踩到）
+    // ★ v55：按"记录与本段窗口的重叠分钟"计，而不是"起点必须落在窗口内"。
+    //    原来课是从上一段就开始听的 → 起点在窗口外 → 整条被丢掉（用户报"时间少算"）
+    const sd = new Date(plan.startAt);
+    const startMin = sd.getHours() * 60 + sd.getMinutes();
+    const ud = new Date(up);
+    let upMin = ud.getHours() * 60 + ud.getMinutes();
+    if (upMin < startMin) upMin = 1439;
+    (day.timeline || []).forEach(function (r) {
+      if (!r.lectureId) return;                    // 只认听课记录（小时代自身那条没有 lectureId）
+      const bk = r.taskId ? (hourPlanBucket(r.taskId) || 'required') : 'required';
+      if (colKey && bk !== colKey) return;
+      const rS = r.start || 0, rE = (r.end == null ? rS : r.end);
+      const ov = Math.max(0, Math.min(rE, upMin) - Math.max(rS, startMin));
+      if (ov <= 0) return;
+      ms += Math.min(ov, r.minutes || ov);         // 重叠分钟，但不超记录自身时长
+    });
     return ms;
   }
   // 进行中（还没点结算）的任务计时：也算进这一段——到点自动结算不再漏掉正做着的时间。
@@ -2282,6 +2785,27 @@
         live[bk] += cred / 60000;
         live.total += cred / 60000;
       });
+      // 🎓 正在上的那节课也算"进行中"（同样不写 sessions），否则到点自动结算时
+      // 这一段会显示"没学到东西"。暂停/小休的时间不算（activeSeconds 已扣过）
+      if (App.lecture && App.lecture.activeSeconds) {
+        const L2 = S().getDay(S().todayKey()).activeLecture;
+        const sec = L2 ? App.lecture.activeSeconds() : 0;
+        if (L2 && sec > 0) {
+          const stMs = L2.previewStartAt || Date.now();
+          if (stMs <= up) {
+            const roomMs = Math.max(0, up - Math.max(stMs, start));
+            const mins = Math.min(sec * 1000, roomMs) / 60000;
+            const key = 'lec|' + L2.id;
+            const cred2 = Math.max(0, mins - (liveCredited[key] || 0));
+            if (cred2 > 0) {
+              if (record) liveCredited[key] = mins;
+              const bk2 = L2.taskId ? (hourPlanBucket(L2.taskId) || 'required') : 'required';
+              live[bk2] += cred2;
+              live.total += cred2;
+            }
+          }
+        }
+      }
     }
     return {
       targets: { required: req, ideal: ide, extra: ext },
@@ -2355,7 +2879,7 @@
   }
   // 结束结算：到点即封顶（窗口=[开始, 开始+时长+小休顺延]），到点后补做不算；
   // 还在做的任务（没点结算的）时间一并计入，达标就照常发提前定的积分
-  function endHourPlan() {
+  function endHourPlan(fromLate) {
     const day = S().getDay(S().todayKey());
     const plan = day.activeHourPlan;
     if (!plan) { App.ui.toast('当前没有进行中的小时计划'); return; }
@@ -2385,7 +2909,8 @@
     }
     else {
       App.ui.toast(plan.autoEnd
-        ? ('⏰ 到点了，这段没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分，到点即封顶、超时补做不算）——积分清零，下段再冲 💪')
+        ? ((fromLate ? '⏰ 到点了（你不在这个页面的时候），已经帮你自动结算：' : '⏰ 到点了，这段没达标（')
+           + '做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分，到点即封顶、超时补做不算）——积分清零，下段再冲 💪')
         : ('这小时没达标（做了 ' + sum.aTotal + '/' + sum.tTotal + ' 分）——下小时再冲一把 💪'));
       hourReviewPrompt(plan);
     }
@@ -2492,12 +3017,18 @@
   }
   // 一段结束后的衔接选择窗：强制别闲下来 → 继续做任务 或 去休息
   function nextStepPrompt() {
+    setPendingChoice('plan', '');        // ★ 先落库：关掉也不会丢
+    renderAll();                         // ★ 立刻画出来（X 关掉弹窗也已经有入口）
     App.ui.openModal('✅ 这一段结束了，接下来？',
-      '<p style="font-size:13px">别让空档落下去——马上定下一段，或主动去休息（好好休息也有积分）。</p>',
-      '<button class="btn btn-primary" data-act="work">📚 继续做任务</button><button class="btn" data-act="rest">☕ 去休息</button>');
+      '<p style="font-size:13px">别让空档落下去——马上定下一段，或主动去休息（好好休息也有积分）。'
+      + '<b>先不选也不会丢</b>：任务页顶部会留一条，随时能接着选。</p>',
+      '<button class="btn btn-primary" data-act="work">📚 继续做任务</button>' +
+      '<button class="btn" data-act="rest">☕ 去休息</button>' +
+      '<button class="btn" data-act="later">🕘 先不选（留着）</button>');
     App.ui.bindActions({
-      work: function () { App.ui.closeModal(); startHourPlanModal(); },
-      rest: function () { App.ui.closeModal(); startRestModal(); }
+      work: function () { App.ui.closeModal(); clearPendingChoice(); renderAll(); startHourPlanModal(); },
+      rest: function () { App.ui.closeModal(); clearPendingChoice(); renderAll(); startRestModal(); },
+      later: function () { App.ui.closeModal(); renderAll(); App.ui.toast('好，这条留着 —— 任务页顶部随时能接着选', 3600); }
     });
   }
   // 定一段休息：类型 + 时长 + 提前填「好好休息」积分
@@ -2585,8 +3116,9 @@
     const p = day.activeHourPlan;
     if (p) {
       if (Date.now() >= hpEffectiveEndMs(p)) {
+        const late = Date.now() - hpEffectiveEndMs(p);
         notifyNow('⏰ 这一段结束了', '回专注计划安排接下来：休息，还是接着学？');
-        endHourPlan();
+        endHourPlan(late > 120000);   // 超过 2 分钟才发现 → 说明你当时没在这个页面
         return;
       } // 小休中到点同步冻结，不会误触发
     }
@@ -2839,7 +3371,7 @@
       }
       const listKey = row.dataset.list, taskId = row.dataset.id;
       const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
-      if (act === 'lecture') { startLectureFromTask(listKey, taskId); return; }
+      if (act === 'lecture') { lecturePickModal(listKey, taskId, false); return; }
       if (act === 'check') toggleTask(listKey, taskId);
       else if (act === 'edit') editTaskModal(listKey, taskId, S().todayKey(), false);
       else if (act === 'start') startTimer(listKey, taskId);
@@ -2917,7 +3449,7 @@
       if (act === 'sub-add' && listKey) { addSubModal(listKey, actBtn.dataset.task, null, S().tomorrowKey()); return; }
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
-      if (act === 'lecture' && listKey && row) { startLectureFromTask(listKey, row.dataset.id); return; }
+      if (act === 'lecture' && listKey && row) { lecturePickModal(listKey, row.dataset.id, true); return; }
       if (act === 'cd-start' && listKey) { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
       if (act === 'sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'g-sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey(), actBtn.dataset.group); return; }
@@ -3077,7 +3609,8 @@
     delete c.summary;
     if (c.subs) c.subs = c.subs.map(function (x) {
       x.id = S().uid();
-      x.done = false;
+      // ⚠️ 必须 null：false 在界面上是「✗未完成」（红的），null 才是「还没做过」（初始状态）
+      x.done = null;
       delete x.summary;
       delete x.splitlog;
       if (x.sessions) x.sessions = [];
@@ -3085,10 +3618,9 @@
     });
     if (c.groups) c.groups = c.groups.map(function (g) {
       g.id = S().uid();
-      g.done = false;
       if (g.subs) g.subs = g.subs.map(function (x) {
         x.id = S().uid();
-        x.done = false;
+        x.done = null;               // 同上：新的一天是全新的一题，别带旧的对错
         delete x.summary;
         delete x.splitlog;
         if (x.sessions) x.sessions = [];
@@ -3098,64 +3630,208 @@
     });
     return c;
   }
+  /* ---------- 📋 从别的日子把任务搬过来 ----------
+     默认「只带没做完的题」；每条能展开看明细、逐题勾选、还能改分类栏；
+     转过来的一律是初始状态（deepCloneTask 已把 done 清成 null） */
   function pasteTasksModal(targetDayKey) {
     const data = S().data();
     const target = S().getDay(targetDayKey);
     const todayK = S().todayKey(), tomorrowK = S().tomorrowKey();
-    // 来源 = 除目标日以外的任何一天（今天没做完的也能搬去明天）
     const days = Object.keys(data.days || {}).filter(function (k) { return k !== targetDayKey; }).sort();
-    if (!days.length) { App.ui.toast('还没有可粘贴的往日'); return; }
-    const modal = App.ui.openModal('📋 从往日粘贴任务',
-      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把某一天的任务（含小题/任务组）复制到「' +
-      (targetDayKey === todayK ? '今天' : (targetDayKey === tomorrowK ? '明天' : S().shortDateCN(targetDayKey))) +
-      '」，保持原分类栏；搬完按自己的完成情况把做过的 ❌ 掉即可。</p>' +
-      '<div class="field"><label>选择要粘贴的日期</label><select id="paste-date">' +
+    if (!days.length) { App.ui.toast('还没有可转移的日子'); return; }
+    const labelOf = function (k) {
+      return k === todayK ? '今天' : (k === tomorrowK ? '明天' : S().shortDateCN(k));
+    };
+    const colOpts = function (curKey) {
+      return COLS.map(function (c) {
+        return '<option value="' + c.key + '"' + (c.key === curKey ? ' selected' : '') + '>' + c.name + '</option>';
+      }).join('');
+    };
+    /** 一条任务里的所有题：统一成 [{g, i, sub, gname}]（g = -1 表示不在任务组里） */
+    const subsOf = function (t) {
+      const list = [];
+      (t.groups || []).forEach(function (g, gi) {
+        (g.subs || []).forEach(function (x, si) { list.push({ g: gi, i: si, sub: x, gname: g.name || '任务组' }); });
+      });
+      (t.subs || []).forEach(function (x, si) { list.push({ g: -1, i: si, sub: x, gname: '' }); });
+      return list;
+    };
+    /** 这条默认带不带：有没做完的题就带；没题的话看任务本身 */
+    const defaultTaskOn = function (t) {
+      const ss = subsOf(t);
+      if (!ss.length) return !t.done;
+      return ss.some(function (x) { return x.sub.done !== true; });
+    };
+
+    const modal = App.ui.openModal('📋 从其他天转移任务',
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:8px">把别的日子搬到「' + labelOf(targetDayKey) +
+      '」。<b>默认只带没做完的题</b>，搬过来的一律是<b>初始状态</b>（不带旧日的对错）。' +
+      '点「▸ 展开」能看到这一条下面的每道题，可以逐题勾；右边的下拉能改分类栏（<b>拓展没做完的可以并进必须</b>）。</p>' +
+      '<div class="field"><label>要搬哪一天</label><select id="paste-date">' +
       days.map(function (k) {
         const n = ((data.days[k].tasks || {}).required || []).length;
         return '<option value="' + k + '">' + S().fmtDateCN(k) + '（必须 ' + n + ' 条）</option>';
       }).join('') + '</select></div>' +
-      '<div id="paste-list" style="max-height:46vh;overflow:auto;border:1px solid #e5e8ec;border-radius:8px;padding:10px;margin-top:8px"></div>',
-      '<button class="btn btn-primary" data-act="ok">📋 粘贴勾选任务</button><button class="btn" data-act="cancel">取消</button>');
-    function colBlock(col, name) {
-      const list = (data.days[modal.querySelector('#paste-date').value].tasks[col] || []);
-      if (!list.length) return '';
-      return '<div style="margin-bottom:10px"><div style="font-weight:600;margin-bottom:4px">' + name + '（' + list.length + '）</div>' +
-        list.map(function (t, idx) {
-          const extra = (t.subs && t.subs.length ? ' <span style="color:#8a919c">(小题' + t.subs.length + ')</span>' : '') +
-            (t.groups && t.groups.length ? ' <span style="color:#8a919c">(组' + t.groups.length + ')</span>' : '');
-          return '<label style="display:flex;gap:6px;align-items:center;font-size:13px;line-height:1.8"><input type="checkbox" value="' + col + ':' + idx + '" data-check />' + S().esc(t.text) + extra + '</label>';
-        }).join('') + '</div>';
-    }
+      '<div class="paste-quick">' +
+      '<button class="btn btn-small" data-q="undone">只带没做完的</button>' +
+      '<button class="btn btn-small" data-q="all">全部都带</button>' +
+      '<button class="btn btn-small" data-q="none">全不选</button>' +
+      '<span class="paste-quick-hint">勾了任务=它下面没做完的题一起带</span></div>' +
+      '<div id="paste-list" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px"></div>',
+      '<button class="btn btn-primary" data-act="ok">📋 转移勾选内容</button><button class="btn" data-act="cancel">取消</button>');
+
+    const srcDayOf = function () { return data.days[modal.querySelector('#paste-date').value]; };
+    const taskByKey = function (key) {
+      const p = key.split(':');
+      const day = srcDayOf();
+      return day ? (((day.tasks || {})[p[0]] || [])[+p[1]] || null) : null;
+    };
+    /** pick 值形如 col:idx:g2:3（组内第3题）或 col:idx:s:5（单独小任务第5个） */
+    const pickInfo = function (key, pv) {
+      const p = pv.split(':');
+      const t = taskByKey(key);
+      if (!t) return null;
+      const tag = p[2], ii = +p[3];
+      if (tag && tag.charAt(0) === 'g') {
+        const g = (t.groups || [])[+tag.slice(1)];
+        return g && g.subs && g.subs[ii] ? { g: +tag.slice(1), i: ii, sub: g.subs[ii] } : null;
+      }
+      return t.subs && t.subs[ii] ? { g: -1, i: ii, sub: t.subs[ii] } : null;
+    };
+
     function renderPaste() {
       const box = modal.querySelector('#paste-list');
-      const html = colBlock('required', '✅ 必须') + colBlock('ideal', '⭐ 理想') + colBlock('extra', '🌱 拓展');
-      box.innerHTML = html || '<p style="color:#8a919c;text-align:center">这一天没有任务</p>';
+      const day = srcDayOf();
+      if (!day) { box.innerHTML = '<p style="text-align:center;color:var(--muted)">这一天没有任务</p>'; return; }
+      let html = '';
+      COLS.forEach(function (col) {
+        const list = ((day.tasks || {})[col.key] || []);
+        if (!list.length) return;
+        html += '<div class="paste-col"><div class="paste-col-h">' + col.name + '（' + list.length + '）</div>';
+        list.forEach(function (t, idx) {
+          const key = col.key + ':' + idx;
+          const ss = subsOf(t);
+          const undone = ss.filter(function (x) { return x.sub.done !== true; }).length;
+          const badge = ss.length
+            ? (undone ? '<span class="paste-badge undone">' + undone + ' 题没做完</span>'
+                      : '<span class="paste-badge okk">都做完了</span>')
+            : '<span class="paste-badge">无小题</span>';
+          html += '<div class="paste-item" data-key="' + key + '">' +
+            '<label class="paste-row"><input type="checkbox" data-check value="' + key + '"' +
+            (defaultTaskOn(t) ? ' checked' : '') + ' /><span class="paste-name">' + S().esc(t.text) + '</span>' + badge + '</label>' +
+            '<select class="paste-tcol" data-tcol="' + key + '" title="转移到哪个分类栏">' + colOpts(col.key) + '</select>' +
+            (ss.length ? '<button class="btn btn-small paste-exp" data-exp="' + key + '">▸ 展开</button>' : '') +
+            '</div>' +
+            (ss.length ? '<div class="paste-detail" data-detail="' + key + '" hidden>' +
+              ss.map(function (x) {
+                const pk = key + ':' + (x.g >= 0 ? 'g' + x.g : 's') + ':' + x.i;
+                const st = x.sub.done === true ? '<span class="paste-st done">✓ 已完成</span>'
+                  : (x.sub.done === false ? '<span class="paste-st fail">✗ 未完成</span>'
+                    : '<span class="paste-st">· 没做过</span>');
+                return '<label class="paste-sub"><input type="checkbox" data-pick value="' + pk + '"' +
+                  (x.sub.done !== true ? ' checked' : '') + ' />' +
+                  (x.gname ? '<span class="paste-gtag">' + S().esc(x.gname) + '</span>' : '') +
+                  S().esc(x.sub.text) + st + '</label>';
+              }).join('') + '</div>' : '');
+        });
+        html += '</div>';
+      });
+      box.innerHTML = html || '<p style="text-align:center;color:var(--muted)">这一天没有任务</p>';
     }
+
     modal.querySelector('#paste-date').onchange = renderPaste;
+
+    // 快捷：只带没做完的 / 全部都带 / 全不选
+    modal.querySelector('.paste-quick').onclick = function (e) {
+      const b = e.target.closest('[data-q]');
+      if (!b) return;
+      const q = b.dataset.q;
+      modal.querySelectorAll('.paste-item').forEach(function (it) {
+        const key = it.dataset.key;
+        const t = taskByKey(key);
+        const chk = it.querySelector('[data-check]');
+        const picks = modal.querySelectorAll('[data-detail="' + key + '"] [data-pick]');
+        if (q === 'none') { chk.checked = false; picks.forEach(function (p) { p.checked = false; }); return; }
+        if (q === 'all') { chk.checked = true; picks.forEach(function (p) { p.checked = true; }); return; }
+        chk.checked = !!t && defaultTaskOn(t);
+        picks.forEach(function (p) {
+          const info2 = pickInfo(key, p.value);
+          p.checked = !!info2 && info2.sub.done !== true;
+        });
+      });
+    };
+
+    // 展开 / 收起
+    modal.querySelector('#paste-list').onclick = function (e) {
+      const b = e.target.closest('[data-exp]');
+      if (!b) return;
+      const d = modal.querySelector('[data-detail="' + b.dataset.exp + '"]');
+      if (!d) return;
+      if (d.hasAttribute('hidden')) { d.removeAttribute('hidden'); b.textContent = '▾ 收起'; }
+      else { d.setAttribute('hidden', ''); b.textContent = '▸ 展开'; }
+    };
+    // 勾任务 = 把它没做完的题一起勾上（取消 = 一起取消）
+    modal.querySelector('#paste-list').onchange = function (e) {
+      const chk = e.target.closest('[data-check]');
+      if (!chk) return;
+      const key = chk.dataset.key;
+      modal.querySelectorAll('[data-detail="' + key + '"] [data-pick]').forEach(function (p) {
+        const info3 = pickInfo(key, p.value);
+        p.checked = chk.checked && !!info3 && info3.sub.done !== true;
+      });
+    };
+
     renderPaste();
+
     App.ui.bindActions({
       ok: function () {
-        const checks = modal.querySelectorAll('input[data-check]:checked');
-        if (!checks.length) { App.ui.toast('先勾选要粘贴的任务'); return; }
-        const srcDay = data.days[modal.querySelector('#paste-date').value];
-        let n = 0;
-        checks.forEach(function (ch) {
-          const p = ch.value.split(':');
-          const t = (srcDay.tasks[p[0]] || [])[+p[1]];
+        const its = modal.querySelectorAll('.paste-item');
+        let n = 0, keptN = 0;
+        its.forEach(function (it) {
+          const key = it.dataset.key;
+          const chk = it.querySelector('[data-check]');
+          if (!chk || !chk.checked) return;
+          const t = taskByKey(key);
           if (!t) return;
-          if (!target.tasks[p[0]]) target.tasks[p[0]] = [];
-          target.tasks[p[0]].push(deepCloneTask(t));
+          const toCol = (it.querySelector('[data-tcol]') || {}).value || key.split(':')[0];
+          const keepS = [], keepG = {};
+          let hasDetail = false;
+          modal.querySelectorAll('[data-detail="' + key + '"] [data-pick]').forEach(function (p) {
+            hasDetail = true;
+            if (!p.checked) return;
+            const info4 = pickInfo(key, p.value);
+            if (!info4) return;
+            if (info4.g >= 0) { keepG[info4.g] = keepG[info4.g] || []; keepG[info4.g].push(info4.i); }
+            else keepS.push(info4.i);
+          });
+          const c = deepCloneTask(t);        // 已完成状态/旧评语/旧拆解 都会被清掉
+          if (hasDetail) {
+            keptN += keepS.length + Object.keys(keepG).reduce(function (a, k) { return a + keepG[k].length; }, 0);
+            if (c.subs) c.subs = c.subs.filter(function (x, ii) { return keepS.indexOf(ii) >= 0; });
+            if (c.groups) {
+              c.groups = c.groups.map(function (g, gi) {
+                g.subs = (g.subs || []).filter(function (x, si) { return (keepG[gi] || []).indexOf(si) >= 0; });
+                return g;
+              }).filter(function (g) { return (g.subs || []).length > 0; });
+            }
+            if (c.subs && !c.subs.length) delete c.subs;
+            if (c.groups && !c.groups.length) delete c.groups;
+          }
+          if (!target.tasks[toCol]) target.tasks[toCol] = [];
+          target.tasks[toCol].push(c);
           n++;
         });
+        if (!n) { App.ui.toast('先勾选要转移的任务'); return; }
         S().save();
         App.ui.closeModal();
-        App.ui.toast('已粘贴 ' + n + ' 条任务');
-        App.tasks.renderAll();
+        App.ui.toast('📋 已转移 ' + n + ' 条到「' + labelOf(targetDayKey) + '」' +
+          (keptN ? '（带 ' + keptN + ' 道题）' : '') + ' · 都是初始状态', 3200);
+        if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+        if (App.calendar && App.calendar.render) App.calendar.render();
       },
       cancel: App.ui.closeModal
     });
   }
-
   /* ---------- 回收站弹窗：误删的任务/小题/任务组可一键恢复 ---------- */
   function trashModal() {
     const trash = (S().data().trash = S().data().trash || []);
@@ -3244,6 +3920,22 @@
     streakRestore(); // 恢复刷新前的连续学习（当天有效）
     // ⏱ 小时计划常驻 tick：连续学习累计 + 到点自动结算 + 实时刷新倒计时
     setInterval(function () { hourPlanAutoTick(); }, 1000);
+    // ★ v55：页面重新可见 / 从后台回来 / 手机回前台 → 立刻判一次，逾期的小时代马上结算
+    // ★ v56：上次留下"待办衔接"（某题没标结果 / 接着做还是休息）→ 启动就把悬浮窗亮出来
+    try {
+      const d0 = S().getDay(S().todayKey());
+      if (d0.pendingChoice || (d0.pendingSubs || []).length) {
+        const f0 = document.querySelector('#timer-float');
+        if (f0) f0.classList.remove('hidden');
+        renderDrawer();
+      }
+    } catch (e) { /* 忽略 */ }
+    ['visibilitychange', 'pageshow', 'focus'].forEach(function (ev) {
+      window.addEventListener(ev, function () {
+        if (document.hidden) return;
+        try { hourPlanAutoTick(); } catch (e) { /* 忽略 */ }
+      });
+    });
     // 手机锁屏/切后台会释放防息屏锁，回前台且有计时时重新拿一次
     window.addEventListener('pagehide', function () { wakeFree(); });
     document.addEventListener('visibilitychange', function () {
@@ -3271,6 +3963,15 @@
     pipOpen: pipOpen, pipBack: pipBack, pipToggle: pipToggle, isPip: inPip,
     pipNeedSpace: pipNeedSpace, floatDoc: floatDoc, refreshFloat: showTimerBar,
     bindFloatButtons: bindFloatButtons,
+    hourPlanAutoTick: hourPlanAutoTick, endHourPlan: endHourPlan,
+    hourPlanActual: hourPlanActual, hourPlanSummary: hourPlanSummary,
+    pendingBarHTML: pendingBarHTML, bindPendingBar: bindPendingBar,
+    lecturePickModal: lecturePickModal, lectureItemsOf: lectureItemsOf,
+    startQueue: startQueue, queueInfo: queueInfo, playQueueItem: playQueueItem,
+    endQueue: endQueue, afterLecture: afterLecture, queuePrompt: queuePrompt,
+    askSwitchLecture: askSwitchLecture,
+    doPendingAction: doPendingAction, resolvePendingSub: resolvePendingSub,
+    settleCdNow: settleCdNow, setPendingChoice: setPendingChoice, clearPendingChoice: clearPendingChoice,
     wakeFree: wakeFree, bringPageForModal: bringPageForModal,
     finishSubByLecture: finishSubByLecture, startLectureFromSub: startLectureFromSub,
     dropLectureIfDeleted: dropLectureIfDeleted,

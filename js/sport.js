@@ -36,12 +36,24 @@
       if (gb) gb.onclick = function () { document.getElementById('sport-tab-plan').click(); };
       return;
     }
-    let html = '<div class="card"><h3>🏃 今日运动</h3><p class="hint">做完一项点它 = +分立即入账；没做完的，点底部「结算」会统一扣分。临时想起来的直接「➕ 临时加一项」。</p>';
+    let html = '<div class="card"><h3>🏃 今日运动</h3>' +
+      '<p class="hint">做完一项点它 = +分立即入账。<b>点错了别慌：右侧 ↩ 撤销，加过的分会扣回来</b>；' +
+      '想拆成几段（比如每 500 个算一段），点大项右边的「＋ 加分项」；没做完的点底部「结算」统一扣分。</p>';
     sports.forEach(function (grp, gi) {
-      html += '<div class="card"><h4>' + S().esc(grp.name) +
-        (grp.points > 0 ? ' <span style="color:var(--extra);font-size:12px">· 整组全做完再 +' + grp.points + ' 分</span>' : '') + '</h4>';
-      (grp.items || []).forEach(function (it, ii) {
-        const pts = it.points || DEFAULT_PTS;
+      const items = grp.items || [];
+      const doneN = items.filter(function (x) { return x.done; }).length;
+      html += '<div class="card"><h4 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span style="flex:1">' + S().esc(grp.name) +
+        (items.length ? ' <span class="sport-count">' + doneN + '/' + items.length + '</span>' : '') +
+        (grp.points > 0 ? ' <span style="color:var(--extra);font-size:12px">· 整组全做完再 +' + grp.points + ' 分</span>' : '') + '</span>' +
+        '<button class="btn btn-small" data-sadd="' + gi + '">＋ 加分项</button>' +
+        '<button class="btn btn-small" data-sdelg="' + gi + '">🗑</button>' +
+        '</h4>';
+      if (!items.length) {
+        html += '<p class="hint" style="margin:4px 0">这一项还没分小段。想「每 500 个算一段、每段 5 分」就点「＋ 加分项」拆开。</p>';
+      }
+      items.forEach(function (it, ii) {
+        const pts = it.points != null ? it.points : DEFAULT_PTS;
         const pen = it.pen != null ? it.pen : pts;
         const st = it.done ? '✅ 已完成 +' + pts + ' 分'
           : (it.settled ? '❌ 没做到 · 已扣 ' + pen + ' 分' : '🕐 还没做（没做扣 ' + pen + ' 分）');
@@ -50,32 +62,44 @@
           '<span style="flex:1;color:var(--ink)">' + S().esc(it.text) + '</span>' +
           '<span style="flex:0 0 auto;color:' + (it.done ? 'var(--extra)' : (it.settled ? 'var(--req)' : 'var(--muted)')) + ';font-weight:700">' +
           (it.done ? '+' : (it.settled ? '-' : '+')) + (it.settled ? pen : pts) + '分</span>' +
-          '<span style="flex:0 0 auto;font-size:11px;color:var(--muted)">' + st + '</span></div>';
+          '<span style="flex:0 0 auto;font-size:11px;color:var(--muted)">' + st + '</span>' +
+          (it.done || it.settled
+            ? '<button class="sport-mini" data-sundo="' + gi + '" data-i="' + ii + '" title="撤销这次的结果（加/扣的分原路退回）">↩ 撤销</button>'
+            : '') +
+          '<button class="sport-mini" data-sdel="' + gi + '" data-i="' + ii + '" title="删除这一项">🗑</button>' +
+          '</div>';
       });
       html += '</div>';
     });
-    html += '<div class="btn-row" style="margin-top:10px">' +
+    html += '<div class="btn-row" style="margin-top:10px;flex-wrap:wrap">' +
       '<button class="btn" id="sport-quick-add">➕ 临时加一项</button>' +
+      '<button class="btn" id="sport-add-group">➕ 加一个大项（如：跳绳 3000 个）</button>' +
       '<button class="btn btn-primary" id="sport-settle" style="margin-left:6px">🏁 结算今日运动（没做完的扣分）</button></div>' +
       '<button class="btn btn-block" id="sport-clear" style="margin-top:6px">🔄 清空今日运动重新开始</button></div>';
     wrap.innerHTML = html;
+
+    function grpAt(gi) { return (S().getDay(S().todayKey()).sports || [])[gi]; }
+    function itemAt(gi, ii) { const g = grpAt(gi); return g ? (g.items || [])[ii] : null; }
+
     wrap.querySelectorAll('.sport-item').forEach(function (el) {
-      el.onclick = function () {
-        const grp = sports[+el.dataset.g], it = grp.items[+el.dataset.i];
-        if (it.done || it.settled) return;
-        it.done = true; it.rewarded = true;
-        App.store.addLedger(S().todayKey(), 'sport', { points: it.points || DEFAULT_PTS, note: '🏃 运动完成：' + it.text + '，+' + (it.points || DEFAULT_PTS) + ' 分' });
-        if (grp.points > 0 && !grp.groupRewarded && (grp.items || []).every(function (x) { return !!x.done; })) {
-          grp.groupRewarded = true;
-          App.store.addLedger(S().todayKey(), 'sport', { points: grp.points, note: '🏃 整组「' + grp.name + '」全做完，奖励 +' + grp.points + ' 分' });
-        }
-        S().save();
-        if (App.app && App.app.refreshStats) App.app.refreshStats();
-        renderToday();
-      };
+      el.onclick = function () { finishItem(+el.dataset.g, +el.dataset.i); };
+    });
+    wrap.querySelectorAll('[data-sundo]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); undoItem(+b.dataset.sundo, +b.dataset.i); };
+    });
+    wrap.querySelectorAll('[data-sdel]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); delItem(+b.dataset.sdel, +b.dataset.i); };
+    });
+    wrap.querySelectorAll('[data-sadd]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); addItemModal(+b.dataset.sadd); };
+    });
+    wrap.querySelectorAll('[data-sdelg]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); delSportGroup(+b.dataset.sdelg); };
     });
     const qa = wrap.querySelector('#sport-quick-add');
     if (qa) qa.onclick = quickAddToday;
+    const ag = wrap.querySelector('#sport-add-group');
+    if (ag) ag.onclick = addGroupModal;
     const sb = wrap.querySelector('#sport-settle');
     if (sb) sb.onclick = settleToday;
     const cb = wrap.querySelector('#sport-clear');
@@ -84,6 +108,143 @@
         day.sports = []; S().save(); renderToday();
       });
     };
+  }
+
+  /** 点一项 = 完成并入账（已处理过的会被拦住，提醒用 ↩ 撤销） */
+  function finishItem(gi, ii) {
+    const day = S().getDay(S().todayKey());
+    const grp = (day.sports || [])[gi];
+    const it = grp && (grp.items || [])[ii];
+    if (!grp || !it) return;
+    if (it.done || it.settled) { App.ui.toast('这一项已经处理过了——想改就点右侧的「↩ 撤销」'); return; }
+    const pts = it.points != null ? it.points : DEFAULT_PTS;
+    it.done = true; it.rewarded = true;
+    S().addLedger(S().todayKey(), 'sport', { points: pts, note: '🏃 运动完成：' + it.text + '，+' + pts + ' 分' });
+    if (grp.points > 0 && !grp.groupRewarded && (grp.items || []).every(function (x) { return !!x.done; })) {
+      grp.groupRewarded = true;
+      S().addLedger(S().todayKey(), 'sport', { points: grp.points, note: '🏃 整组「' + grp.name + '」全做完，奖励 +' + grp.points + ' 分' });
+    }
+    S().save();
+    if (App.app && App.app.refreshStats) App.app.refreshStats();
+    renderToday();
+  }
+
+  /** ↩ 撤销：误点的完成 / 误判的"没做到"，都把动过的分原路退回来 */
+  function undoItem(gi, ii) {
+    const day = S().getDay(S().todayKey());
+    const grp = (day.sports || [])[gi];
+    const it = grp && (grp.items || [])[ii];
+    if (!grp || !it) return;
+    if (!it.done && !it.settled) { App.ui.toast('这一项还没有结果可以撤销'); return; }
+    const pts = it.points != null ? it.points : DEFAULT_PTS;
+    const pen = it.pen != null ? it.pen : pts;
+    if (it.done) {
+      it.done = false; it.rewarded = false;
+      S().addLedger(S().todayKey(), 'sport', { points: -pts, note: '🏃 撤销「' + it.text + '」的完成，退回 ' + pts + ' 分' });
+      if (grp.groupRewarded) {
+        grp.groupRewarded = false;
+        if (grp.points > 0) {
+          S().addLedger(S().todayKey(), 'sport', { points: -grp.points, note: '🏃 撤销整组「' + grp.name + '」奖励，退回 ' + grp.points + ' 分' });
+        }
+      }
+      App.ui.toast('已撤销「' + it.text + '」，+' + pts + ' 分已退回');
+    } else {
+      it.settled = false;
+      S().addLedger(S().todayKey(), 'sport', { points: pen, note: '🏃 撤销「' + it.text + '」的扣分，退回 ' + pen + ' 分' });
+      App.ui.toast('已撤销扣分，「' + it.text + '」回到没做的状态');
+    }
+    S().save();
+    if (App.app && App.app.refreshStats) App.app.refreshStats();
+    renderToday();
+  }
+
+  function delItem(gi, ii) {
+    const day = S().getDay(S().todayKey());
+    const grp = (day.sports || [])[gi];
+    const it = grp && (grp.items || [])[ii];
+    if (!grp || !it) return;
+    const pts = it.points != null ? it.points : DEFAULT_PTS;
+    const warn = (it.done || it.settled)
+      ? '<br><span style="color:var(--req)">它已经有结果入账了（' + (it.done ? '+' : '-') + pts + ' 分）。先点「↩ 撤销」退回分数，再删更干净。</span>'
+      : '';
+    App.ui.confirm('删除「' + it.text + '」？' + warn, '删除', function () {
+      grp.items.splice(ii, 1);
+      S().save(); renderToday();
+      App.ui.toast('已删除「' + it.text + '」');
+    });
+  }
+
+  function delSportGroup(gi) {
+    const day = S().getDay(S().todayKey());
+    const grp = (day.sports || [])[gi];
+    if (!grp) return;
+    const n = (grp.items || []).length;
+    App.ui.confirm('删除大项「' + grp.name + '」' + (n ? '和它下面的 ' + n + ' 个分项' : '') +
+      '？<br><span style="color:var(--muted)">已入账的分数不会自动退回（需要的话先逐项 ↩ 撤销）。</span>', '删除', function () {
+      day.sports.splice(gi, 1);
+      S().save(); renderToday();
+      App.ui.toast('已删除大项「' + grp.name + '」');
+    });
+  }
+
+  /** 加一个大项（=任务页里"一条任务"的地位） */
+  function addGroupModal() {
+    const day = S().getDay(S().todayKey());
+    const modal = App.ui.openModal('➕ 加一个大项',
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">大项是「这次运动做什么」，比如「跳绳 3000 个」；' +
+      '加完可以在它下面「＋ 加分项」拆成几段（每 500 个一段、每段 5 分）。</p>' +
+      '<div class="field"><label>大项名称</label><input id="sg-name" style="width:100%;' + INPUT_STYLE + '" placeholder="如：跳绳 3000 个" /></div>' +
+      '<div class="field"><label>整组全做完的额外奖励（选填，0 = 不设）</label><input type="number" id="sg-pts" min="0" value="0" /></div>',
+      '<button class="btn btn-primary" data-act="ok">➕ 加进去</button><button class="btn" data-act="cancel">取消</button>');
+    const nEl = modal.querySelector('#sg-name');
+    if (nEl) nEl.focus();
+    App.ui.bindActions({
+      ok: function () {
+        const name = (modal.querySelector('#sg-name').value || '').trim();
+        if (!name) { App.ui.toast('先写大项名称'); return; }
+        const pts = Math.max(0, +modal.querySelector('#sg-pts').value || 0);
+        day.sports = day.sports || [];
+        day.sports.push({ id: S().uid(), name: name, points: pts, items: [] });
+        S().save();
+        App.ui.closeModal();
+        renderToday();
+        App.ui.toast('已加上「' + name + '」，接着点它右边的「＋ 加分项」拆成几段');
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
+  /** 在某个大项下面加一个分项 */
+  function addItemModal(gi) {
+    const day = S().getDay(S().todayKey());
+    const grp = (day.sports || [])[gi];
+    if (!grp) return;
+    const modal = App.ui.openModal('➕ 给「' + S().esc(grp.name) + '」加分项',
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">分项就是它的下一层：一段多少量、做完给多少分。' +
+      '比如「第 1 段 500 个 · +5 分」。加完点分项本身就算做完。</p>' +
+      '<div class="field"><label>分项内容</label><input id="si-text" style="width:100%;' + INPUT_STYLE + '" placeholder="如：第 1 段 500 个" /></div>' +
+      '<div class="field-row">' +
+      '<div class="field"><label>做完 +分</label><input type="number" id="si-pts" min="0" value="' + DEFAULT_PTS + '" /></div>' +
+      '<div class="field"><label>没做 −分</label><input type="number" id="si-pen" min="0" value="' + DEFAULT_PTS + '" /></div>' +
+      '</div>',
+      '<button class="btn btn-primary" data-act="ok">➕ 加进去</button><button class="btn" data-act="cancel">取消</button>');
+    const tEl = modal.querySelector('#si-text');
+    if (tEl) tEl.focus();
+    App.ui.bindActions({
+      ok: function () {
+        const t = (modal.querySelector('#si-text').value || '').trim();
+        if (!t) { App.ui.toast('先写分项内容'); return; }
+        const p = Math.max(0, +modal.querySelector('#si-pts').value || DEFAULT_PTS);
+        const pen = Math.max(0, +modal.querySelector('#si-pen').value || p);
+        grp.items = grp.items || [];
+        grp.items.push({ id: S().uid(), text: t, points: p, pen: pen });
+        S().save();
+        App.ui.closeModal();
+        renderToday();
+        App.ui.toast('已加上「' + t + '」，做完点它 +' + p + ' 分');
+      },
+      cancel: App.ui.closeModal
+    });
   }
 
   // 今天临时加一项：直接进今天第一组（没有组就建一个「今天临时加的」）

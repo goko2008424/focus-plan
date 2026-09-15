@@ -787,3 +787,71 @@ html.pip #toast-root { position: fixed; left: 0; right: 0; bottom: 8px; z-index:
 body[data-theme="dark"] .sub-wrap.lec-on, body[data-theme="purple"] .sub-wrap.lec-on {
   background: rgba(167,139,250,.1);
 }
+
+/* ============ 📋 转移任务弹窗：展开看明细 + 逐题勾选（v50） ============ */
+.paste-quick { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.paste-quick-hint { font-size: 11.5px; color: var(--muted); }
+.paste-col-h { font-size: 12.5px; font-weight: 700; margin: 8px 0 4px; color: var(--ink); }
+.paste-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; flex-wrap: wrap; }
+.paste-row { display: flex; gap: 6px; align-items: center; font-size: 13px; flex: 1 1 auto; cursor: pointer; color: var(--ink); }
+.paste-name { font-weight: 600; }
+.paste-badge { font-size: 11px; color: var(--muted); }
+.paste-badge.undone { color: var(--req); font-weight: 700; }
+.paste-badge.okk { color: var(--primary); }
+.paste-tcol { font-size: 11.5px; padding: 1px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); flex: none; }
+.paste-detail { margin: 3px 0 7px 22px; border-left: 2px solid var(--line); padding-left: 9px; }
+.paste-sub { display: flex; gap: 6px; align-items: center; font-size: 12.5px; padding: 2px 0; cursor: pointer; color: var(--ink); }
+.paste-gtag { font-size: 11px; color: #a855f7; background: rgba(168,85,247,.12); border-radius: 5px; padding: 0 5px; flex: none; }
+.paste-st { margin-left: auto; font-size: 11px; color: var(--muted); flex: none; }
+.paste-st.done { color: var(--primary); }
+.paste-st.fail { color: var(--req); }
+body[data-theme="dark"] .paste-gtag, body[data-theme="purple"] .paste-gtag { color: #b9a3ff; }
+
+/* ============ 🏃 运动页：分项的撤销/删除按钮（v52） ============ */
+.sport-mini {
+  font-size: 11px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--card); color: var(--ink); cursor: pointer; flex: none;
+  font-family: inherit; white-space: nowrap;
+}
+.sport-mini:hover { border-color: var(--primary); color: var(--primary); }
+.sport-count { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+
+/* ============ ⏱ 时间轴：点小时代看明细（v53） ============ */
+.tl-record.hp-mark { cursor: pointer; }
+.tl-record.hp-mark:hover { filter: brightness(1.08); }
+.hp-in { display: flex; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
+.hp-in-t { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; min-width: 88px; }
+.hp-in-c { flex: 1 1 auto; color: var(--ink); word-break: break-all; }
+.hp-in-m { color: var(--muted); flex: none; }
+
+/* ============ 🌙 待办衔接条（v56）：关掉提示也不会丢 ============ */
+.pend-bar { margin: 8px 0 10px; display: flex; flex-direction: column; gap: 6px; }
+.pend-row {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.45);
+  border-left: 4px solid #f59e0b; border-radius: 9px; padding: 8px 10px;
+}
+.pend-t { flex: 1 1 auto; font-size: 12.8px; color: var(--ink); word-break: break-word; }
+.pend-row .btn { flex: none; }
+/* 小窗只有 330px 宽 → 文字占一行、按钮换行 */
+#tf-drawer .pend-bar { margin: 6px 0 0; }
+#tf-drawer .pend-row { padding: 7px 8px; gap: 5px; }
+#tf-drawer .pend-t { font-size: 12px; flex-basis: 100%; }
+body[data-theme="dark"] .pend-row, body[data-theme="purple"] .pend-row {
+  background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.5);
+}
+
+/* ============ 🎧 连听：选课弹窗 + 进度徽标（v57） ============ */
+.lp-quick { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lp-sum { font-size: 12px; color: var(--muted); margin-left: auto; }
+.lp-list { max-height: 46vh; overflow: auto; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 4px; }
+.lp-g { font-size: 12px; font-weight: 700; color: var(--muted); margin: 8px 0 3px; }
+.lp-row { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--ink); }
+.lp-row:hover { background: rgba(124,92,255,.07); }
+.lp-row.done { opacity: .6; }
+.lp-t { flex: 1 1 auto; word-break: break-word; }
+.lp-m { color: var(--muted); font-size: 11.5px; flex: none; }
+.lp-d { color: var(--primary); font-size: 11px; flex: none; }
+.lec-step + .lec-q { margin-left: 6px; }
+.lec-q { font-size: 11.5px; background: rgba(168,85,247,.14); color: #a855f7; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+body[data-theme="dark"] .lec-q, body[data-theme="purple"] .lec-q { color: #b9a3ff; background: rgba(167,139,250,.2); }
