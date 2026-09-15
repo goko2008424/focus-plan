@@ -162,23 +162,36 @@
    */
   function barChart(container, dataArr) {
     container.innerHTML = '';
-    const W = 600, H = 220, padL = 8, padR = 8, padT = 14, padB = 26;
+    const W = 640, H = 236, padL = 40, padR = 18, padT = 26, padB = 34;
     const plotW = W - padL - padR, plotH = H - padT - padB;
-    const maxV = Math.max(60, Math.max.apply(null, dataArr.map(function (d) {
-      return (d.study || 0) + (d.extend || 0) + (d.fun || 0);
-    })));
-    const n = dataArr.length;
+    const n = Math.max(1, dataArr.length);
+    const sumOf = function (d) { return (d.study || 0) + (d.extend || 0) + (d.fun || 0); };
+    const maxRaw = dataArr.length ? Math.max.apply(null, dataArr.map(sumOf)) : 0;
+    const maxV = Math.max(60, maxRaw);
     const slot = plotW / n;
-    const barW = Math.min(34, slot * 0.55);
-    const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H });
-    // 水平参考线
-    for (const f of [0.25, 0.5, 0.75, 1]) {
+    const barW = Math.max(3, Math.min(26, slot * 0.62));
+    const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, width: '100%', height: H, preserveAspectRatio: 'xMidYMid meet' });
+    /** 统一按小时显示 —— 左边刻度和柱子上的数值口径一致，才不会一个写「分」一个写「h」 */
+    const hLabel = function (min) {
+      const h = min / 60;
+      return (h >= 10 ? Math.round(h) : Math.round(h * 10) / 10) + 'h';
+    };
+
+    // 参考线 + 刻度（刻度放左边，右边不再被卡片边缘切掉）
+    [0.25, 0.5, 0.75, 1].forEach(function (f) {
       const y = padT + plotH * (1 - f);
-      svg.appendChild(svgEl('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#e3e7ec', 'stroke-width': 1 }));
-      svg.appendChild(svgEl('text', { x: W - padR - 2, y: y - 3, 'text-anchor': 'end', 'font-size': 9, fill: '#9aa1ab' }));
-      const t = svg.querySelectorAll('text');
-      t[t.length - 1].textContent = Math.round(maxV * f) + '分';
-    }
+      svg.appendChild(svgEl('line', {
+        x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#e3e7ec',
+        'stroke-width': 1, 'stroke-dasharray': (f === 1 ? '' : '3 3')
+      }));
+      const t = svgEl('text', { x: padL - 7, y: y + 3.5, 'text-anchor': 'end', 'font-size': 10, fill: '#9aa1ab' });
+      t.textContent = hLabel(maxV * f);
+      svg.appendChild(t);
+    });
+
+    // 日期标签最多留 8 个：30 天全写出来会挤成一团
+    const step = Math.max(1, Math.ceil(n / 8));
+    let lastValX = -9999;
     dataArr.forEach(function (d, i) {
       const cx = padL + slot * i + slot / 2;
       const x = cx - barW / 2;
@@ -191,19 +204,25 @@
       stacks.forEach(function (s) {
         const h = (s.v / maxV) * plotH;
         if (h < 1) return;
-        const rect = svgEl('rect', { x: x, y: y - h, width: barW, height: h, fill: s.c, rx: 2 });
-        svg.appendChild(rect);
+        svg.appendChild(svgEl('rect', { x: x, y: y - h, width: barW, height: h, fill: s.c, rx: Math.min(3, barW / 2) }));
         y -= h;
       });
-      const label = svgEl('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 10, fill: '#6b7280' });
-      label.textContent = d.label;
-      svg.appendChild(label);
-      // 数值
-      const total = (d.study || 0) + (d.extend || 0) + (d.fun || 0);
-      if (total > 0) {
-        const tv = svgEl('text', { x: cx, y: padT + plotH - (total / maxV) * plotH - 4, 'text-anchor': 'middle', 'font-size': 9, fill: '#374151', 'font-weight': 700 });
-        tv.textContent = Math.round(total / 60 * 10) / 10 + 'h';
+      // 标签：从最后一天往前每隔 step 天标一个（保证「今天」一定有标签、间距也均匀）
+      if ((n - 1 - i) % step === 0) {
+        const label = svgEl('text', { x: cx, y: H - 13, 'text-anchor': 'middle', 'font-size': 10, fill: '#6b7280' });
+        label.textContent = d.label;
+        svg.appendChild(label);
+      }
+      // 柱子顶上的数值：离上一个太近就不标，免得压在一起
+      const total = sumOf(d);
+      if (total > 0 && cx - lastValX >= Math.max(24, barW + 8)) {
+        const tv = svgEl('text', {
+          x: cx, y: padT + plotH - (total / maxV) * plotH - 5,
+          'text-anchor': 'middle', 'font-size': 9.5, fill: '#374151', 'font-weight': 700
+        });
+        tv.textContent = hLabel(total);
         svg.appendChild(tv);
+        lastValX = cx;
       }
     });
     container.appendChild(svg);

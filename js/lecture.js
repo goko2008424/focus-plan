@@ -248,15 +248,20 @@
   }
 
   function startFromTask(task, fromTomorrow) {
+    // ★ v62：任务上提前定好的听课预算（加/改任务时填的）优先，没填就用默认
+    const p = (App.tasks && App.tasks.lecPlanOf) ? App.tasks.lecPlanOf(task) : null;
     const L = beginLecture({
       course: task.text, taskId: task.id,
-      attendMin: task.lecMin || defaults().attendMin,
-      pts: task.points != null ? task.points : null
+      previewMin: p ? p.previewMin : null,
+      attendMin: (p && p.attendMin) || task.lecMin || defaults().attendMin,
+      consMin: p ? p.consMin : null,
+      pts: (p && p.pts != null) ? p.pts : (task.points != null ? task.points : null)
     });
     if (!L) return;
-    App.ui.toast(fromTomorrow
+    App.ui.toast((fromTomorrow
       ? '🎓 预习开始！（记在今天的时间轴；走完三步会勾掉「明天」那条任务）'
-      : '🎓 预习开始！只读目标与总结，到点就停');
+      : '🎓 预习开始！只读目标与总结，到点就停') +
+      (p ? '（用你预设的 ' + p.previewMin + ' / ' + p.attendMin + ' / ' + p.consMin + ' 分钟）' : ''));
   }
 
   /** 从「小任务」开课：课程名=题目，听课预算=它的限时（做题和听课本来就是一回事）
@@ -754,6 +759,7 @@
     current: current, floatPanelHTML: floatPanelHTML, bindFloatLec: bindFloatLec,
     startFromTask: startFromTask, startFromSub: startFromSub, isActive: isActive,
     forceBegin: forceBegin, abandonActive: abandonActive, queueBadge: queueBadge,
+    budgetDefaults: defaults,
     pauseLecture: pauseLecture, resumeLecture: resumeLecture, restLecture: restLecture,
     activeSeconds: activeSeconds,
     inlineHTML: inlineHTML, bindInline: bindInline, historyHTML: historyHTML

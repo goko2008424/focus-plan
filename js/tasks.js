@@ -934,6 +934,115 @@
   }
 
   /* ---------- 回收站：误删可恢复（所有删除走「软删除」先进回收站） ---------- */
+  /* ---------- 🔗 合并同名任务 ----------
+     转移任务时可能出现「同一天同一栏有两条一模一样的任务」，这里给个一键合并的出口。
+     也顺带修掉了根源：pasteTasksModal 落地时会先找同名任务,有就并进去,不再新建。 */
+
+  /** 比名字用：去掉所有空白，避免「化学复习 」和「化学复习」被当成两条 */
+  function normName(x) { return String(x == null ? '' : x).replace(/\s+/g, ''); }
+
+  /** 同一天、同一栏里「另一条同名任务」（没有就 null） */
+  function findDupTask(dayKey, colKey, task) {
+    if (!task) return null;
+    const mine = normName(task.text);
+    if (!mine) return null;
+    const list = (S().getDay(dayKey).tasks[colKey] || []);
+    return list.find(function (t) { return t.id !== task.id && normName(t.text) === mine; }) || null;
+  }
+
+  /** 把 b 并进 a：题目按名字去重、任务组按组名归并。返回「新并进来几道题」 */
+  function mergeTaskInto(a, b) {
+    if (!a || !b) return 0;
+    let added = 0;
+    const takeSub = function (arr, src) {
+      if (!src || !src.text) return;
+      const same = arr.find(function (x) { return normName(x.text) === normName(src.text); });
+      if (same) {
+        // 重名的题不重复添加，只把「更明确的信息」补过去
+        if ((same.done === undefined || same.done === null) && src.done !== undefined && src.done !== null) same.done = src.done;
+        if (!same.standard && src.standard) same.standard = src.standard;
+        if (!same.summary && src.summary) same.summary = src.summary;
+        return;
+      }
+      arr.push(src);
+      added++;
+    };
+    (b.groups || []).forEach(function (gb) {
+      a.groups = a.groups || [];
+      let ga = a.groups.find(function (x) { return normName(x.name) === normName(gb.name); });
+      if (!ga) { ga = { id: S().uid(), name: gb.name || '任务组', subs: [] }; a.groups.push(ga); }
+      ga.subs = ga.subs || [];
+      (gb.subs || []).forEach(function (s) { takeSub(ga.subs, s); });
+    });
+    (b.subs || []).forEach(function (s) {
+      a.subs = a.subs || [];
+      takeSub(a.subs, s);
+    });
+    if (a.subs && !a.subs.length) delete a.subs;
+    if (a.groups && !a.groups.length) delete a.groups;
+    // 任务级字段：a 缺的、b 有的都补过来（积分 / 听课时长 / 标准 / 类型 …）
+    Object.keys(b).forEach(function (k) {
+      if (k === 'id' || k === 'text' || k === 'done' || k === 'subs' || k === 'groups') return;
+      const av = a[k];
+      const empty = (av === undefined || av === null || av === '' || (Array.isArray(av) && !av.length));
+      if (empty) a[k] = b[k];
+    });
+    // 两条都完成才算完成 —— 宁可不勾，也别把没做完的标成做完
+    a.done = !!(a.done && b.done);
+    return added;
+  }
+
+  /** 一条任务里一共有几道题 */
+  function countSubs(t) {
+    return ((t.subs || []).length) + (t.groups || []).reduce(function (n, g) { return n + (g.subs || []).length; }, 0);
+  }
+
+  /** 🔗 合并弹窗：确认后把同名的另一条并进来，被合并的那条进回收站（可恢复） */
+  function dupMergeModal(dayKey, colKey, taskId) {
+    const list = (S().getDay(dayKey).tasks[colKey] || []);
+    const a = list.find(function (t) { return t.id === taskId; });
+    if (!a) return;
+    const b = findDupTask(dayKey, colKey, a);
+    if (!b) { App.ui.toast('这一栏里已经找不到同名的另一条任务了'); return; }
+
+    const brief = function (t, isA) {
+      const gs = (t.groups || []).map(function (g) {
+        return '<li>' + S().esc(g.name || '任务组') + ' —— ' + (g.subs || []).length + ' 道题</li>';
+      }).join('');
+      const ss = (t.subs || []).length ? '<li>单独小任务 —— ' + t.subs.length + ' 道题</li>' : '';
+      return '<div style="flex:1 1 190px;background:rgba(124,92,255,.06);border-radius:9px;padding:9px 11px">' +
+        '<b>' + (isA ? '这一条（保留）' : '另一条（并进来）') + '</b>' +
+        '<span class="tag" style="margin-left:6px">' + countSubs(t) + ' 道题' + (t.done ? ' · 已完成' : '') + '</span>' +
+        '<ul style="margin:5px 0 0 16px;font-size:12.5px">' + (gs + ss || '<li>还没有小任务</li>') + '</ul></div>';
+    };
+
+    App.ui.openModal('🔗 合并同名任务 · ' + S().esc(a.text).slice(0, 16),
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:9px">这一天同一栏里有两条都叫「' +
+      S().esc(a.text) + '」。合并后只留一条：<b>题目按名字去重</b>、任务组按组名并到一起，' +
+      '没做完的照样没做完，做过的不会被重复要求。</p>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap">' + brief(a, true) + brief(b, false) + '</div>' +
+      '<p class="hint" style="margin-top:11px">并进去的那条会进回收站 —— 万一合错了，🗑 回收站 → ♻ 恢复 就能拿回来。</p>',
+      '<button class="btn btn-primary" data-act="ok">🔗 合并成一条</button>' +
+      '<button class="btn" data-act="cancel">取消</button>');
+
+    App.ui.bindActions({
+      ok: function () {
+        const added = mergeTaskInto(a, b);
+        const i = list.findIndex(function (t) { return t.id === b.id; });
+        if (i >= 0) list.splice(i, 1);
+        trashPush({ kind: 'task', dayKey: dayKey, col: colKey, payload: JSON.parse(JSON.stringify(b)) });
+        S().save();
+        App.ui.closeModal();
+        renderAll();
+        if (App.calendar && App.calendar.render) App.calendar.render();
+        App.ui.toast('🔗 已合并成一条「' + a.text.slice(0, 14) + '」' +
+          (added ? '，新并进 ' + added + ' 道题' : '（题目原本就都在，只去掉了重复的那条）') +
+          ' · 现在共 ' + countSubs(a) + ' 道题', 3400);
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
   function trashPush(entry) {
     const t = (S().data().trash = S().data().trash || []);
     entry.id = S().uid();
@@ -2607,12 +2716,18 @@
         '</div>';
     }
     const lecBtn = '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步：预习 → 听课 → 整理，三步齐了发大奖">🎧</button>';
+    // 🔗 只有这一栏里真的存在「同名的另一条」时才出现，平时不占地方
+    const dupBtn = findDupTask(S().todayKey(), listKey, task)
+      ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" title="这一栏有两条同名的「' + S().esc(task.text) + '」，点这里合并成一条">🔗</button>'
+      : '';
     const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(task) : '';
     return '<div class="task-row' + (task.done ? ' done' : '') + (lecPanel ? ' lec-running' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
       '<span class="task-text" data-act="edit">' + S().esc(task.text) + '</span>' +
+      lecTagHTML(task) +
       ptsInput +
       lecBtn +
+      dupBtn +
       btn +
       '</div>' +
       lecPanel +
@@ -3372,6 +3487,7 @@
       const listKey = row.dataset.list, taskId = row.dataset.id;
       const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
       if (act === 'lecture') { lecturePickModal(listKey, taskId, false); return; }
+      if (act === 'dup-merge') { dupMergeModal(S().todayKey(), listKey, taskId); return; }
       if (act === 'check') toggleTask(listKey, taskId);
       else if (act === 'edit') editTaskModal(listKey, taskId, S().todayKey(), false);
       else if (act === 'start') startTimer(listKey, taskId);
@@ -3401,8 +3517,12 @@
         return '<div class="task-row' + (lecPanel ? ' lec-running' : '') + '" data-list="' + col.key + '" data-id="' + t.id + '">' +
           '<span class="task-check" style="visibility:hidden">✓</span>' +
           '<span class="task-text" data-act="edit">' + S().esc(t.text) + '</span>' +
+          lecTagHTML(t) +
           ptsInput +
           '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步（会记在今天的时间轴，走完勾掉这条明天的任务）">🎧</button>' +
+          (findDupTask(S().tomorrowKey(), col.key, t)
+            ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" title="这一栏有两条同名的「' + S().esc(t.text) + '」，点这里合并成一条">🔗</button>'
+            : '') +
           '<button class="task-timer-btn" data-act="edit" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" title="删除">🗑</button>' +
           '</div>' +
@@ -3450,6 +3570,7 @@
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'lecture' && listKey && row) { lecturePickModal(listKey, row.dataset.id, true); return; }
+      if (act === 'dup-merge' && listKey && row) { dupMergeModal(S().tomorrowKey(), listKey, row.dataset.id); return; }
       if (act === 'cd-start' && listKey) { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
       if (act === 'sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'g-sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey(), actBtn.dataset.group); return; }
@@ -3484,6 +3605,120 @@
     };
   }
 
+  /* ---------- 🎧 听课任务：加任务时就把这一课的时间定好 ----------
+     以前只能等开课时再现场配预算（容易偷懒、也浪费时间）。
+     现在加/改任务时就能勾「这是听课任务」，并把 预习/听课/整理/大奖分 先填好；
+     任务行上会显示 🎓 合计分钟，排计划时一眼知道这节课大概要多久。
+     存成 task.lecPlan = { previewMin, attendMin, consMin, pts } */
+  const LEC_DEF = { previewMin: 30, attendMin: 45, consMin: 30, pts: 15 };
+
+  /** 默认预算：优先用「上次开课用的那套」，跟听课模块保持一致 */
+  function lecBudgetDefaults() {
+    const f = (App.lecture && App.lecture.budgetDefaults) ? App.lecture.budgetDefaults() : null;
+    return {
+      previewMin: (f && f.previewMin) || LEC_DEF.previewMin,
+      attendMin: (f && f.attendMin) || LEC_DEF.attendMin,
+      consMin: (f && f.consMin) || LEC_DEF.consMin,
+      pts: (f && f.pts != null) ? f.pts : LEC_DEF.pts
+    };
+  }
+
+  /** 这条任务提前定好的听课预算（v41 时代只存了 lecMin 的老数据也认） */
+  function lecPlanOf(task) {
+    if (!task) return null;
+    if (task.lecPlan) {
+      const p = task.lecPlan;
+      return {
+        previewMin: Math.max(1, +p.previewMin || LEC_DEF.previewMin),
+        attendMin: Math.max(1, +p.attendMin || LEC_DEF.attendMin),
+        consMin: Math.max(1, +p.consMin || LEC_DEF.consMin),
+        pts: Math.max(0, p.pts != null ? +p.pts : LEC_DEF.pts)
+      };
+    }
+    if (task.lecMin) {          // 老字段：只记了「听课」多少分钟
+      const m = Math.max(1, +task.lecMin || 0);
+      return {
+        previewMin: Math.min(LEC_DEF.previewMin, m),
+        attendMin: m,
+        consMin: Math.min(LEC_DEF.consMin, m),
+        pts: task.points != null ? task.points : LEC_DEF.pts
+      };
+    }
+    return null;
+  }
+
+  function lecTotalMin(p) { return p ? (p.previewMin + p.attendMin + p.consMin) : 0; }
+
+  /** 任务行上的 🎓 徽标（只有提前定好听课时间的任务才显示） */
+  function lecTagHTML(task) {
+    const p = lecPlanOf(task);
+    if (!p) return '';
+    return '<span class="lec-tag" title="🎧 听课任务：预习 ' + p.previewMin + ' 分 + 听课 ' + p.attendMin +
+      ' 分 + 整理 ' + p.consMin + ' 分 ＝ 约 ' + lecTotalMin(p) + ' 分钟' +
+      (p.pts ? ' · 三步走完大奖 ' + p.pts + ' 分' : '') + '（开课时直接用这套，面板上还能临时改）">🎓 ' +
+      lecTotalMin(p) + '分</span>';
+  }
+
+  /** 弹窗里的「这是听课任务」那块（prefix = 'add' / 'edit'） */
+  function lecPlanFieldsHTML(prefix, plan, on) {
+    const d = plan || lecBudgetDefaults();
+    // 一项一格（弹窗里的 input 有全局 width:100%，直接排会竖成一列）
+    const item = function (label, id, v, min) {
+      return '<span class="lec-plan-item"><span class="lec-plan-l">' + label + '</span>' +
+        '<input type="number" class="lec-num" id="' + id + '" min="' + min + '" value="' + v + '" />' +
+        '<span class="lec-plan-u">分</span></span>';
+    };
+    return '<div class="lec-plan">' +
+      '<label class="lec-plan-opt"><input type="checkbox" id="' + prefix + '-lec-on"' + (on ? ' checked' : '') + ' />' +
+      '<span>🎧 <b>这是听课任务</b> —— 提前定好这一课的时间，排计划时就知道大概要花多久</span></label>' +
+      '<div class="lec-plan-box"' + (on ? '' : ' hidden') + ' id="' + prefix + '-lec-box">' +
+        '<div class="lec-plan-row">' +
+          item('预习', prefix + '-lec-pre', d.previewMin, 1) +
+          item('听课', prefix + '-lec-att', d.attendMin, 1) +
+          item('整理', prefix + '-lec-cons', d.consMin, 1) +
+          item('大奖分', prefix + '-lec-pts', d.pts, 0) +
+        '</div>' +
+        '<p class="lec-plan-sum" id="' + prefix + '-lec-sum"></p>' +
+        '<p class="lec-plan-hint">流程：预习 → 听课 → 整理，三步走完发大奖。开课时直接用这里的数字，面板上还能临时改。</p>' +
+      '</div></div>';
+  }
+
+  /** 勾选展开 + 实时算「这一课预计多久」 */
+  function bindLecPlanFields(modal, prefix) {
+    const on = modal.querySelector('#' + prefix + '-lec-on');
+    const box = modal.querySelector('#' + prefix + '-lec-box');
+    const sum = modal.querySelector('#' + prefix + '-lec-sum');
+    const g = function (id) { const el = modal.querySelector('#' + prefix + id); return el ? Math.max(0, +el.value || 0) : 0; };
+    const refresh = function () {
+      if (!sum) return;
+      const a = g('-lec-pre'), b = g('-lec-att'), c = g('-lec-cons'), t = g('-lec-pts');
+      sum.innerHTML = '这一课预计 <b>' + (a + b + c) + ' 分钟</b>（预习 ' + a + ' · 听课 ' + b + ' · 整理 ' + c + '）' +
+        (t ? '<br>三步走完大奖 <b>' + t + ' 分</b>' : '');
+    };
+    if (on && box) on.onchange = function () { box.hidden = !on.checked; refresh(); };
+    Array.prototype.slice.call(modal.querySelectorAll('.lec-num')).forEach(function (el) {
+      if (el.id.indexOf(prefix + '-lec-') === 0) el.oninput = refresh;
+    });
+    refresh();
+  }
+
+  /** 读弹窗里的听课预算；没勾就返回 null */
+  function readLecPlan(modal, prefix) {
+    const on = modal.querySelector('#' + prefix + '-lec-on');
+    if (!on || !on.checked) return null;
+    const g = function (id, def, min) {
+      const el = modal.querySelector('#' + prefix + id);
+      const v = el ? +el.value : def;
+      return Math.max(min, isFinite(v) ? v : def);
+    };
+    return {
+      previewMin: g('-lec-pre', LEC_DEF.previewMin, 1),
+      attendMin: g('-lec-att', LEC_DEF.attendMin, 1),
+      consMin: g('-lec-cons', LEC_DEF.consMin, 1),
+      pts: g('-lec-pts', LEC_DEF.pts, 0)
+    };
+  }
+
   /* ---------- 添加 / 编辑任务弹窗 ---------- */
   function addTaskModal(listKey, dayKey, isTodayExtra) {
     const day = S().getDay(dayKey);
@@ -3503,7 +3738,9 @@
       '<option value="aux">辅助推进（复盘 / 整理 / 写计划等，计入「辅助」）</option>' +
       '<option value="long">长期推进（长期自我提升，如兴趣/技能，计入「扩展」）</option>' +
       '</select></div>' +
+      lecPlanFieldsHTML('add', null, false) +
             '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
+    bindLecPlanFields(modal, 'add');
     const ta = modal.querySelector('#add-text');
     ta.focus();
     App.ui.bindActions({
@@ -3514,14 +3751,17 @@
         const pts = ptsInput ? Math.max(0, +ptsInput.value || 0) : null;
         const kind = modal.querySelector('#add-kind');
         const kv = kind ? kind.value : 'main';
+        const plan = readLecPlan(modal, 'add');
         lines.forEach(function (text) {
           const t = { id: S().uid(), text: text, aux: kv === 'aux', long: kv === 'long' };
           if (pts != null) t.points = pts;
+          if (plan) t.lecPlan = { previewMin: plan.previewMin, attendMin: plan.attendMin, consMin: plan.consMin, pts: plan.pts };
           day.tasks[listKey].push(t);
         });
         S().save();
         App.ui.closeModal();
-        App.ui.toast('已添加 ' + lines.length + ' 条任务');
+        App.ui.toast('已添加 ' + lines.length + ' 条任务' +
+          (plan ? ' · 已设为听课任务（这一课约 ' + lecTotalMin(plan) + ' 分钟）' : ''));
         App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
@@ -3554,9 +3794,11 @@
       '<option value="long"' + (task.long ? ' selected' : '') + '>长期推进（自我提升，计入「扩展」）</option>' +
       '</select></div>' +
       '</div>' +
+      lecPlanFieldsHTML('edit', lecPlanOf(task), !!lecPlanOf(task)) +
       '<button class="btn btn-primary" data-act="save">保存</button>' +
       '<button class="btn btn-danger" data-act="del">删除任务</button>' +
       '<button class="btn" data-act="cancel">取消</button>');
+    bindLecPlanFields(modal, 'edit');
     const ta = modal.querySelector('#edit-text');
     ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
     App.ui.bindActions({
@@ -3570,6 +3812,12 @@
         if (kindEl) {
           task.aux = kindEl.value === 'aux';
           task.long = kindEl.value === 'long';
+        }
+        // 🎧 听课预设：勾了就存下来，取消勾选就把预设删掉（回到"开课时再配"）
+        if (modal.querySelector('#edit-lec-on')) {
+          const plan = readLecPlan(modal, 'edit');
+          if (plan) task.lecPlan = plan;
+          else { delete task.lecPlan; delete task.lecMin; }
         }
         const listEl = modal.querySelector('#edit-list');
         if (listEl && listEl.value !== listKey) {
@@ -3786,7 +4034,7 @@
     App.ui.bindActions({
       ok: function () {
         const its = modal.querySelectorAll('.paste-item');
-        let n = 0, keptN = 0;
+        let n = 0, keptN = 0, mergedN = 0;
         its.forEach(function (it) {
           const key = it.dataset.key;
           const chk = it.querySelector('[data-check]');
@@ -3818,14 +4066,18 @@
             if (c.groups && !c.groups.length) delete c.groups;
           }
           if (!target.tasks[toCol]) target.tasks[toCol] = [];
-          target.tasks[toCol].push(c);
+          // ★ v60 修根源：目标栏已有同名任务就并进去，不再新建（以前会戳出两条一模一样的任务）
+          const dupT = target.tasks[toCol].find(function (t2) { return normName(t2.text) === normName(c.text); });
+          if (dupT) { mergeTaskInto(dupT, c); mergedN++; }
+          else target.tasks[toCol].push(c);
           n++;
         });
         if (!n) { App.ui.toast('先勾选要转移的任务'); return; }
         S().save();
         App.ui.closeModal();
         App.ui.toast('📋 已转移 ' + n + ' 条到「' + labelOf(targetDayKey) + '」' +
-          (keptN ? '（带 ' + keptN + ' 道题）' : '') + ' · 都是初始状态', 3200);
+          (keptN ? '（带 ' + keptN + ' 道题）' : '') +
+          (mergedN ? ' · 其中 ' + mergedN + ' 条并进了原有同名任务' : '') + ' · 都是初始状态', 3400);
         if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
         if (App.calendar && App.calendar.render) App.calendar.render();
       },
@@ -3963,6 +4215,8 @@
     pipOpen: pipOpen, pipBack: pipBack, pipToggle: pipToggle, isPip: inPip,
     pipNeedSpace: pipNeedSpace, floatDoc: floatDoc, refreshFloat: showTimerBar,
     bindFloatButtons: bindFloatButtons,
+    dupMergeModal: dupMergeModal, mergeTaskInto: mergeTaskInto, findDupTask: findDupTask,
+    lecTagHTML: lecTagHTML, lecPlanOf: lecPlanOf, lecBudgetDefaults: lecBudgetDefaults,
     hourPlanAutoTick: hourPlanAutoTick, endHourPlan: endHourPlan,
     hourPlanActual: hourPlanActual, hourPlanSummary: hourPlanSummary,
     pendingBarHTML: pendingBarHTML, bindPendingBar: bindPendingBar,

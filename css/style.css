@@ -534,13 +534,37 @@ details.task-details summary:hover { text-decoration: underline; }
 }
 
 /* ---------- 📅 日历 + 年度热力图 ---------- */
+/* ---- 年度热力图（v61 重排：月份标签定位、星期列、横向滚动都在同一个容器里） ---- */
 .hm-wrap { margin: 6px 0 4px; }
-.hm-grid { display: flex; gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+.hm-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.hm-sum { font-size: 12.5px; color: var(--ink); }
+.hm-sum b { color: var(--primary); }
+.hm-legend { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
+.hm-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.hm-body { display: flex; gap: 6px; align-items: flex-start; }
+.hm-wd { display: flex; flex-direction: column; gap: 3px; padding-top: 16px; flex: none; }
+.hm-wd span { height: 12px; line-height: 12px; font-size: 9.5px; color: var(--muted); }
+.hm-scroll { position: relative; overflow-x: auto; overflow-y: hidden; flex: 1 1 auto; padding-bottom: 4px; }
+.hm-months { position: absolute; left: 0; top: 0; height: 14px; white-space: nowrap; }
+.hm-month { position: absolute; top: 0; font-size: 10px; color: var(--muted); }
+.hm-grid { display: flex; gap: 3px; margin-top: 16px; }
 .hm-week { display: flex; flex-direction: column; gap: 3px; }
-.hm-cell { width: 12px; height: 12px; border-radius: 3px; cursor: pointer; flex: 0 0 auto; }
-.hm-cell:hover { outline: 2px solid rgba(255,255,255,.35); }
+.hm-cell { width: 12px; height: 12px; border-radius: 3px; cursor: pointer; flex: 0 0 auto; display: block; }
+.hm-cell:hover { outline: 2px solid rgba(120,120,140,.5); }
 .hm-cell.sel { outline: 2px solid #f59e0b; }
-.hm-meta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.hm-hint { font-size: 11.5px; color: var(--muted); margin: 7px 0 0; }
+/* 热力图色阶：浅色主题走「浅灰 → 浅蓝 → 蓝 → 深蓝 → 绿」，颜色越深学得越久 */
+.hm-lv0 { background: #ecf0f5; }
+.hm-lv1 { background: #c9def7; }
+.hm-lv2 { background: #8fb8ea; }
+.hm-lv3 { background: #4a86d4; }
+.hm-lv4 { background: #22a06b; }
+.hm-cell.hm-future { background: transparent; border: 1px dashed var(--line); }
+/* 深色主题：换成深底上看得清的一套 */
+body[data-theme="dark"] .hm-lv0, body[data-theme="purple"] .hm-lv0 { background: #232b3d; }
+body[data-theme="dark"] .hm-lv1, body[data-theme="purple"] .hm-lv1 { background: #1e40af; }
+body[data-theme="dark"] .hm-lv2, body[data-theme="purple"] .hm-lv2 { background: #2563eb; }
+body[data-theme="dark"] .hm-lv3, body[data-theme="purple"] .hm-lv3 { background: #0ea5e9; }
 .cal-head { margin-bottom: 10px; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .cal-wd { text-align: center; font-size: 11.5px; color: var(--muted); padding: 2px 0; }
@@ -855,3 +879,21 @@ body[data-theme="dark"] .pend-row, body[data-theme="purple"] .pend-row {
 .lec-step + .lec-q { margin-left: 6px; }
 .lec-q { font-size: 11.5px; background: rgba(168,85,247,.14); color: #a855f7; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
 body[data-theme="dark"] .lec-q, body[data-theme="purple"] .lec-q { color: #b9a3ff; background: rgba(167,139,250,.2); }
+/* ---- 🎧 听课任务：加/改任务时提前定好这一课的时间（v62） ---- */
+.lec-plan { margin: 10px 0 2px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.lec-plan-opt { display: flex; align-items: flex-start; gap: 7px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.lec-plan-opt input { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.lec-plan-opt b { color: #a855f7; }
+.lec-plan-box { margin: 9px 0 0 23px; background: rgba(168,85,247,.06); border-radius: 9px; padding: 9px 11px; }
+.lec-plan-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 9px 12px; }
+.lec-plan-item { display: flex; align-items: center; gap: 6px; }
+.lec-plan-l { font-size: 12.5px; color: var(--muted); flex: none; }
+.lec-plan-item input.lec-num { width: 64px; min-width: 0; flex: none; padding: 3px 6px; font-size: 13px; }
+.lec-plan-u { font-size: 12px; color: var(--muted); flex: none; }
+.lec-plan-sum { font-size: 12.5px; color: var(--ink); margin: 8px 0 0; }
+.lec-plan-sum b { color: var(--primary); }
+.lec-plan-hint { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; line-height: 1.55; }
+/* 任务行上的 🎓 徽标 */
+.lec-tag { font-size: 11.5px; font-weight: 700; color: #a855f7; background: rgba(168,85,247,.12);
+  border: 1px solid rgba(168,85,247,.35); border-radius: 6px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b9a3ff; background: rgba(167,139,250,.2); border-color: rgba(167,139,250,.5); }

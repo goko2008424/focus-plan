@@ -265,20 +265,24 @@
     lastCell.setDate(end.getDate() + (6 - shift));
     const start = new Date(lastCell);
     start.setDate(lastCell.getDate() - 7 * 53 - 1); // 整 53 周 ≈ 一年
-    // GitHub 式：列=周，行=周一..周日
-    let html = '<div class="hm-wrap">';
-    // 月份标签行：与周列对齐，遇到某月第一天就标注
-    let monthLabels = '', cur2 = new Date(start), lastMonth = -1, colIdx = 0;
+
+    const CELL_W = 15;      // 12px 格子 + 3px 间距 —— 月份标签按这个宽度定位才不会错位
+    let months = '';
+    let colIdx = 0, lastMonth = -1, lastLabelCol = -99;
+    const cur2 = new Date(start);
     while (cur2 <= lastCell) {
       if (cur2.getMonth() !== lastMonth) {
         lastMonth = cur2.getMonth();
-        monthLabels += '<div class="hm-month" style="margin-left:' + (colIdx * 15) + 'px">' + (lastMonth + 1) + '月</div>';
+        // 两个标签至少隔 3 列，免得挤在一起看不清
+        if (colIdx - lastLabelCol >= 3) {
+          months += '<span class="hm-month" style="left:' + (colIdx * CELL_W) + 'px">' + (lastMonth + 1) + '月</span>';
+          lastLabelCol = colIdx;
+        }
       }
       colIdx++;
       cur2.setDate(cur2.getDate() + 7);
     }
-    html += '<div class="hm-months" style="position:relative;height:16px;font-size:10px;color:var(--muted)">' + monthLabels + '</div>';
-    html += '<div class="hm-grid" style="display:flex;gap:3px;overflow-x:auto">';
+
     const cur = new Date(start);
     let weekCells = [];
     const weeks = [];
@@ -289,22 +293,37 @@
       const min = studyMinutes(day);
       if (!isFuture) totalMin += min;
       const lvl = isFuture ? -1 : (min <= 0 ? 0 : min < 30 ? 1 : min < 60 ? 2 : min < 120 ? 3 : 4);
-      const sel = k === selKeyArg;
-      weekCells.push('<div class="hm-cell' + (sel ? ' sel' : '') + '" data-k="' + k + '" style="background:' +
-        (lvl < 0 ? 'transparent' : HEAT_COLORS[lvl]) + ';width:12px;height:12px;border-radius:3px;cursor:pointer;flex:0 0 auto" title="' + k + (isFuture ? '（未来）' : ' · 学习 ' + min + ' 分钟') + '"></div>');
+      // 颜色交给 CSS（.hm-lv0 ~ .hm-lv4）：浅色主题一套、深色主题一套 ——
+      // 以前写死深色（#232b3d），在浅色页面上会糊成一片黑格子，特别乱
+      const lvlCls = lvl < 0 ? 'hm-future' : ('hm-lv' + lvl);
+      weekCells.push('<span class="hm-cell ' + lvlCls + (k === selKeyArg ? ' sel' : '') + '" data-k="' + k +
+        '" title="' + k + (isFuture ? '（未来）' : ' · 学习 ' + min + ' 分钟') + '"></span>');
       if (weekCells.length === 7) {
-        weeks.push('<div class="hm-week" style="display:flex;flex-direction:column;gap:3px">' + weekCells.join('') + '</div>');
+        weeks.push('<div class="hm-week">' + weekCells.join('') + '</div>');
         weekCells = [];
       }
       cur.setDate(cur.getDate() + 1);
     }
     if (weekCells.length) weeks.push('<div class="hm-week">' + weekCells.join('') + '</div>');
-    html += weeks.join('') + '</div>' +
-      '<div class="hm-meta">过去一年有效学习 <b>' + S().fmtDur(totalMin) + '</b> · 点格子跳到那天 · ' +
-      '<span style="display:inline-flex;align-items:center;gap:3px;margin-left:6px">少' +
-      HEAT_COLORS.map(function (col) { return '<span style="width:10px;height:10px;border-radius:2px;display:inline-block;background:' + col + '"></span>'; }).join('') +
-      '多</span></div></div>';
-    return html;  }
+
+    const WD_ROWS = ['一', '', '三', '', '五', '', '日'];
+    return '<div class="hm-wrap">' +
+      '<div class="hm-top">' +
+        '<div class="hm-sum">过去一年有效学习 <b>' + S().fmtDur(totalMin) + '</b></div>' +
+        '<div class="hm-legend"><span>少</span>' +
+          [0, 1, 2, 3, 4].map(function (l) { return '<i class="hm-lv' + l + '"></i>'; }).join('') +
+          '<span>多</span></div>' +
+      '</div>' +
+      '<div class="hm-body">' +
+        '<div class="hm-wd">' + WD_ROWS.map(function (w) { return '<span>' + w + '</span>'; }).join('') + '</div>' +
+        '<div class="hm-scroll">' +
+          '<div class="hm-months">' + months + '</div>' +
+          '<div class="hm-grid">' + weeks.join('') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<p class="hm-hint">第一行是周一 · 点格子跳到那天 · 颜色越深 = 那天学得越久</p>' +
+      '</div>';
+  }
 
   /* ---------- 月历 ---------- */
   function monthHTML() {
@@ -447,15 +466,22 @@
     html += '<div class="cal-cols" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
     COLS.forEach(function (c) {
       const list = day.tasks[c.k] || [];
+      // 这一栏里有没有「和 t 同名的另一条」（有才给它配 🔗）
+      const dupOf = function (t) {
+        const mine = String(t.text || '').replace(/\s+/g, '');
+        return !!mine && list.some(function (x) { return x.id !== t.id && String(x.text || '').replace(/\s+/g, '') === mine; });
+      };
       html += '<div class="cal-col" style="border:1px solid var(--line);border-radius:10px;padding:9px 10px"><div class="cal-col-head" style="font-size:13px;font-weight:700;margin-bottom:6px">' + c.n + ' <span class="tag">' + list.length + '</span></div>';
       list.forEach(function (t) {
         html += '<div class="cal-task' + (t.done ? ' done' : '') + '" style="border-bottom:1px dashed var(--line);padding:6px 2px">' +
-          '<span class="t-text" style="font-size:13.5px;word-break:break-all;display:block">' + esc(t.text) + (t.done ? ' ✓' : '') + '</span>' +
+          '<span class="t-text" style="font-size:13.5px;word-break:break-all">' + esc(t.text) + (t.done ? ' ✓' : '') +
+            ((App.tasks && App.tasks.lecTagHTML) ? App.tasks.lecTagHTML(t) : '') + '</span>' +
           (t.standard ? '<div class="t-std" style="font-size:11.5px;color:#f59e0b;margin-top:2px">📌 标准：' + esc(t.standard) + '</div>' : '') +
           taskContextHTML(t, c.k) +
           '<div class="t-btns">' +
           '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（熬夜做完的在这里补勾划掉）">☑</button>' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
+          (dupOf(t) ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" data-col="' + c.k + '" data-id="' + t.id + '" title="这一栏有两条同名的「' + esc(t.text) + '」，点这里合并成一条">🔗</button>' : '') +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" data-col="' + c.k + '" data-id="' + t.id + '" title="删除">🗑</button>' +
           '</div></div>';
@@ -532,6 +558,7 @@
           S().save();
           render();
         }
+        else if (b.dataset.act === 'dup-merge') App.tasks.dupMergeModal(selKey, col, id);
         else if (b.dataset.act === 'edit') App.tasks.editTaskModal(col, id, selKey, false);
         else if (b.dataset.act === 'del') {
           App.ui.confirm('删除「' + task.text.slice(0, 16) + '」？', '删除', function () {
