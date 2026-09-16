@@ -23,6 +23,11 @@
   }
   /** 各步实际用时（秒）。preview/consolidate 封顶=预算，超出部分不鼓励但如实记录 */
   function phaseSeconds(L, name) {
+    // ✅ v64：已经结束的阶段直接用"固化过的净秒数"。
+    //    （pausedMs 是单值，进下一阶段会被 resetPause 清零 → 不固化的话这一阶段的暂停就丢了）
+    const fixed = name === 'preview' ? L.previewNetSec
+      : (name === 'attend' ? L.attendNetSec : L.consNetSec);
+    if (fixed != null) return Math.max(0, Math.floor(fixed));
     // ⏸ 暂停中：把"当前时刻"钉在按下暂停的那一刻 —— 这样秒数真的完全冻住，
     // 也不会出现 floor(a+b)-floor(b) 的 1 秒取整漂移
     const nowMs = L.pauseAt || Date.now();
@@ -47,6 +52,16 @@
 
   /** 进下一个阶段时把暂停状态清掉（新阶段重新开始计时） */
   function resetPause(L) { L.pausedMs = 0; L.pauseAt = null; L.restUntil = null; }
+
+  /** ⚠️ v64：阶段结束、准备 resetPause 之前，先把这一阶段"扣掉暂停后的净秒数"固化下来。
+      pausedMs 是共享的单值，清零后上一阶段的暂停时长就再也算不回来了 ——
+      这是"听课 4 小时里其实只学了 1 小时、时间轴却记成 4 小时"的根因。 */
+  function freezePhase(L, name) {
+    if (!L) return;
+    if (name === 'preview') { if (L.previewNetSec == null) L.previewNetSec = Math.floor(phaseSeconds(L, 'preview')); }
+    else if (name === 'attend') { if (L.attendNetSec == null) L.attendNetSec = Math.floor(phaseSeconds(L, 'attend')); }
+    else { if (L.consNetSec == null) L.consNetSec = Math.floor(phaseSeconds(L, 'cons')); }
+  }
 
   /** ⏸ 暂停：先坐着把预算和时间想清楚再开始，或者中途去吃饭，时间都冻着 */
   function pauseLecture() {
@@ -215,6 +230,7 @@
       consMin: o.consMin != null ? o.consMin : d.consMin,
       pts: pts || 0,
       phase: 'preview', previewStartAt: Date.now(), pausedMs: 0, pauseAt: null, restUntil: null,
+      previewNetSec: null, attendNetSec: null, consNetSec: null,   // v64：各阶段"扣掉暂停后的净秒数"
       checklist: [false, false, false], overdueToasted: false,
       createdAt: S().nowIso ? S().nowIso() : new Date().toISOString()
     };
@@ -233,6 +249,7 @@
     if (L.phase === 'preview' && L.previewEndAt == null) L.previewEndAt = Date.now();
     if (L.phase === 'attend' && L.attendEndAt == null) L.attendEndAt = Date.now();
     if (L.phase === 'consolidate' && L.consEndAt == null) L.consEndAt = Date.now();
+    freezePhase(L, L.phase === 'preview' ? 'preview' : (L.phase === 'attend' ? 'attend' : 'cons'));
     day.lectures = day.lectures || [];
     day.lectures.push(L);
     day.activeLecture = null;
@@ -334,6 +351,7 @@
     });
     App.ui.bindActions({
       ok: function () {
+        freezePhase(L, 'preview');   // ⚠️ 必须赶在 resetPause 之前
         L.phase = 'attend';
         resetPause(L);
         L.prepDone = true;
@@ -357,6 +375,7 @@
       if (!L.attendConfirm) { L.attendConfirm = true; S().save(); return; }
     }
     L.attendEndAt = Date.now();
+    freezePhase(L, 'attend');    // ⚠️ 必须赶在 resetPause 之前
     L.attendConfirm = false;
     L.phase = 'consolidate';
     resetPause(L);
@@ -382,6 +401,7 @@
         const v = (modal.querySelector('#lec-chain').value || '').trim();
         L.chain = v;   // ★ v55：留空也照样完成 —— 用户明确说不想被强制写
         L.consEndAt = Date.now();
+        freezePhase(L, 'cons');      // ⚠️ 固化整理净时长，别让暂停混进总时长
         L.phase = 'done';
         L.endAt = Date.now();
         const bonus = allThreeDone(L) ? (L.pts || 0) : 0;
@@ -415,15 +435,18 @@
     App.ui.confirm('跳过这一步，这节课就拿不到三步大奖了（记录照样保留）。确定跳过？', '跳过', function () {
       if (which === 'preview') {
         L.skipPreview = true; L.previewEndAt = Date.now();
+        freezePhase(L, 'preview');
         L.phase = 'attend'; resetPause(L); L.prepDone = false; L.attendStartAt = Date.now(); L.note = L.note || '';
         timelinePush(L);
         App.ui.toast('已跳过预习（无大奖）。听课开始');
       } else if (which === 'attend') {
         L.skipAttend = true; L.attendEndAt = Date.now();
+        freezePhase(L, 'attend');
         L.phase = 'consolidate'; resetPause(L); L.consStartAt = Date.now(); L.overdueToasted = false;
         App.ui.toast('已跳过听课（无大奖）。进入整理');
       } else {
         L.skipCons = true; L.consEndAt = Date.now();
+        freezePhase(L, 'cons');
         L.phase = 'done'; L.endAt = Date.now();
         L.awarded = 0;
         day.lectures = day.lectures || [];
@@ -447,6 +470,7 @@
       if (L.phase === 'preview' && L.previewEndAt == null) L.previewEndAt = Date.now();
       if (L.phase === 'attend' && L.attendEndAt == null) L.attendEndAt = Date.now();
       if (L.phase === 'consolidate' && L.consEndAt == null) L.consEndAt = Date.now();
+      freezePhase(L, L.phase === 'preview' ? 'preview' : (L.phase === 'attend' ? 'attend' : 'cons'));
       day.lectures = day.lectures || [];
       day.lectures.push(L);
       day.activeLecture = null;
@@ -459,6 +483,14 @@
   }
 
   /* 时间轴同步（upsert）：开始听就挂一条，阶段推进/完成/放弃时更新同一条 */
+  /** 时间戳兜底：新数据存的是毫秒数字，老/手写数据可能是 ISO 字符串 —— 两种都算得出来 */
+  function msOf(v) {
+    const n = +v;
+    if (isFinite(n)) return n;
+    const t = new Date(v).getTime();
+    return isFinite(t) ? t : 0;
+  }
+
   function timelinePush(L) {
     const day = today();
     day.timeline = day.timeline || [];
@@ -466,17 +498,24 @@
     let sMin = start.getHours() * 60 + start.getMinutes();
     let eMin = end.getHours() * 60 + end.getMinutes();
     if (eMin < sMin) eMin = 1439;
-    const totalMin = Math.max(1, Math.round((phaseSeconds(L, 'preview') + phaseSeconds(L, 'attend') + phaseSeconds(L, 'cons')) / 60));
+    // ✅ v64：只把"净时长"（扣掉暂停/小休）记成学习时间；
+    //    暂停了多久单列到 pausedMin，时间轴卡片会写"（暂停 X 不算）"
+    const netSec = phaseSeconds(L, 'preview') + phaseSeconds(L, 'attend') + phaseSeconds(L, 'cons');
+    const totalMin = Math.max(1, Math.round(netSec / 60));
+    const spanSec = Math.max(0, Math.round((end.getTime() - msOf(L.previewStartAt)) / 1000));
+    const pausedMin = Math.max(0, Math.round((spanSec - netSec) / 60));
     const content = '🎓 听课三步 · ' + L.course + (L.endAt ? (L.abandoned ? ' · 放弃' : (L.awarded > 0 ? ' · 三步达成' : '')) : ' · 进行中');
     const note = (L.question ? '核心问题：' + L.question + '　' : '') + (L.chain || '');
     const rec = day.timeline.find(function (r) { return r.lectureId === L.id; });
     if (rec) {
       rec.start = sMin; rec.end = eMin; rec.minutes = Math.min(totalMin, Math.max(1, eMin - sMin));
+      rec.pausedMin = pausedMin;
       rec.content = content; rec.note = note;
     } else {
       day.timeline.push({
         id: S().uid(), start: sMin, end: eMin, minutes: Math.min(totalMin, Math.max(1, eMin - sMin)),
         content: content, category: 'study', countAsStudy: true, auto: true, lectureId: L.id,
+        pausedMin: pausedMin,   // ⏸ 这段时间里暂停/小休了多少（不算学习）
         taskId: L.taskId || null,      // 记下来归属，小时计划才能把它算进对应的分类
         note: note
       });
@@ -598,13 +637,16 @@
       rows.slice(0, 25).forEach(function (r) {
         const x = r.x;
         const mins = Math.round((phaseSeconds(x, 'preview') + phaseSeconds(x, 'attend') + phaseSeconds(x, 'cons')) / 60);
+        const pausedMin = x.endAt && x.previewStartAt
+          ? Math.max(0, Math.round((msOf(x.endAt) - msOf(x.previewStartAt)) / 60000) - mins) : 0;
         const flag = x.abandoned ? '🚫 放弃' : (x.awarded > 0 ? '🎁 大奖 +' + x.awarded + ' 分' : '📄 未走全');
         html += '<div class="lec-hist-row">' +
           '<span class="lec-hist-date">' + S().fmtDateCN(r.k) + '</span>' +
           '<b>' + S().esc(x.course) + '</b>' +
           '<span class="lec-hist-min">预' + Math.round(phaseSeconds(x, 'preview') / 60) +
           ' · 听' + Math.round(phaseSeconds(x, 'attend') / 60) +
-          ' · 整' + Math.round(phaseSeconds(x, 'cons') / 60) + ' 分 ＝ ' + mins + ' 分钟</span>' +
+          ' · 整' + Math.round(phaseSeconds(x, 'cons') / 60) + ' 分 ＝ ' + mins + ' 分钟' +
+          (pausedMin > 0 ? '（⏸ 暂停 ' + pausedMin + ' 分钟未计）' : '') + '</span>' +
           '<span class="lec-hist-flag">' + flag + '</span></div>' +
           (x.chain ? '<div class="lec-hist-chain">🔗 ' + S().esc(x.chain) + '</div>' : '');
       });
