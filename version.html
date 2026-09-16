@@ -104,7 +104,7 @@ const SLIDES = [
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">听课三步 + 日历</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">听课住进任务</div></div>'+
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">悬浮窗出浏览器</div></div>'+
-          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+
+          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+'<div class="tl" data-i="16"><div class="n">v16</div><div class="t">自动补结算</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -424,6 +424,24 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#0ea5e9"><h4>💡 怎么确认自己看到的是新版</h4><ul><li>设置页最上面多了一行「📦 当前版本」——数字对不上就是缓存没刷</li><li>顶栏弹红色横幅 = 有文件没传上去，横幅会点名是哪个</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v16 · 忘了结算的那天，自动帮你补上", badge:{t:"v16 · ⏰ 自动结算会补算",c:"#8b5cf6"},
+    tag:"以前「昨天忘了点结束今天」，它就一直卡着 —— 没做完的拓展也就永远搬不到今天来",
+    cols:[
+      {t:"🔍 以前的毛病", c:"#e2545d", items:[
+        "自动结算只判断「今天到点没」，从来不回头看昨天",
+        "所以昨天你忘了点「🏁 结束今天」，昨天就永远不结账",
+        "那天的拓展也就一直躺在昨天，今天怎么等都等不到"]},
+      {t:"🔄 现在的做法", c:"#8b5cf6", items:[
+        "每次自动结算前，先回头看一眼：有没有「该结却还没结」的日子（最多往前看 7 天）",
+        "从最早那天开始依次补结 —— 没做完的拓展自然就搬到今天了",
+        "一次补好几天也会汇总成一条提示：「9月13日–9月15日 已自动结算（补结 3 天）」",
+        "回看只是「看一眼」，不会凭空给那些没记录的日期建档案"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#8b5cf6"><h4>💡 什么时候会发生</h4><ul><li>打开页面后几秒内自动判断，页面没开着也不怕</li><li>正在计时的时候不会动（不打断你），停下来才结</li><li>不想自动结：设置 → ⏰ 到点自动结算 → 关掉</li></ul></div>'+
       '</div>'
   },
   {

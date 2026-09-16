@@ -2640,6 +2640,21 @@
     const at = S().minOfDay(st.autoEndDayAt || '23:59');
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
+
+    // ① v68：先补结算「以前遗留、忘了结算」的日子（回看最多 7 天，从最早那天开始）
+    //    ⚠️ 旧版只看「今天到点没」—— 所以昨天忘了点「结束今天」的话，
+    //       昨天就永远卡着不结，那天没做完的拓展也就永远不会搬到今天来。
+    //       （用户 2026-09-16 报的「昨天没做完的拓展没来今天」就是这个）
+    for (let back = 7; back >= 1; back--) {
+      const dd = new Date();
+      dd.setDate(dd.getDate() - back);
+      const kk = S().dateKey(dd);
+      const pd = (S().peekDay ? S().peekDay(kk) : S().data().days[kk]);
+      if (!pd || pd.ended || isEmptyDay(pd)) continue;
+      return kk;
+    }
+
+    // ② 没有遗留的，再看「今天这一场」到点了没
     const d = new Date();
     if (at < 6 * 60) {          // 结算点在凌晨（0:00-5:59）：它属于"前一天"
       if (nowMin < at && nowMin < 6 * 60) return null;   // 还没到点
@@ -2653,37 +2668,52 @@
   function autoEndDayTick() {
     const st = S().settings();
     if (!st.autoEndDay || autoEndBusy) return false;
-    const key = autoSettleKey();
-    if (!key) return false;
-    const day = (S().peekDay ? S().peekDay(key) : S().data().days[key]);
-    if (!day || day.ended) return false;
-    if (isEmptyDay(day)) return false;             // 那天什么都没记，不用结
+    if (!autoSettleKey()) return false;            // 没账可结
     if (timer || cdTimer) {                        // 还有任务在计时 → 不打断，等停下来再结
       if (!autoEndPendingToasted) {
         autoEndPendingToasted = true;
-        App.ui.toast('\u23F0 到结算点了，但还有任务正在计时 \u2014\u2014 停下来就自动结算', 4500);
+        App.ui.toast('⏰ 到结算点了，但还有任务正在计时 —— 停下来就自动结算', 4500);
       }
       return false;
     }
     autoEndBusy = true;
-    let r = null;
+    const doneKeys = [];
+    let moved = 0, cut = 0, rolled = 0;
     try {
-      r = settleDayCore(day, key, { rollAll: true });
+      // v68：一次把「遗留的 + 今天到点的」都补完 ——
+      // 每结完一天它就被标 ended，autoSettleKey() 下次自然返回下一个，循环天然收敛。
+      for (let guard = 0; guard < 8; guard++) {
+        const key = autoSettleKey();
+        if (!key) break;
+        const day = (S().peekDay ? S().peekDay(key) : S().data().days[key]);
+        if (!day || day.ended || isEmptyDay(day)) break;
+        const r = settleDayCore(day, key, { rollAll: true });
+        doneKeys.push(key);
+        moved += r.moved || 0;
+        cut += r.cut || 0;
+        rolled += r.rolled || 0;
+      }
     } catch (e) {
-      App.ui.toast('自动结算出错：' + (e && e.message ? e.message : e));
       autoEndBusy = false;
+      App.ui.toast('自动结算出错：' + (e && e.message ? e.message : e));
       return false;
     }
     autoEndBusy = false;
+    if (!doneKeys.length) return false;
     autoEndPendingToasted = false;
-    const nk = nextDayKeyOf(key);
-    App.ui.toast('\u23F0 ' + S().shortDateCN(key) + ' 已自动结算' +
-      (r.moved ? ' \u00b7 拓展 ' + r.moved + ' 条已移到 ' + S().shortDateCN(nk) : '') +
-      (r.cut ? ' \u00b7 扣 ' + r.cut + ' 分' : '') +
-      (r.rolled ? ' \u00b7 ' + r.rolled + ' 条顺延' : ''), 5200);
+    const lastKey = doneKeys[doneKeys.length - 1];
+    const nk = nextDayKeyOf(lastKey);
+    const span = doneKeys.length > 1
+      ? S().shortDateCN(doneKeys[0]) + '–' + S().shortDateCN(lastKey)
+      : S().shortDateCN(lastKey);
+    App.ui.toast('⏰ ' + span + ' 已自动结算' +
+      (doneKeys.length > 1 ? '（补结 ' + doneKeys.length + ' 天）' : '') +
+      (moved ? ' · 拓展 ' + moved + ' 条已移到 ' + S().shortDateCN(nk) : '') +
+      (cut ? ' · 扣 ' + cut + ' 分' : '') +
+      (rolled ? ' · ' + rolled + ' 条顺延' : ''), 5600);
     try {
-      if (st.notifyOnEnd) notifyNow('\u23F0 ' + S().shortDateCN(key) + ' 已自动结算',
-        '收工' + (r.cut ? '，扣 ' + r.cut + ' 分' : '') + (r.moved ? '，' + r.moved + ' 条拓展移到明天' : ''));
+      if (st.notifyOnEnd) notifyNow('⏰ ' + span + ' 已自动结算',
+        '收工' + (cut ? '，扣 ' + cut + ' 分' : '') + (moved ? '，' + moved + ' 条拓展移到明天' : ''));
     } catch (e) { /* 通知失败不影响结算 */ }
     renderAll();
     return true;
