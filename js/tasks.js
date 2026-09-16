@@ -1185,6 +1185,31 @@
     return null;
   }
 
+  /** 🎁 某个任务组的"整组做完"奖励积分（组上单独设过就用组自己的，否则用设置里的默认值） */
+  function groupRewardOf(g) {
+    const v = g.rewardPoints != null ? g.rewardPoints : S().settings().groupRewardPoints;
+    return Math.max(0, +v || 0);
+  }
+  /** 🎁 整组都做完了 → 发一次整体奖励积分（发过就记 awarded，绝不重复发，防止反复勾选刷分） */
+  function groupRewardCheck(task, group, dayKey) {
+    if (!task || !group) return 0;
+    const subs = group.subs || [];
+    if (!subs.length || !subs.every(function (s) { return s.done === true; })) return 0;
+    if (group.awarded) return 0;
+    const pts = groupRewardOf(group);
+    if (pts <= 0) return 0;
+    App.store.addLedger(dayKey || S().todayKey(), 'group-reward', {
+      points: pts,
+      note: '🎯 整组做完奖励：' + group.name + '（' + subs.length + ' 题全完成）· +' + pts + ' 分',
+      taskId: task.id
+    });
+    group.awarded = pts;
+    S().save();
+    App.ui.floatAt(document.getElementById('stat-points'), '+' + pts + '分');
+    App.ui.toast('🎯 「' + group.name + '」整组做完，额外 +' + pts + ' 分');
+    return pts;
+  }
+
   function groupBlockHTML(task) {
     const groups = task.groups || [];
     const body = groups.map(function (g) {
@@ -1220,9 +1245,12 @@
           (s.splitlog && s.splitlog.length ? '<span class="sub-meta noted-tag">🧭 已拆解</span>' : '') +
           '</div>' + lecPanel + '</div>';
       }).join('');
+      const gRw = groupRewardOf(g);
       const rewardTxt = allDone
-        ? '<span class="group-reward done">✅ 全部做完</span>'
-        : '<span class="group-reward">整组做完 · 再对答案收尾</span>';
+        ? '<span class="group-reward done">✅ 全部做完' + (g.awarded ? ' · 🎁 已领 +' + g.awarded + ' 分' : '') + '</span>'
+        : (gRw > 0
+          ? '<span class="group-reward">🏁 整组做完额外 +' + gRw + ' 分</span>'
+          : '<span class="group-reward">整组做完 · 再对答案收尾</span>');
       return '<div class="group-card" data-group="' + g.id + '">' +
         '<div class="group-head"><span class="group-name">🎯 ' + S().esc(g.name) + '</span>' +
         '<span class="group-time">本组 ' + subs.length + ' 题 · 预计 <b>' + S().fmtDur(gPlanned) + '</b> · 实际 <b>' + S().fmtDur(gActual) + '</b>' + (gCont > 0 ? ' · 连续 <b>' + S().fmtDur(gCont) + '</b>' : '') + '</span>' +
@@ -1246,14 +1274,18 @@
     if (!task) return;
     const m = App.ui.openModal('🎯 新建任务组', '' +
       '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">把几个关联的小题打包成一组，整组都做完就算完成，专治“大任务太沉、开不了头”</p>' +
-      '<div class="field"><label>任务组名称</label><input type="text" id="g-name" placeholder="如：搞定第三章" /></div>',
+      '<div class="field"><label>任务组名称</label><input type="text" id="g-name" placeholder="如：搞定第三章" /></div>' +
+      '<div class="field"><label>🏁 整组做完的整体奖励积分（全组题目都完成时，额外发一次）</label>' +
+      '<input type="number" id="g-reward" min="0" value="' + (S().settings().groupRewardPoints || 0) + '" /></div>' +
+      '<p class="hint">填 0 = 这一组不要整组奖励。奖励只在**第一次**全组做完时发，之后不会重复发。</p>',
       '<button class="btn btn-primary" data-act="ok">创建</button><button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
       ok: function () {
         const name = m.querySelector('#g-name').value.trim();
         if (!name) { App.ui.toast('请填写组名称'); return; }
         task.groups = task.groups || [];
-        task.groups.push({ id: S().uid(), name: name, subs: [] });
+        const rwIn = m.querySelector('#g-reward');
+        task.groups.push({ id: S().uid(), name: name, subs: [], rewardPoints: Math.max(0, +(rwIn ? rwIn.value : 0) || 0) });
         S().save(); App.ui.closeModal(); App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
@@ -1265,12 +1297,17 @@
     const g = task && (task.groups || []).find(function (x) { return x.id === groupId; });
     if (!g) return;
     const m = App.ui.openModal('✎ 任务组', '' +
-      '<div class="field"><label>组名称</label><input type="text" id="g-name" value="' + S().esc(g.name) + '" /></div>',
+      '<div class="field"><label>组名称</label><input type="text" id="g-name" value="' + S().esc(g.name) + '" /></div>' +
+      '<div class="field"><label>🏁 整组做完的整体奖励积分（0 = 不要这个奖励）</label>' +
+      '<input type="number" id="g-reward" min="0" value="' + groupRewardOf(g) + '" /></div>',
       '<button class="btn btn-primary" data-act="ok">保存</button><button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
       ok: function () {
         g.name = m.querySelector('#g-name').value.trim() || g.name;
-        delete g.rewardRest; delete g.awarded;
+        const rwIn2 = m.querySelector('#g-reward');
+        if (rwIn2) g.rewardPoints = Math.max(0, +rwIn2.value || 0);
+        // ⚠️ 这里过去会 delete g.awarded（"已领过奖励"的标记）——
+        //    结果改个组名就把标记清了 → 整组奖励会被重复发。v63 起不再清。
         S().save(); App.ui.closeModal(); App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
@@ -1882,6 +1919,9 @@
     if (mine) dropPendingSub(mine.id); else { day.pendingSubs = []; S().save(); }
     App.ui.closeModal();
     S().save(); renderAll(); showTimerBar();
+    // 🎯 v63：这条路径（v56 的「先结算再问完成没」）不经过 markSub，
+    //    这里也得看一眼整组是不是全做完了 —— 否则从弹窗里点完成就拿不到整组奖励
+    if (doneFlag) groupRewardCheck(task, found && found.group, S().todayKey());
   }
 
   function markSub(cd, doneFlag, summary) {
@@ -1929,6 +1969,8 @@
     stopTickIfIdle();
     showTimerBar();
     S().save();
+    // 🎯 这道小题做完后，整组是不是全做完了？是就发整组奖励
+    if (doneFlag && group) groupRewardCheck(task, group, S().todayKey());
     App.tasks.renderAll();
   }
 
@@ -2345,6 +2387,11 @@
   }
 
   /* ---------- 🌱 拓展欠账清算：挂账的任务，下次结算时给最后一次补勾机会 ---------- */
+  /** 🌱 拓展欠账"到期没补完"的扣分倍数（0 = 只记账不扣分）；可在设置里改 */
+  function extDebtRate() {
+    const r = S().settings().extDebtRate;
+    return r == null ? 1 : Math.max(0, +r || 0);
+  }
   function pendingExtDebts() {
     const out = [];
     const days = S().data().days;
@@ -2360,13 +2407,16 @@
   function settleExtDebts(done) {
     const items = pendingExtDebts();
     if (!items.length) { done(); return; }
+    const rate = extDebtRate();
     const rows = items.map(function (x, i) {
+      const cut = Math.round(x.it.points * rate);
       return '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13.5px;color:#374151">' +
         '<input type="checkbox" data-debt="' + i + '" /> <span>[' + S().shortDateCN(x.dayKey) + '] ' +
-        S().esc(x.it.text) + ' <b style="color:#e2545d">(' + x.it.points + ' 分)</b></span></label>';
+        S().esc(x.it.text) + ' <b style="color:#e2545d">(没补完扣 ' + cut + ' 分 · 补完了得 +' + x.it.points + ' 分)</b></span></label>';
     }).join('');
     const modal = App.ui.openModal('🌱 拓展欠账清算（宽限到期）',
-      '<p style="font-size:13px">之前挂账的长期拓展到了最后期限：<b>做完的勾上划掉（不扣分）</b>，没勾的现在真扣：</p>' +
+      '<p style="font-size:13px">之前挂账的长期拓展到了最后期限：<b>确实做完的勾上（划掉，还照样发 +积分）</b>，没勾的现在真扣：</p>' +
+      (rate !== 1 ? '<p class="hint">当前扣分倍数：<b>' + rate + ' 倍</b>（可在设置页「积分规则」里改）</p>' : '') +
       '<div style="max-height:220px;overflow-y:auto;border:1px solid #e5e8ec;border-radius:8px;padding:6px 10px">' + rows + '</div>',
       '<button class="btn btn-primary" data-act="ok">确认清算</button>');
     App.ui.bindActions({
@@ -2374,6 +2424,7 @@
         const ticked = {};
         modal.querySelectorAll('[data-debt]:checked').forEach(function (c) { ticked[c.dataset.debt] = true; });
         const perDay = {};
+        let earnN = 0;
         items.forEach(function (x, i) {
           const day = S().getDay(x.dayKey);
           if (ticked[i]) {
@@ -2381,18 +2432,28 @@
             if (t && !t.done) {
               t.done = true;
               t.summary = { done: true, text: '（宽限期内补完）', at: new Date().toISOString() };
+              // v63：补完 = 真做完了，照样发这条拓展任务的积分（"后一天补完也有积分"）
+              if (x.it.points > 0) {
+                App.store.addLedger(x.dayKey, 'earn-extra', {
+                  points: x.it.points,
+                  note: '🌱 长期拓展补完（宽限期内）：' + x.it.text + ' · +' + x.it.points + ' 分',
+                  taskId: x.it.id
+                });
+                earnN += x.it.points;
+              }
             }
-          } else {
-            perDay[x.dayKey] = (perDay[x.dayKey] || 0) + x.it.points;
+          } else if (x.it.points > 0) {
+            perDay[x.dayKey] = (perDay[x.dayKey] || 0) + Math.round(x.it.points * rate);
           }
           x.debt.settled = true;
         });
         Object.keys(perDay).forEach(function (k) {
-          App.store.addLedger(k, 'ext-penalty', { points: -perDay[k], note: '🌱 拓展欠账清算：宽限期内没补完，扣 ' + perDay[k] + ' 分' });
+          if (perDay[k] > 0) App.store.addLedger(k, 'ext-penalty', { points: -perDay[k], note: '🌱 拓展欠账清算：宽限期内没补完，扣 ' + perDay[k] + ' 分（' + rate + ' 倍）' });
         });
         S().save();
         App.ui.closeModal();
-        if (items.length) App.ui.toast('🌱 拓展欠账已清算');
+        if (earnN > 0) App.ui.floatAt(document.getElementById('stat-points'), '+' + earnN + '分');
+        if (items.length) App.ui.toast('🌱 拓展欠账已清算' + (earnN > 0 ? ' · 补完的拿回 +' + earnN + ' 分' : ''));
         done();
       }
     });
@@ -2476,11 +2537,13 @@
         '</p></div>' +
         '<div class="field"><label>今日专注</label><p>' + S().fmtDur(focusMin) + (restMin > 0 ? '（期间休息 ' + S().fmtDur(restMin) + '）' : '') + '</p></div>';
 
+      const extRate = extDebtRate();
       if (settings.extStrict && extItems.length > 0) {
         body += '<div class="field"><label>🌱 长期拓展（严格模式 · 宽限一晚）</label><p style="color:#e2545d;font-weight:700">' +
           '没做完 ' + extItems.length + ' 条，共 ' + extDebtSum + ' 分 → <b>先挂账，暂不扣</b></p>' +
-          '<p class="hint">下面把"实际做完了"的任务勾上（熬夜做完的也算完），勾了的直接划掉、不扣分；' +
-          '剩下的挂账，<b>下次结束今天的时会再给你一次补勾机会</b>，到那时还没补完才真扣。</p></div>';
+          '<p class="hint">下面把"实际做完了"的任务勾上（熬夜做完的也算完），勾了的直接划掉、<b>积分照样发</b>；' +
+          '剩下的先挂账，<b>下次点「结束今天」时会再给你最后一次补勾机会</b>（补上了也照样发分），' +
+          '到那时还没补完才真扣：<b>一条 ' + Math.round(extRate * 100) + '% 的扣分</b>（' + extRate + ' 倍，可在设置里改）。</p></div>';
       }
 
       if (undoneAll.length > 0) {
@@ -2521,21 +2584,38 @@
             if (revText) day.review = { text: revText, at: new Date().toISOString() };
           }
           // ☑ 补记：勾了"实际做完了"的任务直接划掉（在结算日当天标完成）
+          let fixEarn = 0;
           modal.querySelectorAll('[data-donefix]:checked').forEach(function (c) {
             const list = day.tasks[c.dataset.col];
             const t = list.find(function (x) { return x.id === c.dataset.donefix; });
             if (t && !t.done) {
               t.done = true;
               t.summary = { done: true, text: '（结算时补记完成）', at: new Date().toISOString() };
+              // v63：补记完成也算完成 → 理想/拓展照发积分（"后面补完也要有积分"）
+              if (c.dataset.col === 'ideal' || c.dataset.col === 'extra') {
+                const p = taskPoints(t, c.dataset.col) || 0;
+                if (p > 0) {
+                  App.store.addLedger(dayKey, c.dataset.col === 'ideal' ? 'earn-ideal' : 'earn-extra', {
+                    points: p,
+                    note: (c.dataset.col === 'ideal' ? '⭐ 理想任务补记完成：' : '🌱 长期拓展补记完成：') + t.text + ' · +' + p + ' 分',
+                    taskId: t.id
+                  });
+                  fixEarn += p;
+                }
+              }
             }
           });
+          if (fixEarn > 0) App.ui.floatAt(document.getElementById('stat-points'), '+' + fixEarn + '分');
           // 🌱 严格模式：拓展未完成 → 挂账（不扣分、不顺延、任务保留），下次结算时清算
-          if (settings.extStrict && extItems.length > 0) {
+          //   ⚠️ 只挂"补记时也没勾"的那些 —— 上面刚补记划掉的不该再挂账（旧版会重复挂）
+          const extLeft = extItems.filter(function (u) { return !u.task.done; });
+          const extLeftSum = extLeft.reduce(function (a, u) { return a + extPointsOf(u.task); }, 0);
+          if (settings.extStrict && extLeft.length > 0) {
             day.extDebt = {
               settled: false,
-              count: extItems.length,
-              points: extDebtSum,
-              items: extItems.map(function (u) {
+              count: extLeft.length,
+              points: extLeftSum,
+              items: extLeft.map(function (u) {
                 return { col: 'extra', id: u.task.id, text: u.task.text, points: extPointsOf(u.task) };
               }),
               at: new Date().toISOString()
@@ -2744,7 +2824,8 @@
     box.innerHTML = '<div class="day-toolbar">' +
       '<button class="btn btn-small" data-act="paste">📋 从往日粘贴任务</button>' +
       '<button class="btn btn-small" data-act="trash">🗑 回收站（误删恢复）</button>' +
-      '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务</span></div>' +
+      '<button class="btn btn-small" data-act="export-img" title="把今天的任务清单导出成一张长图，可以直接发给别人看">🖼 导出长图</button>' +
+      '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务 / 导出长图发人看</span></div>' +
       pendingBarHTML() +                     // ★ v56：待办衔接（某题没标结果 / 接着做还是休息）
       COLS.map(function (col) {
       const list = day.tasks[col.key];
@@ -3406,13 +3487,13 @@
   /** 听课三步走完 → 勾掉关联的小任务（时间轴/积分在听课时已记过，这里只打勾不重复算） */
   function finishSubByLecture(L) {
     if (!L || !L.subId) return '';
-    let hit = null;
+    let hit = null, hitTask = null, hitGroup = null, hitKey = '';
     [S().todayKey(), S().tomorrowKey()].forEach(function (k) {
       const d = S().getDay(k);
       ['required', 'ideal', 'extra'].forEach(function (col) {
         ((d.tasks && d.tasks[col]) || []).forEach(function (t) {
           const f = findSubInTask(t, L.subId);
-          if (f && f.sub) hit = f.sub;
+          if (f && f.sub) { hit = f.sub; hitTask = t; hitGroup = f.group; hitKey = k; }
         });
       });
     });
@@ -3420,6 +3501,8 @@
     hit.done = true;
     hit.doneByLecture = true;
     S().save();
+    // 🎯 听课走完把这一题勾掉了 → 顺带看整组是否全完成（全完成就发整组奖励）
+    if (hitGroup) groupRewardCheck(hitTask, hitGroup, hitKey || S().todayKey());
     if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
     return hit.text;
   }
@@ -3458,6 +3541,7 @@
         const act2 = actBtn.dataset.act;
         if (act2 === 'paste') { pasteTasksModal(S().todayKey()); return; }
         if (act2 === 'trash') { trashModal(); return; }
+        if (act2 === 'export-img') { exportTasksImage(S().todayKey()); return; }
         const colEl = actBtn.closest('.task-col');
         const listKey = colEl ? colEl.dataset.col : null;
         if (!listKey) { App.ui.toast('无法识别任务栏'); return; }
@@ -3503,6 +3587,7 @@
     document.getElementById('tomorrow-date').textContent = '📅 明天（提前填写）：' + S().fmtDateCN(dayKey);
     box.innerHTML = '<div class="day-toolbar">' +
       '<button class="btn btn-small" data-act="paste">📋 从其他天转移任务</button>' +
+      '<button class="btn btn-small" data-act="export-img" title="把明天的任务清单导出成一张长图">🖼 导出长图</button>' +
       '<span class="day-toolbar-hint">别的日子（含今天没做完的）整批搬到这里；搬完按情况把做过的叉掉</span></div>' +
       COLS.map(function (col) {
       const list = day.tasks[col.key];
@@ -4156,6 +4241,306 @@
     document.getElementById('tasks-tomorrow').classList.toggle('active', tab === 'tomorrow');
   }
 
+  /* ============================================================
+   * 🖼 一键导出任务长图（v63）
+   *   —— 零依赖：自己用 Canvas 画一张竖长图，直接发给别人看
+   *   内容：日期 + 三栏（必须/理想/长期拓展）每条任务、完成状态、分值 + 汇总
+   * ============================================================ */
+  const IMG_COLS = [
+    { key: 'required', name: '必须完成', color: '#d94854', bg: '#fdf2f3', dot: '#e2545d' },
+    { key: 'ideal', name: '理想任务', color: '#c07d13', bg: '#fdf7ec', dot: '#e0a02c' },
+    { key: 'extra', name: '长期拓展', color: '#1e8f60', bg: '#eefaf3', dot: '#22a06b' }
+  ];
+  const IMG_FONT = '"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", system-ui, sans-serif';
+  const IMG_W = 760;      // 逻辑宽度
+  const IMG_PAD = 36;     // 页面左右留白
+  const IMG_CPAD = 20;    // 卡片内留白
+  const IMG_LINE = 27;    // 任务行高
+
+  function imgRR(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  /** 按像素宽度折行（中文逐字折，够用） */
+  function imgWrap(ctx, text, maxW) {
+    const out = [];
+    String(text == null ? '' : text).split('\n').forEach(function (para) {
+      let cur = '';
+      for (let i = 0; i < para.length; i++) {
+        const c = para[i];
+        if (cur && ctx.measureText(cur + c).width > maxW) { out.push(cur); cur = c; }
+        else cur += c;
+      }
+      out.push(cur);
+    });
+    return out.length ? out : [''];
+  }
+  function imgStatus(t) {
+    if (t.done === true) return { mark: '\u2713', color: '#22a06b' };
+    if (t.done === false) return { mark: '\u2717', color: '#e2545d' };
+    return { mark: '\u00b7', color: '#c2c9d2' };
+  }
+
+  /** 纯构建：返回画好的 canvas（测试可以直接拿它验尺寸/像素） */
+  function buildTasksImage(dayKey) {
+    const key = dayKey || S().todayKey();
+    const day = S().getDay(key);
+
+    const ruler = document.createElement('canvas').getContext('2d');
+    const rf = function (spec) { ruler.font = spec; return ruler; };
+
+    // 预排三栏：每条任务先算出高度（折几行）
+    const cols = IMG_COLS.map(function (c) {
+      const list = (day.tasks[c.key] || []).slice();
+      const items = list.map(function (t) {
+        const pts = taskPoints(t, c.key);
+        const ptsTxt = pts != null ? '+' + pts + ' 分' : '';
+        const maxTextW = IMG_W - IMG_PAD * 2 - IMG_CPAD * 2 - 30 - (ptsTxt ? 66 : 0);
+        const lines = imgWrap(rf('15px ' + IMG_FONT), t.text, maxTextW);
+        return { t: t, lines: lines, ptsTxt: ptsTxt, h: lines.length * IMG_LINE + 8 };
+      });
+      const doneN = list.filter(function (t) { return t.done; }).length;
+      const bodyH = items.length
+        ? items.reduce(function (a, it) { return a + it.h; }, 0) + 8
+        : 34;
+      return { def: c, list: list, items: items, doneN: doneN, h: 48 + bodyH + 8 };
+    });
+
+    // 总高：边距 + 标题 + 三栏 + 汇总 + 边距
+    let H = 30 + 74 + 10;
+    cols.forEach(function (c) { H += c.h + 16; });
+    H += 104 + 26;
+
+    const cv = document.createElement('canvas');
+    const dpr = 2;
+    cv.width = IMG_W * dpr;
+    cv.height = Math.round(H) * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    // 白底
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, IMG_W, H);
+
+    let y = 30;
+
+    /* ---- 标题区 ---- */
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'bold 27px ' + IMG_FONT;
+    ctx.fillText(S().fmtDateCN(key), IMG_PAD, y + 26);
+
+    // 右上角小标签
+    ctx.font = '13px ' + IMG_FONT;
+    const tagTxt = '\u{1F4DA} 专注计划';
+    const tagW = ctx.measureText(tagTxt).width + 22;
+    ctx.fillStyle = '#eef2f7';
+    imgRR(ctx, IMG_W - IMG_PAD - tagW, y + 2, tagW, 28, 14);
+    ctx.fill();
+    ctx.fillStyle = '#5b6675';
+    ctx.fillText(tagTxt, IMG_W - IMG_PAD - tagW + 11, y + 21);
+
+    ctx.fillStyle = '#8a919c';
+    ctx.font = '14px ' + IMG_FONT;
+    const totalN = cols.reduce(function (a, c) { return a + c.list.length; }, 0);
+    const totalDone = cols.reduce(function (a, c) { return a + c.doneN; }, 0);
+    ctx.fillText('今日任务清单 · 共 ' + totalN + ' 条，已完成 ' + totalDone + ' 条', IMG_PAD, y + 54);
+    y += 74 + 10;
+
+    /* ---- 三栏 ---- */
+    cols.forEach(function (c) {
+      const cardX = IMG_PAD, cardW = IMG_W - IMG_PAD * 2;
+      ctx.fillStyle = c.def.bg;
+      imgRR(ctx, cardX, y, cardW, c.h, 16);
+      ctx.fill();
+
+      // 栏名 + 计数
+      ctx.fillStyle = c.def.dot;
+      ctx.beginPath();
+      ctx.arc(cardX + IMG_CPAD + 5, y + 25, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = c.def.color;
+      ctx.font = 'bold 17px ' + IMG_FONT;
+      ctx.fillText(c.def.name, cardX + IMG_CPAD + 19, y + 31);
+      const nameW = ctx.measureText(c.def.name).width;
+      ctx.font = 'bold 15px ' + IMG_FONT;
+      ctx.fillText(c.doneN + '/' + c.list.length, cardX + IMG_CPAD + 19 + nameW + 12, y + 31);
+
+      let iy = y + 48;
+      if (!c.items.length) {
+        ctx.fillStyle = '#a7aeb8';
+        ctx.font = '14px ' + IMG_FONT;
+        ctx.fillText('（这一类今天没有任务）', cardX + IMG_CPAD, iy + 18);
+      }
+      c.items.forEach(function (it) {
+        const st = imgStatus(it.t);
+        const tx = cardX + IMG_CPAD + 26;
+        ctx.fillStyle = st.color;
+        ctx.font = 'bold 17px ' + IMG_FONT;
+        ctx.fillText(st.mark, cardX + IMG_CPAD, iy + 20);
+        const grey = it.t.done === true;
+        ctx.fillStyle = grey ? '#9aa1ab' : '#28313d';
+        ctx.font = '15px ' + IMG_FONT;
+        it.lines.forEach(function (ln, li) {
+          ctx.fillText(ln, tx, iy + 20 + li * IMG_LINE);
+        });
+        if (grey) {   // 完成的划一道删除线
+          ctx.strokeStyle = '#c8ced6';
+          ctx.lineWidth = 1;
+          it.lines.forEach(function (ln, li) {
+            const w = ctx.measureText(ln).width;
+            ctx.beginPath();
+            ctx.moveTo(tx, iy + 15 + li * IMG_LINE);
+            ctx.lineTo(tx + w, iy + 15 + li * IMG_LINE);
+            ctx.stroke();
+          });
+        }
+        if (it.ptsTxt) {   // 右侧分值
+          ctx.fillStyle = grey ? '#b9bfc8' : '#6b7280';
+          ctx.font = '14px ' + IMG_FONT;
+          ctx.textAlign = 'right';
+          ctx.fillText(it.ptsTxt, cardX + cardW - IMG_CPAD, iy + 20);
+          ctx.textAlign = 'left';
+        }
+        iy += it.h;
+      });
+      y += c.h + 16;
+    });
+
+    /* ---- 底部汇总 ---- */
+    const sumX = IMG_PAD, sumW = IMG_W - IMG_PAD * 2;
+    ctx.fillStyle = '#f6f8fa';
+    imgRR(ctx, sumX, y, sumW, 88, 16);
+    ctx.fill();
+    const focusMin = (day.sessions || []).reduce(function (a, x) { return a + (x.actualMinutes || 0); }, 0);
+    const dayPts = S().ledger().filter(function (e) { return e.date === key; }).reduce(function (a, e) { return a + (e.points || 0); }, 0);
+    ctx.fillStyle = '#374151';
+    ctx.font = 'bold 15px ' + IMG_FONT;
+    ctx.fillText(cols.map(function (c) { return c.def.name + ' ' + c.doneN + '/' + c.list.length; }).join('   \u00b7   '), sumX + IMG_CPAD, y + 32);
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '14px ' + IMG_FONT;
+    ctx.fillText('\u23F1 计时专注 ' + S().fmtDur(focusMin) + '   \u00b7   \u2B50 当日积分 ' + (dayPts >= 0 ? '+' : '') + dayPts + ' 分', sumX + IMG_CPAD, y + 56);
+    ctx.fillStyle = '#aab1bb';
+    ctx.font = '12px ' + IMG_FONT;
+    ctx.textAlign = 'right';
+    ctx.fillText('由「专注计划」生成 · ' + new Date().toLocaleString('zh-CN', { hour12: false }), sumX + sumW - IMG_CPAD, y + 74);
+    ctx.textAlign = 'left';
+
+    return cv;
+  }
+
+  /** 导出为 PNG 下载 */
+  function exportTasksImage(dayKey) {
+    const key = dayKey || S().todayKey();
+    let cv;
+    try {
+      cv = buildTasksImage(key);
+    } catch (e) {
+      App.ui.toast('出图失败：' + (e && e.message ? e.message : e));
+      return null;
+    }
+    try {
+      cv.toBlob(function (blob) {
+        if (!blob) { App.ui.toast('出图失败，浏览器没能生成图片'); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '专注计划-' + key + '.png';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 3000);
+        App.ui.toast('\u{1F5BC} 长图已导出（' + (cv.width / 2) + '×' + (cv.height / 2) + '），在「下载」里找它');
+      }, 'image/png');
+    } catch (e2) {
+      App.ui.toast('出图失败：' + (e2 && e2.message ? e2.message : e2));
+    }
+    return cv;
+  }
+
+  /* ============================================================
+   * 🧹 未来日期的记录：列表 + 清理（v63）
+   *   为什么会有：日历里可以提前给未来某天安排任务；而"只是点到了那天"
+   *   也会把那天实体化成一条空记录 → 它们不该出现在「按日记录 / 复盘」里
+   * ============================================================ */
+  function dayContentSummary(d) {
+    if (!d) return [];
+    const n = function (col) { return ((d.tasks && d.tasks[col]) || []).length; };
+    const parts = [];
+    if (n('required')) parts.push('必须 ' + n('required') + ' 条');
+    if (n('ideal')) parts.push('理想 ' + n('ideal') + ' 条');
+    if (n('extra')) parts.push('拓展 ' + n('extra') + ' 条');
+    if ((d.timeline || []).length) parts.push('时间轴 ' + d.timeline.length);
+    if ((d.sessions || []).length) parts.push('计时 ' + d.sessions.length);
+    if ((d.hourPlans || []).length) parts.push('小时代 ' + d.hourPlans.length);
+    if ((d.sports || []).length) parts.push('运动 ' + d.sports.length);
+    if ((d.lectures || []).length) parts.push('听课 ' + d.lectures.length);
+    if (d.review && d.review.text) parts.push('复盘');
+    if (d.extDebt && !d.extDebt.settled) parts.push('拓展欠账');
+    return parts;
+  }
+
+  function futureDaysModal() {
+    const today = S().todayKey();
+    const all = S().data().days;
+    // ⚠️ 只从「后天」往后算：明天是页面每天都会正常创建的（明天页要用），不算幽灵记录
+    const tomorrow = S().tomorrowKey();
+    const keys = Object.keys(all).filter(function (k) { return k > tomorrow; }).sort();
+    if (!keys.length) { App.ui.toast('很干净：后天以后没有任何日期的记录'); return; }
+
+    const emptyKeys = keys.filter(function (k) { return dayContentSummary(all[k]).length === 0; });
+    const rows = keys.map(function (k) {
+      const parts = dayContentSummary(all[k]);
+      const empty = !parts.length;
+      return '<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:13.5px;color:#374151">' +
+        '<input type="checkbox" data-fday="' + k + '"' + (empty ? ' checked' : '') + ' style="margin-top:3px" /> ' +
+        '<span>' + S().fmtDateCN(k) + ' \u2014 ' + (empty
+          ? '<span style="color:#8a919c">空记录，没有任何内容（建议删）</span>'
+          : '<span style="color:#b06a00">' + parts.join(' \u00b7 ') + '（提前安排的，确认不要才勾）</span>') + '</span></label>';
+    }).join('');
+
+    const modal = App.ui.openModal('\u{1F9F9} 未来日期的记录（共 ' + keys.length + ' 天）',
+      '<p style="font-size:13px">这些是<b>还没到</b>的日期，却已经在数据里留了记录。</p>' +
+      '<p style="font-size:13px">默认只勾了<b>完全空白</b>的那些（' + emptyKeys.length + ' 天）——删掉没有任何影响；' +
+      '有内容的那些是你自己提前安排的任务，想留就留着（日历里能看到）。</p>' +
+      '<div style="max-height:260px;overflow-y:auto;border:1px solid #e5e8ec;border-radius:8px;padding:6px 10px">' + rows + '</div>' +
+      '<p class="hint">删除后这一天就彻底没了（任务/记录/复盘一起删），不能撤销。</p>',
+      '<button class="btn" data-act="pick-empty">只勾空白项</button>' +
+      '<button class="btn" data-act="pick-none">全不选</button>' +
+      '<button class="btn btn-primary" data-act="ok">删除勾选的记录</button>' +
+      '<button class="btn" data-act="cancel">取消</button>');
+
+    App.ui.bindActions({
+      'pick-empty': function () {
+        modal.querySelectorAll('[data-fday]').forEach(function (c) {
+          c.checked = dayContentSummary(S().data().days[c.dataset.fday]).length === 0;
+        });
+      },
+      'pick-none': function () {
+        modal.querySelectorAll('[data-fday]').forEach(function (c) { c.checked = false; });
+      },
+      ok: function () {
+        const picked = [];
+        modal.querySelectorAll('[data-fday]:checked').forEach(function (c) { picked.push(c.dataset.fday); });
+        if (!picked.length) { App.ui.toast('一个都没勾，什么都没删'); return; }
+        App.ui.confirm('确定删除这 ' + picked.length + ' 天的记录吗？不可恢复。', '删除', function () {
+          const n = S().purgeDays(picked);
+          App.ui.closeModal();
+          App.ui.toast('\u{1F9F9} 已清理 ' + n + ' 天的记录');
+          App.tasks.renderAll();
+          if (App.stats && App.stats.render) App.stats.render();
+          if (App.calendar && App.calendar.render) App.calendar.render();
+        });
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
   function renderAll() {
     renderToday();
     renderTomorrow();
@@ -4202,6 +4587,10 @@
   }
 
   App.tasks = {
+    buildTasksImage: buildTasksImage,
+    exportTasksImage: exportTasksImage,
+    futureDaysModal: futureDaysModal,
+    dayContentSummary: dayContentSummary,
     init: init, renderAll: renderAll, renderToday: renderToday,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,

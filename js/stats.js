@@ -19,14 +19,23 @@
     'sport': '🏃 运动完成',
     'sport-cut': '🏃 运动没做到（扣）',
     'ext-penalty': '🌱 长期拓展没做完（扣）',
+    'group-reward': '🎯 任务组整组做完奖励',
     'focus-cut': '🔥 学习休息时消耗（扣）',
     'redeem': '🎁 积分兑换',
     'adjust': '✏ 调整'
   };
 
   /* ---------- 数据收集 ---------- */
+  // v63：只读取数用的空壳（个别日子没记录时不创建它，也不影响下游 day.xxx 的访问）
+  const EMPTY_DAY = {
+    tasks: { required: [], ideal: [], extra: [] },
+    sessions: [], timeline: [], rewards: [], hourPlans: [], rests: [],
+    plannedHourPlans: [], sports: [], lectures: [], ended: false
+  };
   function collectDay(key) {
-    const day = S().getDay(key);
+    // ⚠️ 这里必须【只读】：以前用 getDay 会把【本月每一天】都创建成空记录
+    // （翻一下历史页，data.days 里就凭空多出 30 天）
+    const day = (S().peekDay ? S().peekDay(key) : S().getDay(key)) || EMPTY_DAY;
     let study = 0, extend = 0, fun = 0;
     day.timeline.forEach(function (r) {
       if (r.category === 'study' && r.countAsStudy !== false) study += r.minutes || 0;
@@ -130,13 +139,27 @@
     const lh = document.getElementById('lec-history');
     if (lh) lh.innerHTML = (App.lecture && App.lecture.historyHTML) ? App.lecture.historyHTML() : '';
 
-    // 按日记录
+    // 按日记录（v63：**只统计已经过完的日子**，未来的日期不再混进来）
+    const tk = S().todayKey();
+    // ⚠️ 明天不算：那是页面每天正常创建的（明天页要用），只盯「后天以后」
+    const tmk = S().tomorrowKey();
+    const futureKeys = Object.keys(S().data().days).filter(function (k) { return k > tmk; }).sort();
     const dayKeys = Object.keys(S().data().days).filter(function (k) {
-      const day = S().getDay(k);
+      if (k > tk) return false;
+      const day = S().peekDay ? S().peekDay(k) : S().getDay(k);
+      if (!day) return false;
       return day.tasks.required.length || day.tasks.ideal.length || day.tasks.extra.length || day.timeline.length;
     }).sort().reverse();
 
-    document.getElementById('day-history').innerHTML = dayKeys.length
+    // v63：数据里如果还留着【未来日期】的记录，在这里点一句，给个一键清理的入口
+    const futureTip = futureKeys.length
+      ? '<div class="card" style="border-left:3px solid #e0a02c">' +
+        '<b>⚠️ 发现 ' + futureKeys.length + ' 个"还没到"的日期在数据里留了记录</b>' +
+        '<p class="hint" style="margin:6px 0 8px">它们不会显示在下面的按日记录里（那页只记已经过完的日子）。' +
+        '多半是点开过日历/时间轴留下的空壳；也可能有你<b>提前安排</b>的任务。点按钮看清单，空的可以一次删掉。</p>' +
+        '<button class="btn btn-small" id="btn-future-clean2">🧹 查看 / 清理未来的记录</button></div>'
+      : '';
+    document.getElementById('day-history').innerHTML = futureTip + (dayKeys.length
       ? '<details class="ledger-all"><summary>📅 按日记录：共 ' + dayKeys.length + ' 天 · 点开查看</summary><div style="margin-top:8px">' +
       dayKeys.map(function (k) {
           const c = collectDay(k);
@@ -211,7 +234,10 @@
             hourHtml + detailHTML + reviewHTML + reviewBtn +
             '</div>';
         }).join('') + '</div></details>'
-      : '<p class="hint">还没有任何一天的任务或记录。</p>';
+      : '<p class="hint">还没有任何一天的任务或记录。</p>');
+
+    const fc2 = document.getElementById('btn-future-clean2');
+    if (fc2) fc2.onclick = function () { if (App.tasks && App.tasks.futureDaysModal) App.tasks.futureDaysModal(); };
 
     // 补写/改复盘
     document.querySelectorAll('#day-history [data-reviewday]').forEach(function (b) {

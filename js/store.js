@@ -72,6 +72,8 @@
       perfectRewardPoints: 20, // 100% 额外奖励：积分
       extAppendable: true,  // 拓展任务可追加
       extStrict: true,      // 🌱 长期拓展：不顺延；没做完挂账宽限一次，到期没补完按分值扣
+      extDebtRate: 1,       // 🌱 拓展欠账到期没补完 → 按任务分值的这个倍数扣（0 = 只记账不扣分）
+      groupRewardPoints: 10, // 🎯 任务组「整组做完」的整体奖励积分（每个组还能单独改）
       rollover: true,       // 未完成顺延
       recordMode: 'strict', // 记录模式：strict=严格监管休息 / easy=平常心只记学习
       restRewardPoints: 5,  // 严格模式下「好好休息」得积分
@@ -210,7 +212,17 @@
     return data.days[key];
   }
   function ensureDay(key) { getDay(key); }
+  /** 只读访问：有就返回、没有返回 null，**不会创建**。
+      用于统计/复盘/渲染这类"看一眼"的场景，避免"翻一下历史就把整月每天都实体化"。 */
+  function peekDay(key) { return data.days[key] || null; }
   function delDay(key) { delete data.days[key]; save(); }
+  /** 批量删除若干天的记录，返回删掉的天数（清理误建的空白日用） */
+  function purgeDays(keys) {
+    let n = 0;
+    (keys || []).forEach(function (k) { if (data.days[k]) { delete data.days[k]; n++; } });
+    if (n) save();
+    return n;
+  }
 
   /* ---------- 账本 ---------- */
   function addLedger(date, type, opts) {
@@ -222,6 +234,7 @@
       points: opts.points || 0,
       leisure: opts.leisure || 0, // 休闲时间变动（分钟）
       note: opts.note || '',
+      taskId: opts.taskId || '',   // 关联任务（取消打勾时按它精确撤销对应那一笔）
       at: nowIso()
     });
     save();
@@ -308,6 +321,7 @@
   App.store = {
     load: load, save: save,
     getDay: getDay, ensureDay: ensureDay, delDay: delDay,
+    peekDay: peekDay, purgeDays: purgeDays,
     addLedger: addLedger, undoLastLedger: undoLastLedger,
     pointsTotal: pointsTotal, leisureTotal: leisureTotal,
     rolloverTasks: rolloverTasks,

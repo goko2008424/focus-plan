@@ -452,7 +452,13 @@
       '<h3 style="margin:0">🗓 ' + (dt.getMonth() + 1) + '月' + dt.getDate() + '日 ' + wd +
       (isToday ? ' · 今天' : (isPast ? ' · 过去' : ' · 未来')) + '</h3>' +
       (isPast ? '<span class="tag" style="color:var(--muted)">这天有效学习 ' + S().fmtDur(studyMinutes(day)) + '</span>' : '') +
-      '</div>';
+      '</div>' +
+      // v63：点进未来的一天时说清楚 —— 这里加的任务算"提前安排"，不会跑进"按日记录/复盘"里
+      (!isToday && !isPast
+        ? '<p class="hint" style="background:#fff8e6;border-left:3px solid #e0a02c;padding:6px 10px;border-radius:6px;margin:8px 0 0">' +
+          '⚠️ 这是<b>还没到</b>的一天——在这里加的任务属于<b>提前安排</b>，' +
+          '日历里随时能看到，但不会出现在「历史 → 按日记录」里（那页只记已经过完的日子）。</p>'
+        : '');
     if (isPast) {
       const undone = [];
       COLS.forEach(function (c) {
@@ -522,7 +528,13 @@
     wrap.querySelectorAll('.hm-cell[data-k]').forEach(function (c) {
       c.onclick = function () {
         const k = c.dataset.k;
-        selKey = k > todayK() ? todayK() : k;
+        // v63：未来的格子没有内容可看。以前会把 selKey 夹回今天、却把月历甩到未来那个月
+        // → 用户以为在看 9 月、其实网格已经是 10 月，顺手就把任务加到了 10 月某天。
+        if (k > todayK()) {
+          App.ui.toast('这天还没到 —— 想提前安排任务，用下面的月历挑那一天');
+          return;
+        }
+        selKey = k;
         const d = S().keyToDate(k);
         calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
         render();

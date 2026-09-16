@@ -36,6 +36,31 @@
       numRow('set-sub-points', '新小题默认积分', s.subDefaultPoints, '分/题') +
       '<p class="hint">每条任务的积分现在直接写在任务后面（任务行上的数字框），随时可单独修改：完成这条给多少分由你定。这里的数值只是新任务的默认值。</p>' +
       '</div>' +
+      '<div class="set-group"><h4>🌱 长期拓展任务：没做完怎么算</h4>' +
+      (s.extStrict
+        ? '<p class="hint" style="margin-bottom:6px">现在是<b>严格模式</b>，就这样走：</p>' +
+          '<p class="hint" style="margin-bottom:6px">' +
+          '① 当天没做完 → 先"挂账"，<b>一分不扣</b>；<br/>' +
+          '② 你下一次点「🏁 结束今天」时，会弹窗给你<b>最后一次补勾机会</b>：<br/>' +
+          '   · 确实补做完了 → 勾上就划掉，<b>积分照发</b>；<br/>' +
+          '   · 没勾 → 按下面这个倍数真扣分。</p>'
+        : '<p class="hint" style="margin-bottom:6px">现在<b>没开</b>严格模式：长期拓展没做完，跟普通任务一样处理（跟着「顺延」开关走，不扣分）。</p>') +
+      numRow('set-ext-debt-rate', '到期还没补完，扣任务分值的', s.extDebtRate, '倍') +
+      '<p class="hint">1 倍 = 一条 5 分的拓展没补完就扣 5 分；填 <b>0</b> = 只记账不扣分；填 2 = 双倍扣。' +
+      '想彻底关掉这套，就把下面「行为开关」里的「🌱 长期拓展严格模式」关掉。</p>' +
+      '</div>' +
+      '<div class="set-group"><h4>🎯 任务组：整组做完的整体奖励</h4>' +
+      numRow('set-group-reward', '整组题目全做完，额外奖励', s.groupRewardPoints, '分') +
+      '<p class="hint">任务组（用「🎯 建一个任务组」打包起来的那一摞小题）里的题<b>全部做完</b>时，' +
+      '除了每道题自己的积分，再额外发这一笔<b>整体奖励</b>。新建/编辑任务组时还能给每组单独定分（填 0 = 这组不要）。' +
+      '奖励只在第一次全做完时发一次，不会重复发。</p>' +
+      '</div>' +
+      '<div class="set-group"><h4>🧹 数据体检</h4>' +
+      '<div class="set-row"><span class="set-label">未来日期的空记录</span>' +
+      '<button class="btn btn-small" id="btn-future-clean">🔍 查看 / 清理</button></div>' +
+      '<p class="hint">有些"还没到"的日期会不小心在数据里留下记录（点开过日历就会）。这里能一次看清楚：' +
+      '<b>空白的</b>一键删掉；你<b>提前安排</b>了任务的未来日期会单独标出来，默认不动它。</p>' +
+      '</div>' +
       '<div class="set-group"><h4>🏆 完美额外奖励（三类全部完成时）</h4>' +
       numRow('set-perfect-points', '全部任务完成奖励积分（可自定义）', s.perfectRewardPoints, '分') +
       '</div>' +
@@ -101,7 +126,11 @@
     bind('set-hour-cut', function () { s.hourDistractCut = Math.max(0, Math.min(100, +this.value || 100)); S().save(); });
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
-    bind('set-ext-strict', function () { s.extStrict = this.checked; S().save(); });
+    bind('set-ext-strict', function () { s.extStrict = this.checked; S().save(); render(); });
+    bind('set-ext-debt-rate', function () { s.extDebtRate = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-group-reward', function () { s.groupRewardPoints = Math.max(0, +this.value || 0); S().save(); });
+    const fcb = document.getElementById('btn-future-clean');
+    if (fcb) fcb.onclick = function () { if (App.tasks && App.tasks.futureDaysModal) App.tasks.futureDaysModal(); };
     document.querySelectorAll('.theme-chip[data-th]').forEach(function (c) {
       c.onclick = function () {
         s.theme = c.dataset.th;
