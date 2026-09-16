@@ -27,6 +27,12 @@
     const s = S().settings();
     const box = document.getElementById('settings-form');
     box.innerHTML =
+      '<div class="set-group"><h4>📦 当前版本</h4>' +
+      '<p class="hint">页面版本 <b>v' + (window.__BUILD || '?') + '</b>。' +
+      '每次改完上传后，这个数字就会变大；' +
+      '<b>如果还是老数字</b>，说明浏览器还在用缓存的旧页面 —— ' +
+      '按一次 <b>Ctrl + F5</b> 强刷即可。</p>' +
+      '</div>' +
       '<div class="set-group"><h4>🎉 保底奖励（必须任务全部完成时）</h4>' +
       numRow('set-base-points', '累积积分', s.baseRewardPoints, '分') +
       '</div>' +

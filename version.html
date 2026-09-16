@@ -104,7 +104,8 @@ const SLIDES = [
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">听课三步 + 日历</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">听课住进任务</div></div>'+
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">悬浮窗出浏览器</div></div>'+
-          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'</div>'+
+          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+
+'</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
     }
@@ -406,6 +407,24 @@ const SLIDES = [
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#0ea5e9"><h4>💡 为什么要自动结算</h4><ul><li>忘了点「结束今天」，那天就永远没封账；到点自动结掉省心</li><li>不想要：设置 → ⏰ 到点自动结算 → 关掉开关</li></ul></div>'+
       '<div class="col" style="--cc:#22a06b"><h4>🧹 一套逻辑两边共用</h4><ul><li>自动结算和手动点「结束今天」走的是同一套规则，不会两头不一致</li></ul></div></div>'
+  },
+  {
+    name:"v15 · 上传完刷新一下就更新", badge:{t:"v15 · 🔄 不用再手动强刷",c:"#0ea5e9"},
+    tag:"以前总觉得「明明传上去了，怎么还是老样子」—— 是浏览器把旧页面扣着不放",
+    cols:[
+      {t:"🔍 以前的毛病", c:"#e2545d", items:[
+        "浏览器里的 Service Worker 是「有缓存就先给缓存」：连 index.html 它自己都缓存了一份",
+        "于是你在 GitHub 传了新版本，第一次刷新拿到的还是缓存里的旧页面",
+        "结果就是明明传上去了，看起来却「一点变化都没有」"]},
+      {t:"🔄 现在的做法", c:"#0ea5e9", items:[
+        "页面本体改成「先上网拿最新的，离线才用缓存」—— 打开就是当前版本",
+        "每次打开都顺手问一句服务器「有没有新版本？」",
+        "发现新版 → 自动悄悄切过去并刷新一次，不用你再按 Ctrl+F5",
+        "js / css 依旧用缓存（它们带版本号，改了号就自动换新），离线照样能用"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>💡 怎么确认自己看到的是新版</h4><ul><li>设置页最上面多了一行「📦 当前版本」——数字对不上就是缓存没刷</li><li>顶栏弹红色横幅 = 有文件没传上去，横幅会点名是哪个</li></ul></div>'+
+      '</div>'
   },
   {
     name:"收尾", cls:"cover",
