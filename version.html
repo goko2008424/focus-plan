@@ -104,7 +104,7 @@ const SLIDES = [
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">听课三步 + 日历</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">听课住进任务</div></div>'+
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">悬浮窗出浏览器</div></div>'+
-          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'</div>'+
+          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
     }
@@ -348,6 +348,24 @@ const SLIDES = [
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#22a06b"><h4>🌱 长期拓展的完整规则</h4><ul><li>没做完 → 挂账（不扣）→ 下次结算给最后一次补勾机会 → 补上了发分，没补才扣</li><li>扣分倍数在「设置 → 🌱 长期拓展任务」里，看得见、改得动</li></ul></div>'+
       '<div class="col" style="--cc:#0ea5e9"><h4>💡 关于长图</h4><ul><li>图是按你的任务自动排版的，任务名长会自动折行，不会截断</li><li>白底浅色，发给别人在任何手机上都看得清</li></ul></div></div>'
+  },
+  {
+    name:"v12 · 时间只算真在学", badge:{t:"v12 · ⏸ 暂停不算学习时间",c:"#e0a02c"},
+    tag:"听课 4 小时、其实只学了 1 小时 —— 现在账目只记那 1 小时",
+    cols:[
+      {t:"⏸ 暂停 / 小休的时间不再算进学习", c:"#e0a02c", items:[
+        "听课中途点「⏸ 暂停」或「☕ 小休」，那段时间不再计入学习时长",
+        "时间轴上写得明白：「10:34–15:27 · 1小时53分钟（含暂停 3小时 不计）」——跨度和净时长一眼分得清",
+        "顶部「有效学习」、时间轴汇总、「历史」页的听课记录，口径全部跟着变准",
+        "「历史 → 🎓 听课记录」里会写「＝ 60 分钟（⏸ 暂停 180 分钟未计）」"]},
+      {t:"🔍 为什么之前会虚高", c:"#e2545d", items:[
+        "暂停时长原来只存一份，一进下一步就被清掉了 → 前一步暂停了多久再也算不回来",
+        "现在每一步结束时先把自己的净时长固定下来，再清暂停 —— 暂停多的那一步也不会虚高",
+        "跳过某一步、放弃这节课，同样只记净时长"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#e2545d"><h4>📌 已经记下的旧记录</h4><ul><li>之前那几条数字偏大的听课记录，系统没法知道当时暂停了多久，改不了</li><li>想修就在「时间轴」点那条记录，把结束时间改到真实收工的时刻（时长会自己重算）</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>💡 什么时候该点暂停</h4><ul><li>走开、吃饭、睡觉、被叫走 —— 点一下「⏸ 暂停」，回来点「▶ 继续」</li><li>只要 20 分钟以内就回来，用「☕ 小休」更省事（到点自动继续）</li></ul></div></div>'
   },
   {
     name:"收尾", cls:"cover",
