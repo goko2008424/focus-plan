@@ -40,13 +40,13 @@
       (s.extStrict
         ? '<p class="hint" style="margin-bottom:6px">现在是<b>严格模式</b>，就这样走：</p>' +
           '<p class="hint" style="margin-bottom:6px">' +
-          '① 当天没做完 → 先"挂账"，<b>一分不扣</b>；<br/>' +
-          '② 你下一次点「🏁 结束今天」时，会弹窗给你<b>最后一次补勾机会</b>：<br/>' +
-          '   · 确实补做完了 → 勾上就划掉，<b>积分照发</b>；<br/>' +
-          '   · 没勾 → 按下面这个倍数真扣分。</p>'
+          '① 今天没做完 → 点「🏁 结束今天」时<b>自动搬到明天的拓展栏</b>（前面带「↩ 顺延」标记）——<br/>' +
+          '   明天照样能打勾、能开计时、能开课，不用翻回昨天去处理；<br/>' +
+          '② 搬过来的那条<b>第二天还是没做完</b> → 明天结算时按下面这个倍数<b>真扣分</b>，' +
+          '并且不再往后搬（只宽限一次，不会一路挂着扣）。</p>'
         : '<p class="hint" style="margin-bottom:6px">现在<b>没开</b>严格模式：长期拓展没做完，跟普通任务一样处理（跟着「顺延」开关走，不扣分）。</p>') +
-      numRow('set-ext-debt-rate', '到期还没补完，扣任务分值的', s.extDebtRate, '倍') +
-      '<p class="hint">1 倍 = 一条 5 分的拓展没补完就扣 5 分；填 <b>0</b> = 只记账不扣分；填 2 = 双倍扣。' +
+      numRow('set-ext-debt-rate', '拖过宽限期还没做完，扣任务分值的', s.extDebtRate, '倍') +
+      '<p class="hint">1 倍 = 一条 5 分的拓展拖了两天还没做就扣 5 分；填 <b>0</b> = 只记账不扣分；填 2 = 双倍扣。' +
       '想彻底关掉这套，就把下面「行为开关」里的「🌱 长期拓展严格模式」关掉。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🎯 任务组：整组做完的整体奖励</h4>' +
@@ -85,7 +85,15 @@
       '<div class="set-group"><h4>🔘 行为开关</h4>' +
       switchRow('set-ext-append', '拓展任务完成后可继续追加', s.extAppendable) +
       switchRow('set-rollover', '每日未完成任务自动顺延到明天', s.rollover) +
-      switchRow('set-ext-strict', '🌱 长期拓展严格模式：不顺延；没做完先挂账，宽限一次（下次结算前补勾=不扣），到期没补完才扣', s.extStrict) +
+      switchRow('set-ext-strict', '🌱 长期拓展：没做完自动搬到第二天的拓展栏（明天还能打勾/计时），第二天还没做完才扣分', s.extStrict) +
+      '</div>' +
+      '<div class="set-group"><h4>⏰ 到点自动结算</h4>' +
+      switchRow('set-auto-end', '每天到点自动结算今天（不用自己点「🏁 结束今天」）', s.autoEndDay) +
+      '<div class="set-row"><span class="set-label">每天几点结算</span>' +
+      '<input type="time" id="set-auto-end-at" class="set-input" value="' + (s.autoEndDayAt || '23:59') + '" /></div>' +
+      '<p class="hint">到点会自动做和「结束今天」一样的事：把没做完的长期拓展移到第二天、该扣的扣掉、其余未完成任务按上面「顺延」开关搬走，然后那天的账就封存了。' +
+      '<b>结算点设在凌晨（如 01:30）也行</b> —— 它算作「前一天的收工点」，适合熬夜到半夜。' +
+      '还有任务在计时时不会结算（不打断你），停下来了才结。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🎛 记录模式（时段衔接的监管强度）</h4>' +
       '<div class="set-row"><span class="set-label">模式</span>' +
@@ -127,6 +135,8 @@
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
     bind('set-ext-strict', function () { s.extStrict = this.checked; S().save(); render(); });
+    bind('set-auto-end', function () { s.autoEndDay = this.checked; S().save(); });
+    bind('set-auto-end-at', function () { s.autoEndDayAt = this.value || '23:59'; S().save(); });
     bind('set-ext-debt-rate', function () { s.extDebtRate = Math.max(0, +this.value || 0); S().save(); });
     bind('set-group-reward', function () { s.groupRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     const fcb = document.getElementById('btn-future-clean');

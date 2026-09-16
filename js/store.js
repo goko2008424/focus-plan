@@ -75,6 +75,8 @@
       extDebtRate: 1,       // 🌱 拓展欠账到期没补完 → 按任务分值的这个倍数扣（0 = 只记账不扣分）
       groupRewardPoints: 10, // 🎯 任务组「整组做完」的整体奖励积分（每个组还能单独改）
       rollover: true,       // 未完成顺延
+      autoEndDay: true,     // ⏰ 到点自动结算（不用手动点「结束今天」）
+      autoEndDayAt: '23:59', // ⏰ 每天的结算时刻；设在凌晨（如 01:30）也算「前一天的收工点」
       recordMode: 'strict', // 记录模式：strict=严格监管休息 / easy=平常心只记学习
       restRewardPoints: 5,  // 严格模式下「好好休息」得积分
       aiKey: '',            // SiliconFlow API Key（存本地）

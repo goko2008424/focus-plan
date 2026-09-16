@@ -104,7 +104,7 @@ const SLIDES = [
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">听课三步 + 日历</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">听课住进任务</div></div>'+
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">悬浮窗出浏览器</div></div>'+
-          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'</div>'+
+          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
     }
@@ -366,6 +366,46 @@ const SLIDES = [
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#e2545d"><h4>📌 已经记下的旧记录</h4><ul><li>之前那几条数字偏大的听课记录，系统没法知道当时暂停了多久，改不了</li><li>想修就在「时间轴」点那条记录，把结束时间改到真实收工的时刻（时长会自己重算）</li></ul></div>'+
       '<div class="col" style="--cc:#22a06b"><h4>💡 什么时候该点暂停</h4><ul><li>走开、吃饭、睡觉、被叫走 —— 点一下「⏸ 暂停」，回来点「▶ 继续」</li><li>只要 20 分钟以内就回来，用「☕ 小休」更省事（到点自动继续）</li></ul></div></div>'
+  },
+  {
+    name:"v13 · 没做完的拓展，明天自己跑过来", badge:{t:"v13 · 🌱 拓展自动顺延 + 隔天才扣分",c:"#22a06b"},
+    tag:"昨天没做完的长期拓展，第二天会自己出现在拓展栏里 —— 看得见、点得着",
+    cols:[
+      {t:"🌱 自动搬到第二天", c:"#22a06b", items:[
+        "昨天的长期拓展没做完 → 点「结束今天」时自动复制到明天的拓展栏，前面带一个「↩ 顺延」小标签",
+        "第二天照样能打勾、能开计时、能开课 —— 不用再翻回昨天去处理",
+        "原任务留在昨天不删（历史记录照样准）",
+        "同名任务不会重复搬；单独定过的分值也一起带过去"]},
+      {t:"⏳ 第二天再没做完，才真扣分", c:"#e2545d", items:[
+        "扣分只发生一次：搬过来的那条第二天还没做完 → 当天结算时按分值扣（倍数可调）",
+        "扣过之后不再往后搬 —— 不会无限挂着一路扣",
+        "勾了「☑ 补记」说其实做完的，直接划掉、积分照发，不扣"]},
+      {t:"🔧 顺手改的", c:"#0ea5e9", items:[
+        "结算弹窗里把两种情形分开写清楚：今天新没做完的（搬）／昨天搬来还没做完的（扣多少）",
+        "「结束今天」的标题不再写「熬夜跨天」（没熬夜也被这么说，容易误会），改成「昨天还没结算，先结昨天」"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#22a06b"><h4>📌 一共只宽限一次</h4><ul><li>D1 没做完 → 搬到 D2（不扣）；D2 还没做完 → 扣分且不再搬</li><li>不想要这套：设置 → 行为开关 → 关掉「🌱 长期拓展」</li></ul></div>'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>💡 为什么要搬而不是留在昨天</h4><ul><li>任务留在昨天，你就得先结昨天才能处理它；搬过来就随时能勾、能计时</li></ul></div></div>'
+  },
+  {
+    name:"v14 · 到点自动结算 + 两种标签分得清", badge:{t:"v14 · ⏰ 到点自动结算",c:"#f59e0b"},
+    tag:"不用每天记得点「结束今天」；哪条是原来的、哪条是移过来的，一眼就知道",
+    cols:[
+      {t:"⏰ 到点自动结算", c:"#f59e0b", items:[
+        "设置里定一个时刻（默认 23:59），到点自动做和「结束今天」一样的事：搬拓展、扣分、顺延、封存那天的账",
+        "结算点设在凌晨也行（如 01:30）—— 它算作「前一天的收工点」，适合熬夜到半夜",
+        "到点时页面没开着也没关系：下次打开会立刻补结算一次",
+        "还有任务在计时的时候不会结算（不打断你），停下来了才自动结"]},
+      {t:"🏷 两种标签，一眼分清", c:"#22a06b", items:[
+        "当天没做完的拓展：留在当天不搬走，标红色的「✗ 未完成 · 已移到明天」",
+        "第二天多出来的那条：标橙色的「↩ 昨天移过来」",
+        "两条各归各位，不会搞混哪个是原件、哪个是要做的",
+        "第二天还没做完 → 标上「↩ 昨天移过来 · 已扣分」，并且不再往后搬"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>💡 为什么要自动结算</h4><ul><li>忘了点「结束今天」，那天就永远没封账；到点自动结掉省心</li><li>不想要：设置 → ⏰ 到点自动结算 → 关掉开关</li></ul></div>'+
+      '<div class="col" style="--cc:#22a06b"><h4>🧹 一套逻辑两边共用</h4><ul><li>自动结算和手动点「结束今天」走的是同一套规则，不会两头不一致</li></ul></div></div>'
   },
   {
     name:"收尾", cls:"cover",

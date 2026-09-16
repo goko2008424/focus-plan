@@ -2235,6 +2235,24 @@
     const settings = S().settings();
 
     if (task.done) {
+      // ★ v66：勾了「当天没做完、已移到明天」的原任务 → 等于说其实做完了，把明天那条副本撤回来
+      if (listKey === 'extra' && task.movedOut && task.carried !== true) {
+        const nk = nextDayKeyOf(dayKey);
+        const nd = (S().peekDay ? S().peekDay(nk) : S().data().days[nk]);
+        if (nd && nd.tasks && nd.tasks.extra) {
+          const txt0 = String(task.text || '').trim();
+          const before0 = nd.tasks.extra.length;
+          nd.tasks.extra = nd.tasks.extra.filter(function (x) {
+            return !(x.carried && x.done !== true && String(x.text || '').trim() === txt0);
+          });
+          if (nd.tasks.extra.length !== before0) {
+            task.movedOut = false;
+            task.carriedFailed = false;
+            S().save();
+            App.ui.toast('明天那条同名的已撤掉（今天做完了）', 3600);
+          }
+        }
+      }
       // 完成 → 赚积分（仅理想/拓展，每条任务单独定价）
       if (listKey === 'ideal' || listKey === 'extra') {
         const p = taskPoints(task, listKey) || 0;
@@ -2472,6 +2490,15 @@
     });
   }
 
+  /** ⚠️ 结算某一天时，任务要顺延到"那一天的第二天"，不是"真实明天"。
+      反例（v65 修）：早上结算昨天时用 tomorrowKey() 会直接跳过今天 ——
+      没做完的任务被搬到后天，用户在今天的任务栏里根本看不到它。 */
+  function nextDayKeyOf(k) {
+    const d = S().keyToDate(k);
+    d.setDate(d.getDate() + 1);
+    return S().dateKey(d);
+  }
+
   function isEmptyDay(d) {
     if (!d) return true;
     const noTasks = !['required', 'ideal', 'extra'].some(function (k) {
@@ -2480,7 +2507,7 @@
     return noTasks && !(d.sessions || []).length && !(d.timeline || []).length;
   }
 
-  /** 智能结算目标：正常=今天；熬夜跨夜/今天已结束 → 往前找最近一个没结算的日子（最多回看7天） */
+  /** 智能结算目标：正常=今天；今天已结束/今天还是空的 → 往前找最近一个没结算的日子（最多回看7天） */
   function pickSettleKey() {
     const today = S().todayKey();
     const tDay = S().data().days[today];
@@ -2493,6 +2520,173 @@
       if (pd && !pd.ended && !isEmptyDay(pd)) return k;
     }
     return today;
+  }
+
+  /* ============================================================
+   * 🧮 结算核心（v66）：手动「结束今天」和到点自动结算**共用这一套**
+   *   —— 以前结算逻辑写在弹窗的 ok 回调里，自动结算没法复用（会分叉成两套规则）
+   *   参数：settleDayCore(day, dayKey, {review, doneFix:[{col,id}], rollIds:[], rollAll:true})
+   *   返回：{fixEarn, moved, cut, rolled}
+   * ============================================================ */
+  function settleDayCore(day, dayKey, o) {
+    o = o || {};
+    const settings = S().settings();
+    const extPointsOf = function (t) { return t.points != null ? t.points : (settings.extPoints || 0); };
+    const undoneAll = [];
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      (day.tasks[k] || []).filter(function (t) { return !t.done; }).forEach(function (t) { undoneAll.push({ k: k, task: t }); });
+    });
+    const undone = settings.extStrict ? undoneAll.filter(function (u) { return u.k !== 'extra'; }) : undoneAll.slice();
+    const extItems = settings.extStrict ? undoneAll.filter(function (u) { return u.k === 'extra'; }) : [];
+    const out = { fixEarn: 0, moved: 0, cut: 0, rolled: 0 };
+
+    // ① 复盘
+    if (o.review && String(o.review).trim()) day.review = { text: String(o.review).trim(), at: new Date().toISOString() };
+
+    // ② ☑ 补记：勾了"实际做完了"的 → 划掉 + 理想/拓展照发积分
+    (o.doneFix || []).forEach(function (f) {
+      const t = (day.tasks[f.col] || []).find(function (x) { return x.id === f.id; });
+      if (!t || t.done) return;
+      t.done = true;
+      t.summary = { done: true, text: '（结算时补记完成）', at: new Date().toISOString() };
+      if (f.col === 'ideal' || f.col === 'extra') {
+        const p = taskPoints(t, f.col) || 0;
+        if (p > 0) {
+          App.store.addLedger(dayKey, f.col === 'ideal' ? 'earn-ideal' : 'earn-extra', {
+            points: p,
+            note: (f.col === 'ideal' ? '\u2B50 理想任务补记完成：' : '\u{1F331} 长期拓展补记完成：') + t.text + ' \u00b7 +' + p + ' 分',
+            taskId: t.id
+          });
+          out.fixEarn += p;
+        }
+      }
+    });
+    if (out.fixEarn > 0) App.ui.floatAt(document.getElementById('stat-points'), '+' + out.fixEarn + '分');
+
+    // ③ 🌱 长期拓展：没做完的**复制**到第二天拓展栏（原任务留在当天、标 movedOut）
+    //    搬来的第二天还做不完 → 当场扣分，且不再往后搬
+    if (settings.extStrict && extItems.length > 0) {
+      const rate = extDebtRate();
+      const tmKey = nextDayKeyOf(dayKey);
+      const tmDay = S().getDay(tmKey);
+      const toCarry = [];
+      extItems.forEach(function (u) {
+        if (u.task.done) return;                      // 上面补记勾上的不算
+        if (u.task.carried) {                         // 昨天搬来的，今天还是没做完 → 扣
+          if (!u.task.carriedFailed) {
+            u.task.carriedFailed = true;
+            out.cut += Math.round(extPointsOf(u.task) * rate);
+          }
+          u.task.movedOut = true;                     // 它也不再往后搬了
+        } else {
+          toCarry.push(u);
+        }
+      });
+      if (out.cut > 0) {
+        App.store.addLedger(dayKey, 'ext-penalty', {
+          points: -out.cut,
+          note: '\u{1F331} 长期拓展拖过宽限期还没做完，扣 ' + out.cut + ' 分' + (rate !== 1 ? '（' + rate + ' 倍）' : '')
+        });
+        App.ui.floatAt(document.getElementById('stat-points'), '-' + out.cut + '分', 'neg');
+      }
+      toCarry.forEach(function (u) {
+        const txt = String(u.task.text || '').trim();
+        if (!txt) return;
+        const dup = tmDay.tasks.extra.some(function (x) { return String(x.text || '').trim() === txt; });
+        if (dup) { u.task.movedOut = true; return; }   // 明天已有同名，不重复搬，但照样标"已移过去"
+        const nt = { id: S().uid(), text: u.task.text, carried: true };   // \u21A9 副本：从昨天移过来的
+        if (u.task.points != null) nt.points = u.task.points;             // 保留单独定价
+        tmDay.tasks.extra.push(nt);
+        u.task.movedOut = true;        // ★ 原任务留在当天，只打一个"已移到明天"的标记
+        out.moved++;
+      });
+    }
+
+    // ④ 其余任务顺延（手动＝按勾选；auto＝o.rollAll 全搬）
+    if (settings.rollover && undone.length > 0) {
+      const ids = o.rollAll ? undone.map(function (u) { return u.task.id; }) : (o.rollIds || []);
+      ids.forEach(function (id) {
+        const u = undone.find(function (x) { return x.task.id === id; });
+        if (!u) return;
+        const t = { id: S().uid(), text: u.task.text };
+        if (u.task.points != null) t.points = u.task.points;
+        S().getDay(nextDayKeyOf(dayKey)).tasks[u.k].push(t);
+        out.rolled++;
+      });
+    }
+
+    // ⑤ 🔥 学习休息中的消耗
+    const cutN = day.focusCut || 0;
+    if (cutN > 0) {
+      App.store.addLedger(dayKey, 'focus-cut', { points: -cutN * FOCUS_CUT_PER, note: '学习休息时消耗 ' + cutN + ' 次，扣 ' + (cutN * FOCUS_CUT_PER) + ' 分' });
+    }
+
+    day.ended = true;
+    S().save();
+    return out;
+  }
+
+  /* ============================================================
+   * ⏰ 到点自动结算（v66）
+   *   用户：不想每天手动点「结束今天」，到点自己结掉，省的忘
+   * ============================================================ */
+  let autoEndBusy = false;
+  let autoEndPendingToasted = false;
+
+  /** 现在该结算哪一天？（结算点设在凌晨时，比如 01:30 → 它算"前一天的收工点"） */
+  function autoSettleKey() {
+    const st = S().settings();
+    if (!st.autoEndDay) return null;
+    const at = S().minOfDay(st.autoEndDayAt || '23:59');
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const d = new Date();
+    if (at < 6 * 60) {          // 结算点在凌晨（0:00-5:59）：它属于"前一天"
+      if (nowMin < at && nowMin < 6 * 60) return null;   // 还没到点
+      d.setDate(d.getDate() - 1);                        // 凌晨过点 or 白天补判 → 结昨天
+    } else {
+      if (nowMin < at) return null;                      // 还没到今天的结算点
+    }
+    return S().dateKey(d);
+  }
+
+  function autoEndDayTick() {
+    const st = S().settings();
+    if (!st.autoEndDay || autoEndBusy) return false;
+    const key = autoSettleKey();
+    if (!key) return false;
+    const day = (S().peekDay ? S().peekDay(key) : S().data().days[key]);
+    if (!day || day.ended) return false;
+    if (isEmptyDay(day)) return false;             // 那天什么都没记，不用结
+    if (timer || cdTimer) {                        // 还有任务在计时 → 不打断，等停下来再结
+      if (!autoEndPendingToasted) {
+        autoEndPendingToasted = true;
+        App.ui.toast('\u23F0 到结算点了，但还有任务正在计时 \u2014\u2014 停下来就自动结算', 4500);
+      }
+      return false;
+    }
+    autoEndBusy = true;
+    let r = null;
+    try {
+      r = settleDayCore(day, key, { rollAll: true });
+    } catch (e) {
+      App.ui.toast('自动结算出错：' + (e && e.message ? e.message : e));
+      autoEndBusy = false;
+      return false;
+    }
+    autoEndBusy = false;
+    autoEndPendingToasted = false;
+    const nk = nextDayKeyOf(key);
+    App.ui.toast('\u23F0 ' + S().shortDateCN(key) + ' 已自动结算' +
+      (r.moved ? ' \u00b7 拓展 ' + r.moved + ' 条已移到 ' + S().shortDateCN(nk) : '') +
+      (r.cut ? ' \u00b7 扣 ' + r.cut + ' 分' : '') +
+      (r.rolled ? ' \u00b7 ' + r.rolled + ' 条顺延' : ''), 5200);
+    try {
+      if (st.notifyOnEnd) notifyNow('\u23F0 ' + S().shortDateCN(key) + ' 已自动结算',
+        '收工' + (r.cut ? '，扣 ' + r.cut + ' 分' : '') + (r.moved ? '，' + r.moved + ' 条拓展移到明天' : ''));
+    } catch (e) { /* 通知失败不影响结算 */ }
+    renderAll();
+    return true;
   }
 
   function endDayStep2() {
@@ -2538,12 +2732,21 @@
         '<div class="field"><label>今日专注</label><p>' + S().fmtDur(focusMin) + (restMin > 0 ? '（期间休息 ' + S().fmtDur(restMin) + '）' : '') + '</p></div>';
 
       const extRate = extDebtRate();
+      // 🌱 v65：拓展分成两种情形，分别讲清楚（今天新没做完的 = 搬；昨天搬来的 = 扣）
+      const extCarried = extItems.filter(function (u) { return u.task.carried && !u.task.done; });
+      const extFresh = extItems.filter(function (u) { return !u.task.carried && !u.task.done; });
       if (settings.extStrict && extItems.length > 0) {
-        body += '<div class="field"><label>🌱 长期拓展（严格模式 · 宽限一晚）</label><p style="color:#e2545d;font-weight:700">' +
-          '没做完 ' + extItems.length + ' 条，共 ' + extDebtSum + ' 分 → <b>先挂账，暂不扣</b></p>' +
-          '<p class="hint">下面把"实际做完了"的任务勾上（熬夜做完的也算完），勾了的直接划掉、<b>积分照样发</b>；' +
-          '剩下的先挂账，<b>下次点「结束今天」时会再给你最后一次补勾机会</b>（补上了也照样发分），' +
-          '到那时还没补完才真扣：<b>一条 ' + Math.round(extRate * 100) + '% 的扣分</b>（' + extRate + ' 倍，可在设置里改）。</p></div>';
+        const extCutSum = extCarried.reduce(function (a, u) { return a + Math.round(extPointsOf(u.task) * extRate); }, 0);
+        body += '<div class="field"><label>🌱 长期拓展</label>' +
+          (extFresh.length
+            ? '<p>' + extFresh.length + ' 条没做完 → <b>会自动搬到明天的拓展栏</b>（明天照样能打勾、能开计时），明天做完就不扣分。</p>'
+            : '') +
+          (extCarried.length
+            ? '<p style="color:#e2545d;font-weight:700">↩ ' + extCarried.length + ' 条是<b>昨天搬过来的</b>，今天还是没做完 → 现在扣 ' + extCutSum +
+              ' 分，并且不再往后搬了。</p>'
+            : '') +
+          '<p class="hint">上面「☑ 补记」里勾上的会直接划掉、<b>积分照发</b>，不算没做完。' +
+          '扣分倍数：<b>' + extRate + ' 倍</b>（设置里可改，0 = 只记账不扣分）。</p></div>';
       }
 
       if (undoneAll.length > 0) {
@@ -2571,7 +2774,7 @@
         '<textarea id="end-review" style="width:100%;min-height:64px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13.5px;resize:vertical">' +
         S().esc((day.review && day.review.text) || '') + '</textarea></div>';
 
-      const modal = App.ui.openModal(dayKey === S().todayKey() ? '🏁 结束今天' : '🏁 结算 ' + S().shortDateCN(dayKey) + '（熬夜跨天，先结昨天）', body,
+      const modal = App.ui.openModal(dayKey === S().todayKey() ? '🏁 结束今天' : '🏁 结算 ' + S().shortDateCN(dayKey) + '（昨天还没结算，先结昨天）', body,
         '<button class="btn btn-primary" data-act="ok">确认结束</button><button class="btn" data-act="cancel">取消</button>');
       autoSave(modal.querySelector('#end-review'), function (v) {
         if (v.trim()) { day.review = { text: v, at: new Date().toISOString() }; }
@@ -2579,71 +2782,15 @@
       App.ui.bindActions({
         ok: function () {
           const revTa = modal.querySelector('#end-review');
-          if (revTa) {
-            const revText = revTa.value.trim();
-            if (revText) day.review = { text: revText, at: new Date().toISOString() };
-          }
-          // ☑ 补记：勾了"实际做完了"的任务直接划掉（在结算日当天标完成）
-          let fixEarn = 0;
-          modal.querySelectorAll('[data-donefix]:checked').forEach(function (c) {
-            const list = day.tasks[c.dataset.col];
-            const t = list.find(function (x) { return x.id === c.dataset.donefix; });
-            if (t && !t.done) {
-              t.done = true;
-              t.summary = { done: true, text: '（结算时补记完成）', at: new Date().toISOString() };
-              // v63：补记完成也算完成 → 理想/拓展照发积分（"后面补完也要有积分"）
-              if (c.dataset.col === 'ideal' || c.dataset.col === 'extra') {
-                const p = taskPoints(t, c.dataset.col) || 0;
-                if (p > 0) {
-                  App.store.addLedger(dayKey, c.dataset.col === 'ideal' ? 'earn-ideal' : 'earn-extra', {
-                    points: p,
-                    note: (c.dataset.col === 'ideal' ? '⭐ 理想任务补记完成：' : '🌱 长期拓展补记完成：') + t.text + ' · +' + p + ' 分',
-                    taskId: t.id
-                  });
-                  fixEarn += p;
-                }
-              }
-            }
-          });
-          if (fixEarn > 0) App.ui.floatAt(document.getElementById('stat-points'), '+' + fixEarn + '分');
-          // 🌱 严格模式：拓展未完成 → 挂账（不扣分、不顺延、任务保留），下次结算时清算
-          //   ⚠️ 只挂"补记时也没勾"的那些 —— 上面刚补记划掉的不该再挂账（旧版会重复挂）
-          const extLeft = extItems.filter(function (u) { return !u.task.done; });
-          const extLeftSum = extLeft.reduce(function (a, u) { return a + extPointsOf(u.task); }, 0);
-          if (settings.extStrict && extLeft.length > 0) {
-            day.extDebt = {
-              settled: false,
-              count: extLeft.length,
-              points: extLeftSum,
-              items: extLeft.map(function (u) {
-                return { col: 'extra', id: u.task.id, text: u.task.text, points: extPointsOf(u.task) };
-              }),
-              at: new Date().toISOString()
-            };
-          }
-          if (settings.rollover && undone.length > 0) {
-            const ids = [];
-            modal.querySelectorAll('[data-roll]:checked').forEach(function (c) { ids.push(c.dataset.roll); });
-            ids.forEach(function (id) {
-              const u = undone.find(function (x) { return x.task.id === id; });
-              if (u) {
-                const t = { id: S().uid(), text: u.task.text };
-                if (u.task.points != null) t.points = u.task.points; // 保留单独定价
-                S().getDay(S().tomorrowKey()).tasks[u.k].push(t);
-              }
-            });
-            S().save();
-          }
-          // 🌱 长期拓展严格模式的扣分已改为「挂账 + 下次结算时清算」，这里不再当场扣
-          // 🔥 学习休息中的消耗，结束今天统一扣分
-          const cutN = day.focusCut || 0;
-          if (cutN > 0) {
-            App.store.addLedger(dayKey, 'focus-cut', { points: -cutN * FOCUS_CUT_PER, note: '学习休息时消耗 ' + cutN + ' 次，扣 ' + (cutN * FOCUS_CUT_PER) + ' 分' });
-          }
-          day.ended = true;
-          S().save();
+          const rollIds = [];
+          modal.querySelectorAll('[data-roll]:checked').forEach(function (c) { rollIds.push(c.dataset.roll); });
+          const doneFix = [];
+          modal.querySelectorAll('[data-donefix]:checked').forEach(function (c) { doneFix.push({ col: c.dataset.col, id: c.dataset.donefix }); });
+          // ★ v66：实际结算交给 settleDayCore（和「到点自动结算」同一套逻辑）
+          const r = settleDayCore(day, dayKey, { review: revTa ? revTa.value : '', rollIds: rollIds, doneFix: doneFix });
           App.ui.closeModal();
-          App.ui.toast('今天已结束，数据已保存。去明天填任务吧！');
+          App.ui.toast('今天已结束，数据已保存。去明天填任务吧！' +
+            (r.moved ? ' \u00b7 拓展 ' + r.moved + ' 条已移到明天' : ''), 4200);
           App.tasks.renderAll();
         },
         cancel: App.ui.closeModal
@@ -2763,6 +2910,21 @@
         : (d.extPoints == null ? DEFAULT_POINTS.extra : d.extPoints));
   }
 
+  /** ↩ 任务来源标签（v66）：两种标签长得不一样，一眼分清"原任务"和"移过来的"
+      · carried   → 从昨天移过来的（副本，今天该做它）
+      · movedOut  → 当天没做完、已经移到明天的原任务（留在当天只作记录） */
+  function carryTagHTML(t) {
+    if (!t) return '';
+    if (t.carried) {
+      return '<span class="carry-tag" title="昨天没做完，自动移到今天来的 \u2014\u2014 今天做完就不扣分">\u21A9 昨天移过来' +
+        (t.carriedFailed ? ' \u00b7 已扣分' : '') + '</span>';
+    }
+    if (t.movedOut) {
+      return '<span class="carry-out-tag" title="当天没做完，已经移到第二天的拓展栏了（这条留在这里只作记录）">\u2717 未完成 \u00b7 已移到明天</span>';
+    }
+    return '';
+  }
+
   function taskRowHTML(listKey, task) {
     const locked = timer && timer.taskId !== task.id;
     const isThis = timer && timer.taskId === task.id;
@@ -2804,6 +2966,7 @@
     return '<div class="task-row' + (task.done ? ' done' : '') + (lecPanel ? ' lec-running' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
       '<span class="task-text" data-act="edit">' + S().esc(task.text) + '</span>' +
+      carryTagHTML(task) +
       lecTagHTML(task) +
       ptsInput +
       lecBtn +
@@ -3602,6 +3765,7 @@
         return '<div class="task-row' + (lecPanel ? ' lec-running' : '') + '" data-list="' + col.key + '" data-id="' + t.id + '">' +
           '<span class="task-check" style="visibility:hidden">✓</span>' +
           '<span class="task-text" data-act="edit">' + S().esc(t.text) + '</span>' +
+          carryTagHTML(t) +
           lecTagHTML(t) +
           ptsInput +
           '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步（会记在今天的时间轴，走完勾掉这条明天的任务）">🎧</button>' +
@@ -4557,6 +4721,9 @@
     streakRestore(); // 恢复刷新前的连续学习（当天有效）
     // ⏱ 小时计划常驻 tick：连续学习累计 + 到点自动结算 + 实时刷新倒计时
     setInterval(function () { hourPlanAutoTick(); }, 1000);
+    // ⏰ v66：到点自动结算 —— 每 30 秒看一眼（页面切后台靠下面的可见性事件补判）
+    setInterval(function () { try { autoEndDayTick(); } catch (e) { /* 忽略 */ } }, 30000);
+    setTimeout(function () { try { autoEndDayTick(); } catch (e) { /* 启动时补判昨天 */ } }, 2500);
     // ★ v55：页面重新可见 / 从后台回来 / 手机回前台 → 立刻判一次，逾期的小时代马上结算
     // ★ v56：上次留下"待办衔接"（某题没标结果 / 接着做还是休息）→ 启动就把悬浮窗亮出来
     try {
@@ -4571,6 +4738,7 @@
       window.addEventListener(ev, function () {
         if (document.hidden) return;
         try { hourPlanAutoTick(); } catch (e) { /* 忽略 */ }
+        try { autoEndDayTick(); } catch (e) { /* 忽略 */ }   // ⏰ 回前台补判自动结算
       });
     });
     // 手机锁屏/切后台会释放防息屏锁，回前台且有计时时重新拿一次
@@ -4592,6 +4760,8 @@
     futureDaysModal: futureDaysModal,
     dayContentSummary: dayContentSummary,
     init: init, renderAll: renderAll, renderToday: renderToday,
+    carryTagHTML: carryTagHTML, settleDayCore: settleDayCore,
+    autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,
     addTaskModal: addTaskModal, editTaskModal: editTaskModal,

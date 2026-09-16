@@ -481,11 +481,12 @@
       list.forEach(function (t) {
         html += '<div class="cal-task' + (t.done ? ' done' : '') + '" style="border-bottom:1px dashed var(--line);padding:6px 2px">' +
           '<span class="t-text" style="font-size:13.5px;word-break:break-all">' + esc(t.text) + (t.done ? ' ✓' : '') +
+            ((App.tasks && App.tasks.carryTagHTML) ? App.tasks.carryTagHTML(t) : '') +
             ((App.tasks && App.tasks.lecTagHTML) ? App.tasks.lecTagHTML(t) : '') + '</span>' +
           (t.standard ? '<div class="t-std" style="font-size:11.5px;color:#f59e0b;margin-top:2px">📌 标准：' + esc(t.standard) + '</div>' : '') +
           taskContextHTML(t, c.k) +
           '<div class="t-btns">' +
-          '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（熬夜做完的在这里补勾划掉）">☑</button>' +
+          '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（实际做完了在这里补勾划掉）">☑</button>' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
           (dupOf(t) ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" data-col="' + c.k + '" data-id="' + t.id + '" title="这一栏有两条同名的「' + esc(t.text) + '」，点这里合并成一条">🔗</button>' : '') +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +

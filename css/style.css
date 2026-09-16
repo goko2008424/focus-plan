@@ -897,3 +897,33 @@ body[data-theme="dark"] .lec-q, body[data-theme="purple"] .lec-q { color: #b9a3f
 .lec-tag { font-size: 11.5px; font-weight: 700; color: #a855f7; background: rgba(168,85,247,.12);
   border: 1px solid rgba(168,85,247,.35); border-radius: 6px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
 body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b9a3ff; background: rgba(167,139,250,.2); border-color: rgba(167,139,250,.5); }
+
+/* ↩ 顺延标签（v65）：昨天没做完、自动搬到今天的长期拓展任务 */
+.carry-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: #fff4e0;
+  color: #b06a00;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid #f3ddb3;
+}
+
+/* ✗ 当天未完成、已移到明天（v66）：红色调，和「↩ 昨天移过来」的橙色区分开 */
+.carry-out-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: #fdf1f2;
+  color: #c0414c;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid #f2cfd3;
+}
