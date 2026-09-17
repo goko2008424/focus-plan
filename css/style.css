@@ -927,3 +927,54 @@ body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b
   vertical-align: middle;
   border: 1px solid #f2cfd3;
 }
+
+/* ============================================================
+   🌱 v70 主动回忆 + 间隔重复
+   ============================================================ */
+/* —— 任务行上的知识类型徽标 —— */
+.mode-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap; vertical-align: middle;
+  border: 1px solid transparent;
+}
+.mode-new { background: #e8f5ee; color: #15703f; border-color: #bfe3cf; }
+.mode-rev { background: #eef1f5; color: #5b6472; border-color: #d8dee6; }
+
+/* —— 复习进度圆点 ●●○ —— */
+.rev-dots { display: inline-block; margin-left: 5px; font-size: 11.5px; color: #6b7280; vertical-align: middle; }
+.rev-dots i {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #dfe3e8; margin-right: 2px; vertical-align: middle;
+}
+.rev-dots i.on { background: #16a34a; }
+.rev-dots i.miss { background: #e2545d; }
+.rev-dots i.late { background: #f59e0b; }
+
+/* —— 今日页顶部的「待复习」提醒条 —— */
+.rev-banner {
+  border-left: 4px solid #16a34a; background: #f6fbf8;
+  padding: 10px 13px; margin-bottom: 10px; border-radius: 10px;
+}
+.rev-banner.rev-due { border-left-color: #e2545d; background: #fff7f7; }
+.rev-banner.rev-all-done { border-left-color: #16a34a; background: #f6fbf8; color: #15703f; font-size: 13.5px; }
+.rev-head { display: flex; align-items: center; gap: 7px; font-size: 14px; flex-wrap: wrap; }
+.rev-banner.rev-due .rev-head { color: #b0262e; }
+.rev-row { display: flex; gap: 10px; align-items: baseline; margin-top: 5px; font-size: 13px; }
+.rev-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #374151; }
+.rev-when { white-space: nowrap; color: #6b7280; }
+.rev-when i { font-style: normal; display: inline-block; padding: 0 5px; margin-left: 4px;
+  border-radius: 8px; background: #eef1f5; }
+.rev-when i.late { background: #ffe9ea; color: #b0262e; font-weight: 700; }
+
+/* —— 复习弹窗 —— */
+.rev-kp { border: 1px solid #e5e8ec; border-radius: 10px; padding: 10px 12px; margin-bottom: 9px; background: #fff; }
+.rev-kp-q { font-size: 14px; font-weight: 600; line-height: 1.75; white-space: pre-wrap; }
+.rev-kp-a { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dfe3e8;
+  font-size: 14px; line-height: 1.75; color: #15703f; white-space: pre-wrap; }
+.rev-kp-a.hidden-a { filter: blur(4px); user-select: none; }
+.rev-kp-bar { display: flex; gap: 7px; margin-top: 9px; flex-wrap: wrap; align-items: center; }
+.rev-kp-done { border-color: #bfe3cf; background: #f7fdf9; }
+.rev-hint { font-size: 12.5px; color: #6b7280; line-height: 1.7; }
+.rev-big-q { font-size: 15px; line-height: 1.9; padding: 10px 12px; background: #f7f9fb;
+  border-radius: 9px; border: 1px solid #e5e8ec; white-space: pre-wrap; }
+.btn-mini { padding: 3px 9px; font-size: 12.5px; border-radius: 7px; }

@@ -55,6 +55,26 @@
       '<p class="hint">1 倍 = 一条 5 分的拓展拖了两天还没做就扣 5 分；填 <b>0</b> = 只记账不扣分；填 2 = 双倍扣。' +
       '想彻底关掉这套，就把下面「行为开关」里的「🌱 长期拓展严格模式」关掉。</p>' +
       '</div>' +
+      '<div class="set-group"><h4>🌱 主动回忆 + 间隔重复</h4>' +
+      switchRow('set-sr-on', '开启（任务可标「📘 新知识」，完成后按遗忘曲线排当天复习）', s.srEnabled !== false) +
+      '<div class="set-row"><span class="set-label">当天复习的截止时刻</span>' +
+      '<input type="time" id="set-sr-deadline" class="set-input" value="' + (s.srDeadline || '22:00') + '" /></div>' +
+      '<div class="set-row"><label>三轮复习的间隔（分钟，逗号隔开）</label>' +
+      '<input type="text" id="set-sr-gaps" class="set-input" style="width:120px" value="' +
+      ((s.srGaps && s.srGaps.length ? s.srGaps : [30, 120, 360]).join(',')) + '" /></div>' +
+      numRow('set-sr-points', '每完成一轮复习，得积分', s.srPoints == null ? 5 : s.srPoints, '分') +
+      numRow('set-sr-kp-points', '每设一条知识点（自己出题），得积分', s.srKpPoints == null ? 2 : s.srKpPoints, '分') +
+      numRow('set-sr-bonus', '当天这一课的几轮全做完，额外奖励', s.srFinishBonus == null ? 5 : s.srFinishBonus, '分') +
+      '<p class="hint">' +
+      '在「添加任务 / 编辑任务」里把一条任务标成 <b>📘 新知识</b>，它完成后会：<br>' +
+      '① 引导你<b>自己出几个小问题</b>（这就是主动回忆 —— 试着复述一遍，比单纯再看一遍书管用）；<br>' +
+      '② 按上面的<b>三个间隔</b>，从「完成时刻」往后排当天的复习轮次，到点会在首页顶部提醒你。<br>' +
+      '默认 <b>30 / 120 / 360 分钟</b>（最后一次放在睡前效果最好，睡眠会帮你巩固）。<br>' +
+      '按默认值算，想在 <b>' + (s.srDeadline || '22:00') + '</b> 前跑完三轮，最晚要在 <b>' +
+      '16:00</b> 左右把学习任务做完 —— 首页会告诉你具体几点前。<br>' +
+      '<b>只安排当天</b>：第二天以后要不要再复习，你自己用日历的 🔁 安排（间隔拉长反而更好）。' +
+      '当天没做完的轮次<b>不扣分</b>，只作记录。</p>' +
+      '</div>' +
       '<div class="set-group"><h4>🎯 任务组：整组做完的整体奖励</h4>' +
       numRow('set-group-reward', '整组题目全做完，额外奖励', s.groupRewardPoints, '分') +
       '<p class="hint">任务组（用「🎯 建一个任务组」打包起来的那一摞小题）里的题<b>全部做完</b>时，' +
@@ -131,6 +151,20 @@
     function bind(id, fn) {
       document.getElementById(id).addEventListener('change', fn);
     }
+    // 🌱 v70 主动回忆 + 间隔重复
+    bind('set-sr-on', function () { s.srEnabled = this.checked; S().save(); App.tasks.renderAll(); });
+    bind('set-sr-deadline', function () { s.srDeadline = this.value || '22:00'; S().save(); });
+    bind('set-sr-gaps', function () {
+      const g = String(this.value || '').split(/[,，\s]+/)
+        .map(function (x) { return parseInt(x, 10); })
+        .filter(function (n) { return isFinite(n) && n > 0; });
+      s.srGaps = g.length ? g : [30, 120, 360];
+      this.value = s.srGaps.join(',');
+      S().save();
+    });
+    bind('set-sr-points', function () { s.srPoints = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-sr-kp-points', function () { s.srKpPoints = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-sr-bonus', function () { s.srFinishBonus = Math.max(0, +this.value || 0); S().save(); });
     bind('set-base-points', function () { s.baseRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ideal-points', function () { s.idealPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ext-points', function () { s.extPoints = Math.max(0, +this.value || 0); S().save(); });

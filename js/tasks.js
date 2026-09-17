@@ -503,11 +503,11 @@
       });
     } catch (e) { /* 忽略 */ }
   }
-  function notifyNow(title, body) {
+  function notifyNow(title, body, tag) {
     if (!notifyEnabled()) return;
     try {
       if (!('Notification' in window) || Notification.permission !== 'granted') return;
-      new Notification(title, { body: body, tag: 'focus-plan-end' });
+      new Notification(title, { body: body, tag: tag || 'focus-plan-end' });
     } catch (e) { /* 忽略 */ }
   }
   function wakeKeep() {
@@ -2261,6 +2261,10 @@
           App.ui.floatAt(document.getElementById('stat-points'), '+' + p + '分');
         }
       }
+      // 🌱 v70：新知识任务 → 按遗忘曲线排当天复习（真正的弹窗等总结窗关掉后再来）
+      if (srOn() && task.mode === SR_MODE_NEW && !task.sp) {
+        srAfterTaskDone(task, listKey, dayKey);
+      }
     } else {
       // 取消完成 → 撤销对应积分
       const type = listKey === 'ideal' ? 'earn-ideal' : listKey === 'extra' ? 'earn-extra' : null;
@@ -2286,6 +2290,8 @@
         } else if (['required', 'ideal', 'extra'].every(allDone) && !day.rewards.some(function (r) { return r.kind === 'perfect'; })) {
           perfectRewardModal();
         }
+        // 🌱 总结窗关掉之后再弹「排不满 / 设知识点」，免得两个弹窗打架
+        setTimeout(srRunPending, 300);
       });
     }
   }
@@ -2539,6 +2545,14 @@
     const undone = settings.extStrict ? undoneAll.filter(function (u) { return u.k !== 'extra'; }) : undoneAll.slice();
     const extItems = settings.extStrict ? undoneAll.filter(function (u) { return u.k === 'extra'; }) : [];
     const out = { fixEarn: 0, moved: 0, cut: 0, rolled: 0 };
+
+    // 🌱 v70：没做完的间隔复习轮次标成「未做」—— 只作记录，**不扣分**
+    //    （第一天的多轮复习是红利、不是义务；拖到第二天问题也不大）
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      (day.tasks[k] || []).forEach(function (t) {
+        srPlan(t).forEach(function (r) { if (r.done === null) r.done = false; });
+      });
+    });
 
     // ① 复盘
     if (o.review && String(o.review).trim()) day.review = { text: String(o.review).trim(), at: new Date().toISOString() };
@@ -2997,6 +3011,7 @@
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
       '<span class="task-text" data-act="edit">' + S().esc(task.text) + '</span>' +
       carryTagHTML(task) +
+      modeTagHTML(task) +
       lecTagHTML(task) +
       ptsInput +
       lecBtn +
@@ -3039,6 +3054,8 @@
     bindTodayEvents();
     bindPendingBar(box);
     renderStreakBar();
+    renderReviewBanner();
+    bindReviewBanner();
     renderReview(dayKey);
     renderHourPlan(dayKey);
   }
@@ -4017,6 +4034,12 @@
       '<option value="aux">辅助推进（复盘 / 整理 / 写计划等，计入「辅助」）</option>' +
       '<option value="long">长期推进（长期自我提升，如兴趣/技能，计入「扩展」）</option>' +
       '</select></div>' +
+      '<div class="field"><label>🌱 知识类型（决定要不要按遗忘曲线复习）</label>' +
+      '<select id="add-mode" class="select-small">' +
+      '<option value="">普通任务（不排复习）</option>' +
+      '<option value="new">📘 新知识 —— 完成时引导你设知识点，并排当天 3 轮复习</option>' +
+      '<option value="review">🔄 复习知识 —— 只是标记，方便统计今天复习了多少</option>' +
+      '</select></div>' +
       lecPlanFieldsHTML('add', null, false) +
             '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
     bindLecPlanFields(modal, 'add');
@@ -4030,9 +4053,12 @@
         const pts = ptsInput ? Math.max(0, +ptsInput.value || 0) : null;
         const kind = modal.querySelector('#add-kind');
         const kv = kind ? kind.value : 'main';
+        const modeEl = modal.querySelector('#add-mode');
+        const modeV = modeEl ? modeEl.value : '';
         const plan = readLecPlan(modal, 'add');
         lines.forEach(function (text) {
           const t = { id: S().uid(), text: text, aux: kv === 'aux', long: kv === 'long' };
+          if (modeV) t.mode = modeV;
           if (pts != null) t.points = pts;
           if (plan) t.lecPlan = { previewMin: plan.previewMin, attendMin: plan.attendMin, consMin: plan.consMin, pts: plan.pts };
           day.tasks[listKey].push(t);
@@ -4072,6 +4098,12 @@
       '<option value="aux"' + (task.aux ? ' selected' : '') + '>辅助推进（复盘/整理等）</option>' +
       '<option value="long"' + (task.long ? ' selected' : '') + '>长期推进（自我提升，计入「扩展」）</option>' +
       '</select></div>' +
+      '<div class="field"><label>🌱 知识类型</label>' +
+      '<select id="edit-mode" class="select-small">' +
+      '<option value=""' + (!task.mode ? ' selected' : '') + '>普通任务（不排复习）</option>' +
+      '<option value="new"' + (task.mode === 'new' ? ' selected' : '') + '>📘 新知识（排当天 3 轮复习）</option>' +
+      '<option value="review"' + (task.mode === 'review' ? ' selected' : '') + '>🔄 复习知识（只作标记）</option>' +
+      '</select></div>' +
       '</div>' +
       lecPlanFieldsHTML('edit', lecPlanOf(task), !!lecPlanOf(task)) +
       '<button class="btn btn-primary" data-act="save">保存</button>' +
@@ -4087,6 +4119,11 @@
         task.text = text;
         const ptsInput = modal.querySelector('#edit-points');
         if (ptsInput) task.points = Math.max(0, +ptsInput.value || 0);
+        const modeEl2 = modal.querySelector('#edit-mode');
+        if (modeEl2) {
+          const mv = modeEl2.value;
+          if (mv) task.mode = mv; else delete task.mode;
+        }
         const kindEl = modal.querySelector('#edit-kind');
         if (kindEl) {
           task.aux = kindEl.value === 'aux';
@@ -4164,8 +4201,27 @@
     const data = S().data();
     const target = S().getDay(targetDayKey);
     const todayK = S().todayKey(), tomorrowK = S().tomorrowKey();
-    const days = Object.keys(data.days || {}).filter(function (k) { return k !== targetDayKey; }).sort();
-    if (!days.length) { App.ui.toast('还没有可转移的日子'); return; }
+    // ★ v69：源日期只列「今天及以前」+「真的有任务可搬」的日子。
+    //   用户明确反馈：还没到的日子不该出现在「搬过来」的列表里 ——
+    //   「为什么要把后面一天的任务搞到前面一天来做？」
+    const allDays = Object.keys(data.days || {}).filter(function (k) { return k !== targetDayKey; }).sort();
+    const hasTasks = function (k) {
+      const d = data.days[k];
+      if (!d || !d.tasks) return false;
+      return COLS.some(function (c) {
+        return ((d.tasks[c.key]) || []).some(function (t) { return t.text; });
+      });
+    };
+    // 明天不算「多余记录」（renderTomorrow 每天都会建），所以两处的口径都不含明天
+    const futureHidden = allDays.filter(function (k) { return k > todayK && k !== tomorrowK; });
+    const days = allDays.filter(function (k) { return k <= todayK && hasTasks(k); });
+    if (!allDays.length) { App.ui.toast('还没有可转移的日子'); return; }
+    if (!days.length) {
+      App.ui.toast(futureHidden.length
+        ? '只有还没到的日期，没有能往回搬的（未来的任务不用搬）'
+        : '之前的日子里都没有可搬的任务');
+      return;
+    }
     const labelOf = function (k) {
       return k === todayK ? '今天' : (k === tomorrowK ? '明天' : S().shortDateCN(k));
     };
@@ -4198,7 +4254,14 @@
       days.map(function (k) {
         const n = ((data.days[k].tasks || {}).required || []).length;
         return '<option value="' + k + '">' + S().fmtDateCN(k) + '（必须 ' + n + ' 条）</option>';
-      }).join('') + '</select></div>' +
+      }).join('') + '</select>' +
+      (futureHidden.length
+        ? '<p class="hint" style="margin-top:6px">已隐藏 ' + futureHidden.length + ' 个<b>还没到</b>的日期（' +
+          futureHidden.slice(0, 3).map(function (k) { return S().shortDateCN(k); }).join('、') +
+          (futureHidden.length > 3 ? ' 等' : '') +
+          '）—— 未来的任务不会出现在这里，也不用往回搬。' +
+          '<button class="btn btn-small" id="paste-clean-future" style="margin-left:6px">🧹 清理这些未来记录</button></p>'
+        : '') +
       '<div class="paste-quick">' +
       '<button class="btn btn-small" data-q="undone">只带没做完的</button>' +
       '<button class="btn btn-small" data-q="all">全部都带</button>' +
@@ -4267,6 +4330,13 @@
     }
 
     modal.querySelector('#paste-date').onchange = renderPaste;
+
+    // v69：一键去清理「未来的记录」（提前安排的会单独标出、默认不动）
+    const cleanF = modal.querySelector('#paste-clean-future');
+    if (cleanF) cleanF.onclick = function () {
+      App.ui.closeModal();
+      setTimeout(function () { futureDaysModal(); }, 80);
+    };
 
     // 快捷：只带没做完的 / 全部都带 / 全不选
     modal.querySelector('.paste-quick').onclick = function (e) {
@@ -4735,6 +4805,477 @@
     });
   }
 
+  /* ============================================================
+   * 🌱 v70 主动回忆 + 间隔重复
+   *   · 任务可标「📘 新知识」/「🔄 复习知识」
+   *   · 新知识完成 → 引导设「知识点」（自己出题＝主动回忆）
+   *   · 并按遗忘曲线在当天排 3 轮复习（默认 完成后 +30分 / +2时 / +6时）
+   *   · 每轮复习独立计时、进时间轴、发积分
+   * ============================================================ */
+  const SR_GAPS_DEF = [30, 120, 360];
+  const SR_MODE_NEW = 'new', SR_MODE_REV = 'review';
+  let srPendKp = null;       // 待弹「设知识点」
+  let srPendShort = null;    // 待弹「今天排不满」
+  let srRev = null;          // 正在进行的复习会话
+  let srKpTmp = null;        // 设问编辑中的临时数据
+  let srKpReturn = null;     // 从复习里跳去改知识点，改完要跳回来
+  const srNotified = {};     // 已提醒过的轮次（内存态）
+  let srBannerAt = 0;
+
+  function srOn() { return S().settings().srEnabled !== false; }
+  function srGaps() {
+    const g = S().settings().srGaps;
+    return (g && g.length) ? g : SR_GAPS_DEF;
+  }
+  function srDeadlineHM() { return S().settings().srDeadline || '22:00'; }
+  function srPoints() { const v = S().settings().srPoints; return v == null ? 5 : Math.max(0, +v || 0); }
+  function srKpPoints() { const v = S().settings().srKpPoints; return v == null ? 2 : Math.max(0, +v || 0); }
+  function srFinishBonus() { const v = S().settings().srFinishBonus; return v == null ? 5 : Math.max(0, +v || 0); }
+
+  function srHHMM(ms) {
+    const d = new Date(ms);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function srClockMs(dayKey, hhmm) {
+    const p = String(hhmm || '22:00').split(':');
+    const d = S().keyToDate(dayKey);
+    d.setHours(+p[0] || 0, +p[1] || 0, 0, 0);
+    return d.getTime();
+  }
+  function srPlan(task) { return (task && task.sp && task.sp.planned) || []; }
+  function srPendingOf(task) {
+    return srPlan(task).filter(function (r) { return r.done === null; });
+  }
+
+  /** 算出这节课该在哪些时刻复习（相对完成时刻 + 三个间隔） */
+  function planSpaced(dayKey, fromMs) {
+    const gaps = srGaps();
+    const dl = srClockMs(dayKey, srDeadlineHM());
+    const all = gaps.map(function (g, i) {
+      return { n: i + 1, gap: g, due: fromMs + g * 60000, done: null, at: null };
+    });
+    return { all: all, fit: all.filter(function (r) { return r.due <= dl; }), dl: dl };
+  }
+
+  function srFindTask(id) {
+    const day = S().getDay(S().todayKey());
+    let found = null;
+    COLS.forEach(function (c) {
+      const t = (day.tasks[c.key] || []).find(function (x) { return x.id === id; });
+      if (t) found = t;
+    });
+    return found;
+  }
+
+  /** 任务行上的知识类型徽标 + 复习进度圆点 ●●○ */
+  function modeTagHTML(t) {
+    if (!t || !t.mode) return '';
+    const plan = srPlan(t);
+    let dots = '';
+    if (plan.length) {
+      const now = Date.now();
+      const doneN = plan.filter(function (r) { return r.done === true; }).length;
+      dots = '<span class="rev-dots" title="今天的间隔复习：' + doneN + '/' + plan.length + ' 轮已完成">' +
+        plan.map(function (r) {
+          const late = r.done === null && r.due <= now;
+          const cls = r.done === true ? 'on' : (r.done === false ? 'miss' : (late ? 'late' : ''));
+          return '<i class="' + cls + '"></i>';
+        }).join('') + doneN + '/' + plan.length + '</span>';
+    }
+    if (t.mode === SR_MODE_NEW) {
+      return '<span class="mode-tag mode-new" title="新知识：完成时会引导你设知识点，并按遗忘曲线排当天 3 轮复习">📘 新知识</span>' + dots;
+    }
+    return '<span class="mode-tag mode-rev" title="复习知识：只是标记（不排间隔复习），方便统计今天复习了多少">🔄 复习</span>';
+  }
+
+  /* ---------- ① 新知识任务完成后的处理 ---------- */
+  function srAfterTaskDone(task, listKey, dayKey) {
+    if (!srOn() || task.mode !== SR_MODE_NEW || task.sp) return;
+    const r = planSpaced(dayKey, Date.now());
+    if (!r.all.length) return;
+    if (!r.fit.length) {
+      App.ui.toast('🌱 这个点开始排今天的复习会跨到深夜，今天先不排了', 5200);
+      srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };
+      return;
+    }
+    if (r.fit.length === r.all.length) {
+      task.sp = { planned: r.all, dl: r.dl, at: Date.now(), bonus: false };
+      S().save();
+      App.ui.toast('🌱 已排好今天的 ' + r.all.length + ' 轮复习：' +
+        r.all.map(function (x) { return srHHMM(x.due); }).join(' / '), 5800);
+      srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };
+      return;
+    }
+    srPendShort = { id: task.id, listKey: listKey, dayKey: dayKey, all: r.all, fit: r.fit, dl: r.dl };
+  }
+
+  /** 等任务总结弹窗关掉之后再弹（免得两个弹窗打架） */
+  function srRunPending() {
+    if (srPendShort) {
+      const q = srPendShort; srPendShort = null;
+      srShortModal(q); return;
+    }
+    if (srPendKp) {
+      const q = srPendKp; srPendKp = null;
+      const t = srFindTask(q.id);
+      if (t && srOn()) srAskKps(t, q.listKey, q.dayKey);
+    }
+  }
+
+  /** 今天跑不满 3 轮 → 让用户自己决定 */
+  function srShortModal(q) {
+    const task = srFindTask(q.id);
+    if (!task) return;
+    const last = q.all[q.all.length - 1];
+    const body = '<div class="field"><label>任务</label><p style="font-size:14px;font-weight:700">' + S().esc(task.text) + '</p></div>' +
+      '<p class="rev-hint">按遗忘曲线，这节课该在 <b>' + q.all.map(function (x) { return srHHMM(x.due); }).join(' · ') + '</b> 各复习一次。<br>' +
+      '但你设的复习截止时刻是 <b>' + srHHMM(q.dl) + '</b>，现在才完成的话，只有前 <b>' + q.fit.length + '</b> 轮能在今天跑完（最后一轮会到 ' + srHHMM(last.due) + '）。</p>' +
+      '<p class="rev-hint">💡 想完整吃到 ' + q.all.length + ' 轮，最晚要在 <b>' +
+      srHHMM(q.dl - last.gap * 60000) + '</b> 前把学习任务做完（截止点 ' + srHHMM(q.dl) +
+      ' 减去最后一轮的 ' + last.gap + ' 分钟）。</p>';
+    const m = App.ui.openModal('🌱 今天排不满 3 轮，怎么办？', body +
+      '<div class="btn-row">' +
+      '<button class="btn btn-small btn-primary" data-act="fit">只排今天跑得完的 ' + q.fit.length + ' 轮</button>' +
+      '<button class="btn btn-small" data-act="all">照排 3 轮</button>' +
+      '<button class="btn btn-small" data-act="none">今天不排了</button>' +
+      '</div>');
+    const setSp = function (plan, msg) {
+      task.sp = { planned: plan, dl: q.dl, at: Date.now(), bonus: false };
+      S().save(); App.ui.closeModal(); App.tasks.renderAll();
+      App.ui.toast(msg, 5200);
+      srPendKp = { id: q.id, listKey: q.listKey, dayKey: q.dayKey };
+      setTimeout(srRunPending, 320);
+    };
+    App.ui.bindActions({
+      fit: function () { setSp(q.fit, '🌱 已排 ' + q.fit.length + ' 轮：' + q.fit.map(function (x) { return srHHMM(x.due); }).join(' / ')); },
+      all: function () { setSp(q.all, '🌱 已照排 3 轮，最后一轮到 ' + srHHMM(last.due)); },
+      none: function () {
+        App.ui.closeModal();
+        srPendKp = { id: q.id, listKey: q.listKey, dayKey: q.dayKey };
+        setTimeout(srRunPending, 320);
+      }
+    });
+  }
+
+  /* ---------- ② 设知识点（主动回忆的入口） ---------- */
+  function srAskKps(task, listKey, dayKey) {
+    if (!task) return;
+    srKpTmp = {
+      taskId: task.id, listKey: listKey, dayKey: dayKey,
+      items: JSON.parse(JSON.stringify(task.kps || [])),
+      startAt: Date.now(), before: (task.kps || []).length
+    };
+    if (!srKpTmp.items.length) srKpTmp.items.push({ id: S().uid(), q: '', a: '' });
+    srRenderKps();
+  }
+
+  function srRenderKps() {
+    const d = srKpTmp; if (!d) return;
+    const task = srFindTask(d.taskId) || {};
+    const body =
+      '<p class="rev-hint">🌱 <b>主动回忆</b>：把这一课的要害变成几个小问题，后面每轮复习就拿它们考你。<br>' +
+      '自己出题这一步本身就在帮你记 —— 试着复述一遍，比单纯再看一遍书管用得多。</p>' +
+      '<div id="kp-list"></div>' +
+      '<button class="btn btn-small" data-act="kp-add" style="margin-top:4px">＋ 再加一条</button>' +
+      '<p class="rev-hint" style="margin-top:10px">不设问题也能复习，只是效果差一些 —— 那时复习会让你自己回忆整节课讲了什么。</p>' +
+      '<div class="btn-row"><button class="btn btn-small btn-primary" data-act="kp-save">保存</button>' +
+      '<button class="btn btn-small" data-act="kp-skip">' + (d.before ? '取消' : '不用了，跳过') + '</button></div>';
+    const m = App.ui.openModal('🌱 给「' + S().esc(task.text || '') + '」设几个知识点', body);
+    srPaintKps(m);
+    App.ui.bindActions({
+      'kp-add': function () { srCollectKps(m); d.items.push({ id: S().uid(), q: '', a: '' }); srPaintKps(m); },
+      'kp-save': function () { srSaveKps(); },
+      'kp-skip': function () {
+        App.ui.closeModal(); srKpTmp = null;
+        if (srKpReturn) { const r = srKpReturn; srKpReturn = null; srOpenReview(r.task, r.round); }
+      }
+    });
+  }
+
+  function srPaintKps(m) {
+    const d = srKpTmp; if (!d) return;
+    const box = m.querySelector('#kp-list');
+    box.innerHTML = d.items.map(function (k, i) {
+      return '<div class="rev-kp" data-i="' + i + '">' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
+        '<b style="font-size:13px">第 ' + (i + 1) + ' 条</b>' +
+        '<button class="btn btn-mini" data-kpdel="' + i + '" style="margin-left:auto">删除</button></div>' +
+        '<div class="field" style="margin:0 0 6px"><label>问题 / 提示（例：2H2O = ？）</label>' +
+        '<textarea class="kp-q" data-i="' + i + '" style="width:100%;min-height:42px">' + S().esc(k.q) + '</textarea></div>' +
+        '<div class="field" style="margin:0"><label>答案 / 要点（复习时先藏起来）</label>' +
+        '<textarea class="kp-a" data-i="' + i + '" style="width:100%;min-height:42px">' + S().esc(k.a) + '</textarea></div>' +
+        '</div>';
+    }).join('') || '<p class="rev-hint">还没设。点下面「＋ 再加一条」。</p>';
+    box.querySelectorAll('[data-kpdel]').forEach(function (b) {
+      b.onclick = function () { srCollectKps(m); d.items.splice(+b.dataset.kpdel, 1); srPaintKps(m); };
+    });
+    box.querySelectorAll('.kp-q, .kp-a').forEach(function (t) {
+      t.oninput = function () { srCollectKps(m); };
+    });
+  }
+
+  function srCollectKps(m) {
+    const d = srKpTmp; if (!d) return;
+    const box = (m && m.querySelector('#kp-list')) || document.getElementById('kp-list');
+    if (!box) return;
+    box.querySelectorAll('.rev-kp').forEach(function (row) {
+      const i = +row.dataset.i;
+      const q = row.querySelector('.kp-q'), a = row.querySelector('.kp-a');
+      if (d.items[i]) { d.items[i].q = q.value; d.items[i].a = a.value; }
+    });
+  }
+
+  function srSaveKps() {
+    const d = srKpTmp; if (!d) return;
+    srCollectKps(null);   // ⚠️ 必须再收一次：只靠 oninput 会漏掉粘贴 / 输入法上屏 / 自动填充
+    const task = srFindTask(d.taskId);
+    const clean = d.items
+      .filter(function (k) { return String(k.q || '').trim() || String(k.a || '').trim(); })
+      .map(function (k) { return { id: k.id || S().uid(), q: String(k.q || '').trim(), a: String(k.a || '').trim() }; });
+    const added = Math.max(0, clean.length - (d.before || 0));
+    if (task) {
+      task.kps = clean;
+      S().save();
+      if (added > 0) {
+        const p = added * srKpPoints();
+        if (p > 0) {
+          S().addLedger(S().todayKey(), 'earn-kps',
+            { points: p, note: '🌱 主动出题 ' + added + ' 条：' + task.text, taskId: task.id });
+          App.ui.floatAt(document.getElementById('stat-points'), '+' + p + '分');
+        }
+        App.ui.toast('🌱 存了 ' + clean.length + ' 条知识点' + (p > 0 ? ' · +' + p + ' 分' : ''), 4600);
+      } else {
+        App.ui.toast('知识点已更新', 2600);
+      }
+      srLogWork('🌱 给「' + task.text + '」设知识点（' + clean.length + ' 条）', d.startAt, Date.now(), task.id);
+    }
+    App.ui.closeModal();
+    srKpTmp = null;
+    App.tasks.renderAll();
+    if (srKpReturn) { const r = srKpReturn; srKpReturn = null; setTimeout(function () { srOpenReview(r.task, r.round); }, 320); }
+  }
+
+  /* ---------- ③ 独立计时 → 进时间轴 ---------- */
+  function srLogWork(content, fromMs, toMs, taskId) {
+    if (!toMs || toMs - fromMs < 30000) return;    // 少于半分钟就别记了（避免噪声）
+    const dayKey = S().todayKey();
+    const day = S().getDay(dayKey);
+    const base = S().keyToDate(dayKey).getTime();
+    const sMin = Math.max(0, Math.min(1439, Math.floor((fromMs - base) / 60000)));
+    const eMin = Math.max(0, Math.min(1439, Math.floor((toMs - base) / 60000)));
+    if (eMin <= sMin) return;
+    day.timeline.push({
+      id: S().uid(), start: sMin, end: eMin, minutes: eMin - sMin,
+      content: content, category: 'study', countAsStudy: true, auto: true,
+      taskId: taskId || null, taskText: '', note: '', srWork: true
+    });
+    S().save();
+  }
+
+  /* ---------- ④ 今日「待复习」提醒条 ---------- */
+  function srPendingList() {
+    const dayKey = S().todayKey();
+    const day = S().peekDay ? S().peekDay(dayKey) : S().data().days[dayKey];
+    if (!day || !day.tasks) return [];
+    const out = [];
+    COLS.forEach(function (c) {
+      (day.tasks[c.key] || []).forEach(function (t) {
+        srPendingOf(t).forEach(function (r) { out.push({ t: t, listKey: c.key, r: r }); });
+      });
+    });
+    out.sort(function (a, b) { return a.r.due - b.r.due; });
+    return out;
+  }
+
+  function renderReviewBanner() {
+    const bar = document.getElementById('review-banner');
+    if (!bar) return;
+    if (!srOn()) { bar.innerHTML = ''; return; }
+    const list = srPendingList();
+    if (!list.length) {
+      let total = 0, doneN = 0;
+      const day = S().peekDay ? S().peekDay(S().todayKey()) : null;
+      if (day && day.tasks) COLS.forEach(function (c) {
+        (day.tasks[c.key] || []).forEach(function (t) {
+          total += srPlan(t).length;
+          doneN += srPlan(t).filter(function (r) { return r.done === true; }).length;
+        });
+      });
+      bar.innerHTML = (total > 0 && doneN >= total)
+        ? '<div class="card rev-banner rev-all-done">🌱 今天的 ' + total + ' 轮间隔复习全部做完了 —— 遗忘曲线今天就吃满了 🎉</div>'
+        : '';
+      return;
+    }
+    const now = Date.now();
+    const due = list[0].r.due <= now;
+    const left = Math.round((list[0].r.due - now) / 60000);
+    const groups = {};
+    list.forEach(function (x) {
+      const k = x.t.id;
+      if (!groups[k]) groups[k] = { t: x.t, rs: [] };
+      groups[k].rs.push(x.r);
+    });
+    const rows = Object.keys(groups).map(function (k) {
+      const g = groups[k];
+      return '<div class="rev-row"><span class="rev-name">' + S().esc(g.t.text) + '</span>' +
+        '<span class="rev-when">' + g.rs.map(function (r) {
+          return '<i class="' + (r.due <= now ? 'late' : '') + '">' + srHHMM(r.due) + '</i>';
+        }).join('') + '</span></div>';
+    }).join('');
+    bar.innerHTML = '<div class="card rev-banner' + (due ? ' rev-due' : '') + '">' +
+      '<div class="rev-head">' +
+      (due ? '⏰ <b>该复习了</b>' : '🌱 <b>待复习 ' + list.length + ' 轮</b>') +
+      ' · 最近一轮 <b>' + srHHMM(list[0].r.due) + '</b>' +
+      (due ? '（已到点）' : '（' + (left <= 0 ? '就现在' : left + ' 分钟后') + '）') +
+      '<button class="btn btn-small btn-primary" data-act="rev-go" style="margin-left:auto">▶ 开始复习</button>' +
+      '</div>' + rows + '</div>';
+  }
+
+  function bindReviewBanner() {
+    const bar = document.getElementById('review-banner');
+    if (!bar || bar.dataset.bound) return;
+    bar.dataset.bound = '1';
+    bar.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-act]');
+      if (b && b.dataset.act === 'rev-go') srStartRound(null, null);
+    });
+  }
+
+  /** 到点了就提醒一次（每轮只提醒一次） */
+  function srCheckDue() {
+    if (!srOn()) return;
+    const fresh = [];
+    srPendingList().forEach(function (x) {
+      const key = x.t.id + '#' + x.r.n;
+      if (x.r.due <= Date.now() && !srNotified[key]) { srNotified[key] = 1; fresh.push(x); }
+    });
+    if (!fresh.length) return;
+    // ⚠️ 一次到点可能有好几轮（甚至好几条任务）—— 必须合成一条，不然会连环刷屏
+    const names = fresh.map(function (x) { return x.t.text + ' 第 ' + x.r.n + ' 轮'; });
+    App.tasks.notifyNow('🌱 该复习了',
+      fresh.length === 1 ? names[0] + '（计划 ' + srHHMM(fresh[0].r.due) + '）'
+        : '共 ' + fresh.length + ' 轮到点：' + names.slice(0, 3).join('、') + (fresh.length > 3 ? ' 等' : ''),
+      'focus-plan-review');
+    App.ui.toast(fresh.length === 1
+      ? '⏰ 该复习了：' + fresh[0].t.text + '（第 ' + fresh[0].r.n + ' 轮）'
+      : '⏰ 该复习了 · ' + fresh.length + ' 轮到点了（' + fresh[0].t.text + ' 等）', 5600);
+  }
+
+  /* ---------- ⑤ 复习流程 ---------- */
+  function srStartRound(taskId, n) {
+    const dayKey = S().todayKey();
+    const day = S().getDay(dayKey);
+    let task = null;
+    if (taskId) { task = srFindTask(taskId); }
+    else {
+      const all = [];
+      COLS.forEach(function (c) {
+        (day.tasks[c.key] || []).forEach(function (t) { srPendingOf(t).forEach(function (r) { all.push({ t: t, r: r }); }); });
+      });
+      all.sort(function (a, b) { return a.r.due - b.r.due; });
+      if (!all.length) { App.ui.toast('今天没有待复习的内容'); return; }
+      task = all[0].t;
+      n = all[0].r.n;
+    }
+    if (!task) { App.ui.toast('这条任务找不到了'); return; }
+    const round = n ? srPlan(task).find(function (r) { return r.n === n; }) : srPendingOf(task)[0];
+    if (!round) { App.ui.toast('这一轮已经复习过了'); return; }
+    srOpenReview(task, round);
+  }
+
+  function srOpenReview(task, round) {
+    srRev = { taskId: task.id, n: round.n, startAt: Date.now() };
+    const kps = task.kps || [];
+    const plan = srPlan(task);
+    const late = Date.now() > round.due;
+    let body = '<div class="field" style="margin:0 0 8px"><label>任务</label>' +
+      '<p style="font-size:14px;font-weight:700">' + S().esc(task.text) + '</p></div>' +
+      '<p class="rev-hint">🌱 计划时间 <b>' + srHHMM(round.due) + '</b>' +
+      (late ? ' · <span style="color:#b0262e">晚了一点，没关系，做了就有效</span>' : '') + '<br>' +
+      '先自己回忆，再点「看答案」核对 —— 想不起来是正常的，这正是复习在起作用。</p>';
+    if (!kps.length) {
+      body += '<div class="rev-big-q">这节课还没设具体的知识点。<br>心里把这三件事过一遍：<b>讲了什么 · 关键结论是什么 · 哪里最容易错</b>，然后点下面的按钮。</div>';
+    } else {
+      body += '<div id="rev-kps">' + kps.map(function (k, i) {
+        return '<div class="rev-kp" data-i="' + i + '">' +
+          '<div class="rev-kp-q">' + (i + 1) + '. ' + S().esc(k.q || '（没写问题 —— 自己想想该问什么）') + '</div>' +
+          '<div class="rev-kp-a hidden-a" data-ans="' + i + '">' + S().esc(k.a || '（没写答案）') + '</div>' +
+          '<div class="rev-kp-bar"><button class="btn btn-mini btn-primary" data-reveal="' + i + '">👁 看答案</button></div>' +
+          '</div>';
+      }).join('') + '</div>';
+    }
+    body += '<div class="btn-row" style="margin-top:4px">' +
+      '<button class="btn btn-small" data-act="rev-edit">' + (kps.length ? '✎ 改知识点' : '＋ 现在设几个知识点') + '</button>' +
+      '<button class="btn btn-small btn-primary" data-act="rev-ok">✅ 这一轮复习完了</button>' +
+      '<button class="btn btn-small" data-act="rev-quit">先不复习了</button></div>';
+    const m = App.ui.openModal('🌱 第 ' + round.n + '/' + plan.length + ' 轮复习', body);
+    m.querySelectorAll('[data-reveal]').forEach(function (b) {
+      b.onclick = function () {
+        const i = b.dataset.reveal;
+        const a = m.querySelector('.rev-kp-a[data-ans="' + i + '"]');
+        if (a) a.classList.remove('hidden-a');
+        const bar = b.parentNode;
+        bar.innerHTML = '<span class="rev-hint">感觉如何：</span>' +
+          '<button class="btn btn-mini" data-grade="easy" data-i="' + i + '">😀 记得</button>' +
+          '<button class="btn btn-mini" data-grade="hard" data-i="' + i + '">🤔 模糊</button>' +
+          '<button class="btn btn-mini" data-grade="forgot" data-i="' + i + '">😵 忘了</button>';
+        const row = m.querySelector('.rev-kp[data-i="' + i + '"]');
+        bar.querySelectorAll('[data-grade]').forEach(function (g) {
+          g.onclick = function () {
+            const label = { easy: '😀 记得', hard: '🤔 模糊', forgot: '😵 忘了' }[g.dataset.grade] || '';
+            bar.innerHTML = '<span class="rev-hint">已记下：' + label + '</span>';
+            if (row) row.classList.add('rev-kp-done');
+          };
+        });
+      };
+    });
+    App.ui.bindActions({
+      'rev-edit': function () {
+        srKpReturn = { task: task, round: round };
+        srAskKps(task, null, S().todayKey());
+      },
+      'rev-ok': function () { srFinishRound(task, round); },
+      'rev-quit': function () {
+        App.ui.closeModal(); srRev = null;
+        App.ui.toast('没关系，想起来再来一轮', 3200);
+      }
+    });
+  }
+
+  function srFinishRound(task, round) {
+    const dayKey = S().todayKey();
+    const plan = srPlan(task);
+    round.done = true;
+    round.at = Date.now();
+    const p = srPoints();
+    if (p > 0) {
+      S().addLedger(dayKey, 'earn-review',
+        { points: p, note: '🌱 第 ' + round.n + ' 轮复习：' + task.text, taskId: task.id });
+      App.ui.floatAt(document.getElementById('stat-points'), '+' + p + '分');
+    }
+    let bonusMsg = '';
+    if (plan.length && plan.every(function (r) { return r.done === true; }) && !task.sp.bonus) {
+      task.sp.bonus = true;
+      const b = srFinishBonus();
+      if (b > 0) {
+        S().addLedger(dayKey, 'earn-review-all',
+          { points: b, note: '🌱 当天 ' + plan.length + ' 轮全做完：' + task.text, taskId: task.id });
+        bonusMsg = ' · 全轮完成再 +' + b + ' 分 🎉';
+      }
+    }
+    S().save();
+    if (srRev) srLogWork('🌱 第 ' + round.n + ' 轮复习：' + task.text, srRev.startAt, Date.now(), task.id);
+    srRev = null;
+    App.ui.closeModal();
+    App.tasks.renderAll();
+    const left = srPendingOf(task).length;
+    App.ui.toast('✅ 第 ' + round.n + ' 轮完成 · +' + p + ' 分' + bonusMsg +
+      (left ? ' · 还剩 ' + left + ' 轮（下一次 ' + srHHMM(srPendingOf(task)[0].due) + '）' : ''), 5600);
+    if (!left) setTimeout(function () {
+      App.ui.toast('🌱 「' + task.text + '」今天这几轮跑完了 —— 明天/后天可以用日历的 🔁 再安排一次，间隔拉长效果更好', 8200);
+    }, 2400);
+  }
+
   function renderAll() {
     renderToday();
     renderTomorrow();
@@ -4753,6 +5294,11 @@
     setInterval(function () { hourPlanAutoTick(); }, 1000);
     // ⏰ v66：到点自动结算 —— 每 30 秒看一眼（页面切后台靠下面的可见性事件补判）
     setInterval(function () { try { autoEndDayTick(); } catch (e) { /* 忽略 */ } }, 30000);
+    // 🌱 v70：间隔复习 —— 每 30 秒看一眼有没有到点的轮次（到点提醒 + 刷新顶部的「待复习」条）
+    setInterval(function () {
+      try { srCheckDue(); if (activeTab === 'today') renderReviewBanner(); } catch (e) { /* 忽略 */ }
+    }, 30000);
+    setTimeout(function () { try { srCheckDue(); } catch (e) { /* 启动时先看一眼 */ } }, 4000);
     setTimeout(function () { try { autoEndDayTick(); } catch (e) { /* 启动时补判昨天 */ } }, 2500);
     // ★ v55：页面重新可见 / 从后台回来 / 手机回前台 → 立刻判一次，逾期的小时代马上结算
     // ★ v56：上次留下"待办衔接"（某题没标结果 / 接着做还是休息）→ 启动就把悬浮窗亮出来
@@ -4795,6 +5341,17 @@
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,
     addTaskModal: addTaskModal, editTaskModal: editTaskModal,
+    // 🌱 v70 主动回忆 + 间隔重复
+    srOn: srOn, srGaps: srGaps, srDeadlineHM: srDeadlineHM, srPoints: srPoints,
+    srKpPoints: srKpPoints, srFinishBonus: srFinishBonus,
+    planSpaced: planSpaced, srPlan: srPlan, srPendingOf: srPendingOf,
+    srPendingList: srPendingList, renderReviewBanner: renderReviewBanner,
+    srStartRound: srStartRound, srFinishRound: srFinishRound, srAskKps: srAskKps,
+    srHHMM: srHHMM, srClockMs: srClockMs, srClockMsOf: srClockMs,
+    modeTagHTML: modeTagHTML, srLogWork: srLogWork, srCheckDue: srCheckDue,
+    srAfterTaskDone: srAfterTaskDone, srRunPending: srRunPending,
+    srFindTask: srFindTask, srShortModal: srShortModal, srOpenReview: srOpenReview,
+    srRenderKps: srRenderKps, srSaveKps: srSaveKps, srPaintKps: srPaintKps,
     getTimer: function () { return timer; },
     getCdTimer: function () { return cdTimer; },
     startSmallRest: startSmallRest, endSmallRest: endSmallRest,

@@ -104,7 +104,8 @@ const SLIDES = [
           '<div class="tl" data-i="7"><div class="n">v7</div><div class="t">听课三步 + 日历</div></div>'+
           '<div class="tl" data-i="8"><div class="n">v8</div><div class="t">听课住进任务</div></div>'+
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">悬浮窗出浏览器</div></div>'+
-          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+'<div class="tl" data-i="16"><div class="n">v16</div><div class="t">自动补结算</div></div>'+
+          '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+'<div class="tl" data-i="16"><div class="n">v16</div><div class="t">自动补结算</div></div>'+'<div class="tl" data-i="17"><div class="n">v17</div><div class="t">只列今天和以前</div></div>'+
+      '<div class="tl" data-i="18"><div class="n">v18</div><div class="t">学完当天多考自己几次</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -442,6 +443,44 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#8b5cf6"><h4>💡 什么时候会发生</h4><ul><li>打开页面后几秒内自动判断，页面没开着也不怕</li><li>正在计时的时候不会动（不打断你），停下来才结</li><li>不想自动结：设置 → ⏰ 到点自动结算 → 关掉</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v17 · 转移任务：只列今天和以前", badge:{t:"v17 · 📋 不列还没到的日子",c:"#e2545d"},
+    tag:"「为什么要把后面一天的任务，搞到前面一天来做？」—— 这个列表里再也不会有未来的日子",
+    cols:[
+      {t:"🔍 以前的样子", c:"#e2545d", items:[
+        "「📋 从其他天转移任务」的日期列表，把你数据里所有有记录的日期都列了出来",
+        "包括还没到的日子 —— 一排都是未来的日期",
+        "看着就奇怪：未来的任务为什么要往回搬？"]},
+      {t:"📋 现在的样子", c:"#0ea5e9", items:[
+        "只列「今天及以前」的日子，而且那天真的有任务可搬才会出现",
+        "空壳日期（只剩个记录、没有任何任务的）也不再占位置",
+        "要是数据里确实留着未来的记录，下面会写一行「已隐藏 N 个还没到的日期」",
+        "旁边一个「🧹 清理这些未来记录」按钮，点一下就能去清（你提前安排好的会单独标出来、默认不动）"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>💡 想提前做怎么办</h4><ul><li>把任务「安排到」今天就行（用 🔁 改期，或直接今天加一条），不用从未来往回搬</li><li>「搬」只做一件事：把以前没做完的带过来</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v18 · 主动回忆 + 间隔重复", badge:{t:"v18 · 🌱 学完当天多考自己几次",c:"#16a34a"},
+    tag:"「试着复述一遍，比单纯看它 4 遍都有效」—— 于是有了：自己出题 + 当天按遗忘曲线复习",
+    cols:[
+      {t:"📘 把任务标成「新知识」", c:"#16a34a", items:[
+        "添加/编辑任务时，除了「推进类型」，多了一个「🌱 知识类型」",
+        "📘 新知识 = 完成后会自动给你排当天复习",
+        "🔄 复习知识 = 只是标记，方便看今天复习了多少",
+        "不选 = 普通任务，什么都不变"]},
+      {t:"🌱 完成后自动做两件事", c:"#0ea5e9", items:[
+        "① 引导你「自己出几个小问题」——问题 + 答案，后面复习就拿它们考你（自己出题这一步本身就在帮你记）",
+        "② 按遗忘曲线排当天的 3 轮复习：默认 完成后 +30 分钟 / +2 小时 / +6 小时",
+        "每次到点，首页顶部会亮一条提醒；点「▶ 开始复习」直接进去",
+        "每完成一轮都有积分，几轮全做完再给一笔额外奖励"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>💡 为什么是这三个时间点</h4><ul><li>学完 30 分钟内忘得最快，赶紧捞一次</li><li>2 小时后再捞一次，把短时记忆稳住</li><li>最后一次放在睡前 —— 睡眠会帮你把记忆固定下来</li><li>三个间隔都能在设置里自己改</li></ul></div>'+
+      '<div class="col" style="--cc:#f59e0b"><h4>⏰ 几点之前学完才划算</h4><ul><li>按默认截止 22:00 倒推：<b>最晚 16:00 前学完</b>，三轮才跑得完</li><li>太晚开始它会问你要怎么办：只排跑得完的 / 照排 / 今天不排</li><li>第二天以后要不要再复习，你自己用 🔁 安排（间隔拉长反而更好）</li><li>当天没做完的轮次<b>不扣分</b>，只作记录</li></ul></div>'+
       '</div>'
   },
   {

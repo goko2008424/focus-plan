@@ -91,6 +91,13 @@
       theme: '',             // 🎨 主题外观（空=默认浅色；ocean/sakura/forest/dark/purple）
       hourPlanDefaultMin: 30, // ⏱ 小时计划：每段的默认时长（分钟），开始时可临时改
       hourDistractCut: 100, // ⏱ 小时计划：中途消耗自查——出现一次扣这段奖励积分的百分比（默认100=扣光）
+      // 🌱 v70 主动回忆 + 间隔重复
+      srEnabled: true,          // 🌱 总开关
+      srDeadline: '22:00',      // 🌱 当天复习的截止时刻（用来倒推「最晚几点结束学习任务」）
+      srGaps: [30, 120, 360],   // 🌱 三轮复习相对「任务完成时刻」的分钟数
+      srPoints: 5,              // 🌱 每完成一轮复习的积分
+      srKpPoints: 2,            // 🌱 每设一条知识点的积分
+      srFinishBonus: 5,         // 🌱 当天所有轮次全做完的额外奖励
       lectureBonusPts: 15,  // 🎓 听课三步：三步齐发的大奖默认积分（开课时可临时改）
       floatPiP: true,       // 🪟 计时悬浮窗拖出浏览器（Document PiP）；关掉就用页内悬浮窗
       notifyOnEnd: true,    // ⏰ 到点发系统通知（小时代 / 休息结束）
