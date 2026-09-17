@@ -3054,6 +3054,7 @@
     bindTodayEvents();
     bindPendingBar(box);
     renderStreakBar();
+    renderSlotBar();
     renderReviewBanner();
     bindReviewBanner();
     renderReview(dayKey);
@@ -4040,6 +4041,7 @@
       '<option value="new">📘 新知识 —— 完成时引导你设知识点，并排当天 3 轮复习</option>' +
       '<option value="review">🔄 复习知识 —— 只是标记，方便统计今天复习了多少</option>' +
       '</select></div>' +
+      slotHintHTML() +
       lecPlanFieldsHTML('add', null, false) +
             '<button class="btn btn-primary" data-act="ok">添加</button><button class="btn" data-act="cancel">取消</button>');
     bindLecPlanFields(modal, 'add');
@@ -4105,6 +4107,7 @@
       '<option value="review"' + (task.mode === 'review' ? ' selected' : '') + '>🔄 复习知识（只作标记）</option>' +
       '</select></div>' +
       '</div>' +
+      slotHintHTML() +
       lecPlanFieldsHTML('edit', lecPlanOf(task), !!lecPlanOf(task)) +
       '<button class="btn btn-primary" data-act="save">保存</button>' +
       '<button class="btn btn-danger" data-act="del">删除任务</button>' +
@@ -4831,6 +4834,103 @@
   function srPoints() { const v = S().settings().srPoints; return v == null ? 5 : Math.max(0, +v || 0); }
   function srKpPoints() { const v = S().settings().srKpPoints; return v == null ? 2 : Math.max(0, +v || 0); }
   function srFinishBonus() { const v = S().settings().srFinishBonus; return v == null ? 5 : Math.max(0, +v || 0); }
+  /* ---------- ⏰ v71 学习时段：新知识时间 / 复习时间 ---------- */
+  function slotOn() { return S().settings().slotOn !== false; }
+  function slotHM(k) {
+    const v = S().settings()[k];
+    return /^\d{1,2}:\d{2}$/.test(String(v || '')) ? v : (k === 'slotNewEnd' ? '16:00' : '08:00');
+  }
+  function slotMin(hhmm) {
+    const p = String(hhmm).split(':');
+    return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+  }
+  function slotRangeText() { return slotHM('slotNewStart') + ' – ' + slotHM('slotNewEnd'); }
+  /** 现在处在哪一段？用「昨天 / 今天 / 明天」三个候选区间判，跨零点（如 22:00→06:00）也成立 */
+  function slotState(nowMs) {
+    const ms = (nowMs == null) ? Date.now() : nowMs;
+    const a = slotMin(slotHM('slotNewStart')), b = slotMin(slotHM('slotNewEnd'));
+    const d0 = new Date(ms); d0.setHours(0, 0, 0, 0);
+    const D = d0.getTime(), DAY = 86400000;
+    // 起止填成一样 → 没有「新知识时段」这一说，直接返回全天复习（spans 留空）
+    const spans = (a === b) ? [] : [-1, 0, 1].map(function (k) {
+      return { s: D + k * DAY + a * 60000, e: D + k * DAY + (b > a ? b : b + 1440) * 60000 };
+    });
+    let span = null, next = null;
+    spans.forEach(function (x) {
+      if (!span && ms >= x.s && ms < x.e) span = x;
+      if (!next && x.s > ms) next = x;
+    });
+    return { inNew: !!span, span: span, nextStart: next ? next.s : null,
+      untilEnd: span ? span.e : null, a: a, b: b, empty: a === b };
+  }
+  function slotDurText(ms) {
+    const m = Math.max(0, Math.round(ms / 60000));
+    if (m <= 0) return '不到 1 分钟';
+    if (m < 60) return m + ' 分钟';
+    const h = Math.floor(m / 60), r = m % 60;
+    return r ? (h + ' 小时 ' + r + ' 分') : (h + ' 小时');
+  }
+  function slotWhenText(ms) {
+    if (!ms) return '';
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    const d1 = new Date(ms); d1.setHours(0, 0, 0, 0);
+    const diff = Math.round((d1.getTime() - d0.getTime()) / 86400000);
+    if (diff === 0) return srHHMM(ms);
+    if (diff === 1) return '明天 ' + srHHMM(ms);
+    if (diff === -1) return '昨天 ' + srHHMM(ms);
+    return (d1.getMonth() + 1) + ' 月 ' + d1.getDate() + ' 日 ' + srHHMM(ms);
+  }
+  /** 今天「新知识」任务推进得怎么样（只读，不建日期） */
+  function slotNewStats() {
+    let total = 0, done = 0;
+    const day = (S().peekDay ? S().peekDay(S().todayKey()) : null);
+    if (day && day.tasks) COLS.forEach(function (c) {
+      (day.tasks[c.key] || []).forEach(function (t) {
+        if (t.mode === SR_MODE_NEW) { total++; if (t.done) done++; }
+      });
+    });
+    return { total: total, done: done, left: total - done };
+  }
+  /** 首页顶部的时段条 */
+  function renderSlotBar() {
+    const bar = document.getElementById('slot-bar');
+    if (!bar) return;
+    if (!slotOn()) { bar.innerHTML = ''; return; }
+    const st = slotState();
+    if (st.empty) { bar.innerHTML = ''; return; }
+    const L = slotNewStats();
+    let cls, head, tail;
+    if (st.inNew) {
+      cls = 'slot-new';
+      head = '📘 <b>新知识时间</b> · 到 <b>' + slotHM('slotNewEnd') + '</b> 结束，还有 <b>' +
+        slotDurText(st.untilEnd - Date.now()) + '</b>';
+      if (L.total === 0) tail = '这会儿适合推新的内容 —— 新知识放在这一段学，记得最牢。';
+      else if (L.left > 0) tail = '今天的新知识任务 <b>' + L.done + '/' + L.total + '</b> —— 还剩 <b>' +
+        L.left + '</b> 条，趁这段时间推。';
+      else tail = '今天的新知识任务都推完了 👍 剩下可以复习、整理，或提前做拓展。';
+    } else {
+      cls = 'slot-rev';
+      head = '🔄 <b>复习时间</b> · 新知识时间 <b>' + slotWhenText(st.nextStart) + '</b> 再开';
+      if (L.left > 0) tail = '今天还有 <b>' + L.left + '</b> 条新知识没推完 —— 放到明天的开头学更牢，现在先把学过的过一遍。';
+      else tail = '这会儿适合复习 / 整理 / 做题 —— 该复习的时候会在上面提醒你。';
+    }
+    bar.innerHTML = '<div class="slot-bar ' + cls + '">' +
+      '<div class="slot-head">' + head + '</div>' +
+      '<div class="slot-tail">' + tail + '</div>' +
+      '</div>';
+  }
+  /** 添加 / 编辑任务弹窗里的一行提示（只提醒，不拦你） */
+  function slotHintHTML() {
+    if (!slotOn()) return '';
+    const st = slotState();
+    if (st.empty) return '';
+    if (st.inNew) {
+      return '<p class="hint slot-hint">📘 现在是<b>新知识时间</b>（到 ' + slotHM('slotNewEnd') +
+        ' 结束）—— 趁这会儿学新东西最划算。</p>';
+    }
+    return '<p class="hint slot-hint">🔄 现在是<b>复习时间</b>（新知识时间 ' + slotRangeText() +
+      '，下一次 ' + slotWhenText(st.nextStart) + '）—— 标成新知识也完全可以，这句只是提醒你一下。</p>';
+  }
 
   function srHHMM(ms) {
     const d = new Date(ms);
@@ -4883,7 +4983,12 @@
         }).join('') + doneN + '/' + plan.length + '</span>';
     }
     if (t.mode === SR_MODE_NEW) {
-      return '<span class="mode-tag mode-new" title="新知识：完成时会引导你设知识点，并按遗忘曲线排当天 3 轮复习">📘 新知识</span>' + dots;
+      // ⏰ v71：已经过了新知识时间还没做 → 徽标变淡，鼠标放上去解释一句（不拦人）
+      const out = !t.done && slotOn() && !slotState().inNew;
+      const tip = out
+        ? ('现在是复习时间（新知识时间 ' + slotRangeText() + '）—— 这条新知识留到下一次新知识时间开头学更牢')
+        : '新知识：完成时会引导你设知识点，并按遗忘曲线排当天 3 轮复习';
+      return '<span class="mode-tag mode-new' + (out ? ' mode-out' : '') + '" title="' + tip + '">📘 新知识</span>' + dots;
     }
     return '<span class="mode-tag mode-rev" title="复习知识：只是标记（不排间隔复习），方便统计今天复习了多少">🔄 复习</span>';
   }
@@ -5296,7 +5401,7 @@
     setInterval(function () { try { autoEndDayTick(); } catch (e) { /* 忽略 */ } }, 30000);
     // 🌱 v70：间隔复习 —— 每 30 秒看一眼有没有到点的轮次（到点提醒 + 刷新顶部的「待复习」条）
     setInterval(function () {
-      try { srCheckDue(); if (activeTab === 'today') renderReviewBanner(); } catch (e) { /* 忽略 */ }
+      try { srCheckDue(); if (activeTab === 'today') { renderReviewBanner(); renderSlotBar(); } } catch (e) { /* 忽略 */ }
     }, 30000);
     setTimeout(function () { try { srCheckDue(); } catch (e) { /* 启动时先看一眼 */ } }, 4000);
     setTimeout(function () { try { autoEndDayTick(); } catch (e) { /* 启动时补判昨天 */ } }, 2500);
@@ -5348,6 +5453,10 @@
     srPendingList: srPendingList, renderReviewBanner: renderReviewBanner,
     srStartRound: srStartRound, srFinishRound: srFinishRound, srAskKps: srAskKps,
     srHHMM: srHHMM, srClockMs: srClockMs, srClockMsOf: srClockMs,
+    // ⏰ v71 学习时段
+    slotOn: slotOn, slotHM: slotHM, slotMin: slotMin, slotRangeText: slotRangeText,
+    slotState: slotState, slotWhenText: slotWhenText, slotDurText: slotDurText,
+    slotNewStats: slotNewStats, renderSlotBar: renderSlotBar, slotHintHTML: slotHintHTML,
     modeTagHTML: modeTagHTML, srLogWork: srLogWork, srCheckDue: srCheckDue,
     srAfterTaskDone: srAfterTaskDone, srRunPending: srRunPending,
     srFindTask: srFindTask, srShortModal: srShortModal, srOpenReview: srOpenReview,

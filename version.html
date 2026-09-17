@@ -106,6 +106,7 @@ const SLIDES = [
           '<div class="tl" data-i="9"><div class="n">v9</div><div class="t">悬浮窗出浏览器</div></div>'+
           '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+'<div class="tl" data-i="16"><div class="n">v16</div><div class="t">自动补结算</div></div>'+'<div class="tl" data-i="17"><div class="n">v17</div><div class="t">只列今天和以前</div></div>'+
       '<div class="tl" data-i="18"><div class="n">v18</div><div class="t">学完当天多考自己几次</div></div>'+
+      '<div class="tl" data-i="19"><div class="n">v19</div><div class="t">几点学新、几点复习</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -484,6 +485,26 @@ const SLIDES = [
       '</div>'
   },
   {
+    name:"v19 · 几点学新、几点复习", badge:{t:"v19 · ⏰ 学新知识有固定时段了",c:"#0ea5e9"},
+    tag:"你定一个点：在这之前学新的，过了这个点就只复习 —— 到点它会自己告诉你",
+    cols:[
+      {t:"⏰ 自己定「新知识时间」", c:"#0ea5e9", items:[
+        "设置 → 「⏰ 学习时段」，默认 08:00 – 16:00（每天下午 4 点前）",
+        "这段时间＝学新的；其余时间（16:00 → 次日 08:00）都算复习时间",
+        "想改就改，跨零点也行（比如 22:00 → 06:00）"]},
+      {t:"📘 首页顶上的那条", c:"#22a06b", items:[
+        "新知识时间：写着「到 16:00 结束，还有 3 小时 20 分」+ 今天新知识任务推了几条",
+        "复习时间：写着「新知识时间 明天 08:00 再开」",
+        "每 30 秒自己刷新 —— 到点切段不用刷新页面"]},
+      {t:"🔄 不硬性规定", c:"#8b5cf6", items:[
+        "复习时间里「📘 新知识」的徽标会变淡（鼠标放上去解释一句），但照样能打勾、能计时",
+        "添加 / 编辑任务时也会写一行「现在是复习时间」——只是提醒，不拦你",
+        "不想要这套提示：设置里把「学习时段」的开关关掉"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#f59e0b"><h4>💡 为什么是「下午 4 点」</h4><ul><li>新东西要靠睡眠固定下来，越晚学越容易第二天就忘</li><li>晚上适合把白天学过的再过一遍 —— 这正是遗忘曲线想吃的那几轮</li><li>所以：<b>先学新的、再复习</b>，比反过来效率高得多</li></ul></div>'+
+      '</div>'
+  },  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+

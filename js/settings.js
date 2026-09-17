@@ -26,6 +26,13 @@
   function render() {
     const s = S().settings();
     const box = document.getElementById('settings-form');
+    // ⏰ v71 学习时段：这里只是把当前值显示出来，逻辑都在 tasks.js
+    const slA = (App.tasks && App.tasks.slotHM) ? App.tasks.slotHM('slotNewStart') : '08:00';
+    const slB = (App.tasks && App.tasks.slotHM) ? App.tasks.slotHM('slotNewEnd') : '16:00';
+    const slSame = slA === slB;
+    const slRest = slSame ? '起止填成一样了 → 不区分时段，全天都算复习时间'
+      : ('其余时间（' + slB + ' → 次日 ' + slA + '）都算<b>复习时间</b>');
+
     box.innerHTML =
       '<div class="set-group"><h4>📦 当前版本</h4>' +
       '<p class="hint">页面版本 <b>v' + (window.__BUILD || '?') + '</b>。' +
@@ -74,6 +81,19 @@
       '16:00</b> 左右把学习任务做完 —— 首页会告诉你具体几点前。<br>' +
       '<b>只安排当天</b>：第二天以后要不要再复习，你自己用日历的 🔁 安排（间隔拉长反而更好）。' +
       '当天没做完的轮次<b>不扣分</b>，只作记录。</p>' +
+      '</div>' +
+      '<div class="set-group"><h4>⏰ 学习时段（新知识时间 / 复习时间）</h4>' +
+      switchRow('set-slot-on', '开启（首页顶部会显示「现在是新知识时间还是复习时间」）', s.slotOn !== false) +
+      '<div class="set-row"><span class="set-label">新知识时间</span>' +
+      '<input type="time" id="set-slot-start" class="set-input" value="' + slA + '" />' +
+      '<span class="unit">到</span>' +
+      '<input type="time" id="set-slot-end" class="set-input" value="' + slB + '" />' +
+      '<span class="unit">结束（这段时间用来学新的）</span></div>' +
+      '<p class="hint">把一天切成两段：<b>' + slA + ' – ' + slB + '</b> 是<b>新知识时间</b>，' + slRest + '（复习 / 整理 / 做题）。<br>' +
+      '首页最上面那条会随时告诉你现在处在哪一段、还有多久切段；任务行上「📘 新知识」的徽标在复习时间里会变淡，' +
+      '提示你这一条留到下次新知识时间开头学更划算（添加 / 编辑任务时也会写一行）。<br>' +
+      '<b>完全不是硬性规定</b> —— 复习时间里你照样能学新知识、能打勾、能计时，它只是给你一个当下的参考。' +
+      '把最上面那个开关关掉，这些提示就全没了。</p>' +
       '</div>' +
       '<div class="set-group"><h4>🎯 任务组：整组做完的整体奖励</h4>' +
       numRow('set-group-reward', '整组题目全做完，额外奖励', s.groupRewardPoints, '分') +
@@ -165,6 +185,10 @@
     bind('set-sr-points', function () { s.srPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-sr-kp-points', function () { s.srKpPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-sr-bonus', function () { s.srFinishBonus = Math.max(0, +this.value || 0); S().save(); });
+    // ⏰ v71 学习时段
+    bind('set-slot-on', function () { s.slotOn = this.checked; S().save(); render(); App.tasks.renderAll(); });
+    bind('set-slot-start', function () { s.slotNewStart = this.value || '08:00'; S().save(); render(); App.tasks.renderAll(); });
+    bind('set-slot-end', function () { s.slotNewEnd = this.value || '16:00'; S().save(); render(); App.tasks.renderAll(); });
     bind('set-base-points', function () { s.baseRewardPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ideal-points', function () { s.idealPoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-ext-points', function () { s.extPoints = Math.max(0, +this.value || 0); S().save(); });
