@@ -4904,15 +4904,15 @@
       cls = 'slot-new';
       head = '📘 <b>新知识时间</b> · 到 <b>' + slotHM('slotNewEnd') + '</b> 结束，还有 <b>' +
         slotDurText(st.untilEnd - Date.now()) + '</b>';
-      if (L.total === 0) tail = '这会儿适合推新的内容 —— 新知识放在这一段学，记得最牢。';
-      else if (L.left > 0) tail = '今天的新知识任务 <b>' + L.done + '/' + L.total + '</b> —— 还剩 <b>' +
-        L.left + '</b> 条，趁这段时间推。';
-      else tail = '今天的新知识任务都推完了 👍 剩下可以复习、整理，或提前做拓展。';
+      if (L.total === 0) tail = '这会儿适合开新的课 —— 复习也照做，到点上面会提醒你。';
+      else if (L.left > 0) tail = '今天的新课 <b>' + L.done + '/' + L.total + '</b> —— 还剩 <b>' +
+        L.left + '</b> 条，趁这段时间推（复习不受影响，随时能做）。';
+      else tail = '今天的新课都推完了 👍 剩下交给复习、整理，或提前做拓展。';
     } else {
       cls = 'slot-rev';
       head = '🔄 <b>复习时间</b> · 新知识时间 <b>' + slotWhenText(st.nextStart) + '</b> 再开';
-      if (L.left > 0) tail = '今天还有 <b>' + L.left + '</b> 条新知识没推完 —— 放到明天的开头学更牢，现在先把学过的过一遍。';
-      else tail = '这会儿适合复习 / 整理 / 做题 —— 该复习的时候会在上面提醒你。';
+      if (L.left > 0) tail = '还有 <b>' + L.left + '</b> 条新课没推完 —— 留到明天开头学更牢，今晚把学过的过一遍就行。';
+      else tail = '这会儿把时间交给复习 / 整理 / 做题 —— 新的课留到明天开头再开。';
     }
     bar.innerHTML = '<div class="slot-bar ' + cls + '">' +
       '<div class="slot-head">' + head + '</div>' +
@@ -4926,10 +4926,10 @@
     if (st.empty) return '';
     if (st.inNew) {
       return '<p class="hint slot-hint">📘 现在是<b>新知识时间</b>（到 ' + slotHM('slotNewEnd') +
-        ' 结束）—— 趁这会儿学新东西最划算。</p>';
+        ' 结束）—— 适合开新的课；<b>复习也照做，不用等</b>。</p>';
     }
     return '<p class="hint slot-hint">🔄 现在是<b>复习时间</b>（新知识时间 ' + slotRangeText() +
-      '，下一次 ' + slotWhenText(st.nextStart) + '）—— 标成新知识也完全可以，这句只是提醒你一下。</p>';
+      '，下一次 ' + slotWhenText(st.nextStart) + '）—— 新的课建议留到那时候再开，这句只是提醒你一下。</p>';
   }
 
   function srHHMM(ms) {
@@ -5284,7 +5284,9 @@
     }
     if (!task) { App.ui.toast('这条任务找不到了'); return; }
     const round = n ? srPlan(task).find(function (r) { return r.n === n; }) : srPendingOf(task)[0];
-    if (!round) { App.ui.toast('这一轮已经复习过了'); return; }
+    // ⚠️ 必须连「这一轮已经做过了」一起挡掉：只判 !round 的话，
+    //    从外部按轮次号调进来会把已完成的轮次又做一遍（重复发分）。
+    if (!round || round.done !== null) { App.ui.toast('这一轮已经复习过了'); return; }
     srOpenReview(task, round);
   }
 
@@ -5348,6 +5350,7 @@
   }
 
   function srFinishRound(task, round) {
+    if (!round || round.done === true) { App.ui.closeModal(); return; }   // 防重复触发重复发分
     const dayKey = S().todayKey();
     const plan = srPlan(task);
     round.done = true;

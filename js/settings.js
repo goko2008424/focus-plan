@@ -30,8 +30,36 @@
     const slA = (App.tasks && App.tasks.slotHM) ? App.tasks.slotHM('slotNewStart') : '08:00';
     const slB = (App.tasks && App.tasks.slotHM) ? App.tasks.slotHM('slotNewEnd') : '16:00';
     const slSame = slA === slB;
-    const slRest = slSame ? '起止填成一样了 → 不区分时段，全天都算复习时间'
-      : ('其余时间（' + slB + ' → 次日 ' + slA + '）都算<b>复习时间</b>');
+    const slRest = slSame ? '<br><b>起止时间填成一样了</b> → 不区分时段，全天都算复习时间。' : '';
+    // 📐 实时对照：新知识时间结束 + 最后一轮复习间隔 ↔ 复习截止时刻（用户最关心的那个等式）
+    const slDl = s.srDeadline || '22:00';
+    const slGaps = (s.srGaps && s.srGaps.length) ? s.srGaps : [30, 120, 360];
+    const slLastGap = Math.max(1, +slGaps[slGaps.length - 1] || 360);
+    const slToMin = function (t) {
+      const p = String(t || '').split(':');
+      return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+    };
+    const slFmt = function (m) {
+      m = ((m % 1440) + 1440) % 1440;
+      return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    };
+    const slGapTxt = (slLastGap % 60 === 0) ? (slLastGap / 60) + ' 小时' : slLastGap + ' 分钟';
+    const slEndMin = slToMin(slB), slDlMin = slToMin(slDl), slTieMin = slEndMin + slLastGap;
+    let slTie;
+    if (slSame) {
+      slTie = '';
+    } else if (slTieMin === slDlMin) {
+      slTie = '<br>📐 按你现在填的：<b>' + slB + '</b> 学完 + 最后一轮 <b>' + slGapTxt +
+        '</b> = <b>' + slFmt(slTieMin) + '</b>，正好压在「复习截止 ' + slDl + '」上 ✅ 一轮不多、一轮不少。';
+    } else if (slTieMin < slDlMin) {
+      slTie = '<br>📐 按你现在填的：<b>' + slB + '</b> 学完 + 最后一轮 <b>' + slGapTxt +
+        '</b> = <b>' + slFmt(slTieMin) + '</b>，比「复习截止 ' + slDl + '」还早 <b>' + (slDlMin - slTieMin) +
+        ' 分钟</b>，很宽裕 ✅';
+    } else {
+      slTie = '<br>⚠️ 按你现在填的：<b>' + slB + '</b> 学完 + 最后一轮 <b>' + slGapTxt +
+        '</b> = <b>' + slFmt(slTieMin) + '</b>，会<b>超过</b>「复习截止 ' + slDl + '」<b>' + (slTieMin - slDlMin) +
+        ' 分钟</b> —— 把新知识时间提前结束，或去「🌱 主动回忆」里把截止时刻改晚点。';
+    }
 
     box.innerHTML =
       '<div class="set-group"><h4>📦 当前版本</h4>' +
@@ -88,12 +116,16 @@
       '<input type="time" id="set-slot-start" class="set-input" value="' + slA + '" />' +
       '<span class="unit">到</span>' +
       '<input type="time" id="set-slot-end" class="set-input" value="' + slB + '" />' +
-      '<span class="unit">结束（这段时间用来学新的）</span></div>' +
-      '<p class="hint">把一天切成两段：<b>' + slA + ' – ' + slB + '</b> 是<b>新知识时间</b>，' + slRest + '（复习 / 整理 / 做题）。<br>' +
+      '<span class="unit">结束（这个点之后，新的课就先别开了）</span></div>' +
+      '<p class="hint">' +
+      '<b>' + slA + ' – ' + slB + '</b> 是<b>开新课的时段</b> —— <b>复习在这段时间里照样做，不用避开</b>' +
+      '（比如每半小时一轮的小复习，本来就是在这一段里发生的）。<br>' +
+      '过了 <b>' + slB + '</b>，<b>新的课就先别开了</b> —— 剩下的时间一直交到第二天 ' + slA + ' 之前，都留给复习（复习 / 整理 / 做题）。<br>' +
       '首页最上面那条会随时告诉你现在处在哪一段、还有多久切段；任务行上「📘 新知识」的徽标在复习时间里会变淡，' +
       '提示你这一条留到下次新知识时间开头学更划算（添加 / 编辑任务时也会写一行）。<br>' +
-      '<b>完全不是硬性规定</b> —— 复习时间里你照样能学新知识、能打勾、能计时，它只是给你一个当下的参考。' +
-      '把最上面那个开关关掉，这些提示就全没了。</p>' +
+      '<b>不是硬性规定</b> —— 到点了也不会拦你，只是提醒你「新的先别开、把学过的东西过一遍」；' +
+      '想继续学新课照样能打勾、能计时。把最上面那个开关关掉，这些提示就全没了。' +
+      slTie + slRest + '</p>' +
       '</div>' +
       '<div class="set-group"><h4>🎯 任务组：整组做完的整体奖励</h4>' +
       numRow('set-group-reward', '整组题目全做完，额外奖励', s.groupRewardPoints, '分') +
