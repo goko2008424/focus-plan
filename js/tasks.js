@@ -2622,7 +2622,9 @@
       ids.forEach(function (id) {
         const u = undone.find(function (x) { return x.task.id === id; });
         if (!u) return;
-        const t = { id: S().uid(), text: u.task.text };
+        // ↩ v74：带上 rolled 标记 —— 以前只有 {id,text}，搬过来的任务和今天定的长得一模一样，
+        //    用户完全分不清哪些是今天该做的、哪些是昨天剩的（这是他「事情越堆越多」的来源之一）
+        const t = { id: S().uid(), text: u.task.text, rolled: true };
         if (u.task.points != null) t.points = u.task.points;
         S().getDay(nextDayKeyOf(dayKey)).tasks[u.k].push(t);
         out.rolled++;
@@ -2963,6 +2965,10 @@
       return '<span class="carry-tag" title="昨天没做完，自动移到今天来的 \u2014\u2014 今天做完就不扣分">\u21A9 昨天移过来' +
         (t.carriedFailed ? ' \u00b7 已扣分' : '') + '</span>';
     }
+    // ↩ v74：必须/理想栏昨天没做完顺延过来的（原来没有任何标记，混在今天的清单里认不出来）
+    if (t.rolled) {
+      return '<span class="rolled-tag" title="昨天没做完，自动顺延到今天的 —— 想做就直接做，不想做可以在清单顶上「一键清掉」">\u21A9 昨天没做完</span>';
+    }
     if (t.movedOut) {
       return '<span class="carry-out-tag" title="当天没做完，已经移到第二天的拓展栏了（这条留在这里只作记录）">\u2717 未完成 \u00b7 已移到明天</span>';
     }
@@ -3055,8 +3061,10 @@
     bindPendingBar(box);
     renderStreakBar();
     renderSlotBar();
+    renderRollBar();
     renderReviewBanner();
     bindReviewBanner();
+    bindRollBar();
     renderReview(dayKey);
     renderHourPlan(dayKey);
   }
@@ -4174,6 +4182,8 @@
     // 粘贴的是"一天一开始"的任务：恢复为未完成状态，不带旧日的完成记录/拆解过程
     c.done = false;
     delete c.summary;
+    // ⚠️ v74：这些是「跨天搬运」的标记，粘到新的一天就不再成立了（否则新任务顶着「昨天没做完」）
+    delete c.rolled; delete c.carried; delete c.carriedFailed; delete c.movedOut;
     if (c.subs) c.subs = c.subs.map(function (x) {
       x.id = S().uid();
       // ⚠️ 必须 null：false 在界面上是「✗未完成」（红的），null 才是「还没做过」（初始状态）
@@ -5384,6 +5394,68 @@
     }, 2400);
   }
 
+
+  /* ---------- \u21A9 v74：昨天搬过来的任务，一眼认得出 + 一键清掉 ---------- */
+  /** 今天有哪些是「昨天没做完搬过来的」（只数必须/理想栏的 rolled） */
+  function rolledList() {
+    const day = (S().peekDay ? S().peekDay(S().todayKey()) : null);
+    const out = [];
+    if (!day || !day.tasks) return out;
+    COLS.forEach(function (c) {
+      (day.tasks[c.key] || []).forEach(function (t) {
+        if (t.rolled) out.push({ col: c.key, task: t });
+      });
+    });
+    return out;
+  }
+  function renderRollBar() {
+    const bar = document.getElementById('roll-bar');
+    if (!bar) return;
+    const list = rolledList();
+    if (!list.length) { bar.innerHTML = ''; return; }
+    const n = list.length;
+    bar.innerHTML = '<div class="roll-bar">' +
+      '<span class="roll-txt">\u21A9 今天有 <b>' + n + '</b> 条是<b>昨天没做完</b>搬过来的 ' +
+      '\u2014\u2014 不打算做的直接清掉，别让它占着清单</span>' +
+      '<button class="btn btn-small" data-act="roll-clear">\u{1F9F9} 清掉这 ' + n + ' 条</button>' +
+      '</div>';
+  }
+  function bindRollBar() {
+    const bar = document.getElementById('roll-bar');
+    if (!bar || bar.dataset.bound) return;
+    bar.dataset.bound = '1';
+    bar.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-act]');
+      if (b && b.dataset.act === 'roll-clear') rollClear();
+    });
+  }
+  function rollClear() {
+    const list = rolledList();
+    if (!list.length) { App.ui.toast('没有可清的了'); return; }
+    const n = list.length;
+    App.ui.confirm('清掉这 ' + n + ' 条昨天搬来的任务？<br>' +
+      '<span style="color:#8a919c">它们会从今天的清单里消失（想找回就去「\u{1F5D1} 回收站」）。拓展栏那条带扣分规则的不会被清。</span>',
+      '清掉 ' + n + ' 条', function () {
+        const day = S().getDay(S().todayKey());
+        const rm = {};
+        list.forEach(function (x) { rm[x.task.id] = 1; });
+        let cnt = 0;
+        ['required', 'ideal', 'extra'].forEach(function (k) {
+          const keep = [];
+          (day.tasks[k] || []).forEach(function (t) {
+            if (rm[t.id]) {
+              trashPush({ kind: 'task', dayKey: S().todayKey(), col: k, payload: JSON.parse(JSON.stringify(t)) });
+              cnt++;
+            } else keep.push(t);
+          });
+          day.tasks[k] = keep;
+        });
+        S().save();
+        renderAll();
+        App.ui.toast('\u{1F9F9} 清掉 ' + cnt + ' 条 \u2014\u2014 清单轻了', 4200);
+      });
+  }
+
   function renderAll() {
     renderToday();
     renderTomorrow();
@@ -5460,6 +5532,8 @@
     slotOn: slotOn, slotHM: slotHM, slotMin: slotMin, slotRangeText: slotRangeText,
     slotState: slotState, slotWhenText: slotWhenText, slotDurText: slotDurText,
     slotNewStats: slotNewStats, renderSlotBar: renderSlotBar, slotHintHTML: slotHintHTML,
+    // ↩ v74 昨天搬来的任务
+    renderRollBar: renderRollBar, rolledList: rolledList, rollClear: rollClear,
     modeTagHTML: modeTagHTML, srLogWork: srLogWork, srCheckDue: srCheckDue,
     srAfterTaskDone: srAfterTaskDone, srRunPending: srRunPending,
     srFindTask: srFindTask, srShortModal: srShortModal, srOpenReview: srOpenReview,

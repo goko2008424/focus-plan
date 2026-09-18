@@ -107,6 +107,7 @@ const SLIDES = [
           '<div class="tl" data-i="10"><div class="n">v10</div><div class="t">连听多节</div></div>'+'<div class="tl" data-i="11"><div class="n">v11</div><div class="t">导出长图</div></div>'+'<div class="tl" data-i="12"><div class="n">v12</div><div class="t">暂停不算</div></div>'+'<div class="tl" data-i="13"><div class="n">v13</div><div class="t">拓展自动顺延</div></div>'+'<div class="tl" data-i="14"><div class="n">v14</div><div class="t">到点自动结算</div></div>'+'<div class="tl" data-i="15"><div class="n">v15</div><div class="t">刷新就更新</div></div>'+'<div class="tl" data-i="16"><div class="n">v16</div><div class="t">自动补结算</div></div>'+'<div class="tl" data-i="17"><div class="n">v17</div><div class="t">只列今天和以前</div></div>'+
       '<div class="tl" data-i="18"><div class="n">v18</div><div class="t">学完当天多考自己几次</div></div>'+
       '<div class="tl" data-i="19"><div class="n">v19</div><div class="t">几点学新、几点复习</div></div>'+
+      '<div class="tl" data-i="20"><div class="n">v20</div><div class="t">昨天的任务认得出</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -506,6 +507,23 @@ const SLIDES = [
       '<div class="col" style="--cc:#f59e0b"><h4>💡 为什么是「下午 4 点」</h4><ul><li>新东西要靠睡眠固定下来，越晚学越容易第二天就忘</li><li>晚上适合把白天学过的再过一遍 —— 这正是遗忘曲线想吃的那几轮</li><li>所以：<b>先学新的、再复习</b>，比反过来效率高得多</li></ul></div>'+
       '</div>'
   },  {
+    name:"v20 · 昨天的任务，一眼认得出", badge:{t:"v20 · ↩ 不再跟今天混在一起",c:"#8b5cf6"},
+    tag:"以前昨天没做完的任务会静悄悄混进今天的清单 —— 现在它自己带标签，还能一键清掉",
+    cols:[
+      {t:"↩ 认得出", c:"#8b5cf6", items:[
+        "每天到点结算时，没做完的会复制一份到第二天（必须有这个功能，不然会忘）",
+        "但它原来是<b>隐身</b>的 —— 长得和今天新定的任务一模一样",
+        "现在都带标志：必须/理想栏淡紫「↩ 昨天没做完」，拓展栏橙色「↩ 昨天移过来」"]},
+      {t:"🧹 一键清掉", c:"#0ea5e9", items:[
+        "清单顶上出现一条：「今天有 N 条是昨天搬过来的」+「🧹 清掉这 N 条」",
+        "清掉 = 从今天的清单里拿走（进回收站，想找回随时能找）",
+        "拓展栏那条带扣分规则的不会被清，它有自己的规矩"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#f59e0b"><h4>💡 判断标准只有一个</h4><ul><li>看到一条任务就问：<b>「我今天要做吗？」</b></li><li>不做就清掉 —— 不用管它是今天定的还是昨天剩的</li><li>顺延的意思是<b>别忘了</b>，不是<b>欠着</b></li></ul></div>'+
+      '</div>'
+  },
+  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+

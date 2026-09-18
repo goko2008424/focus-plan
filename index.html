@@ -6,12 +6,12 @@
   <script>
     /* 版本号。v67 起提到 <head>：设置页等模块渲染得比页尾的 build-check 早，
        以前写在页尾，渲染时读到 undefined 就显示成 "v?"。 */
-    window.__BUILD = 73;
+    window.__BUILD = 74;
   </script>
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=73" />
+  <link rel="stylesheet" href="css/style.css?v=74" />
   <style id="pip-style">
     /* ===== 🪟 只在小窗（Document Picture-in-Picture）里生效：让悬浮窗铺满整个小窗 ===== */
     html.pip, html.pip body { background: var(--bg, #f5f7fa); margin: 0; padding: 0; }
@@ -119,6 +119,8 @@
         <div id="review-banner"></div>
         <div id="hour-card"></div>
         <div id="streak-bar"></div>
+        <!-- ↩ v74 昨天搬来的任务：清单顶上一条提醒 + 一键清掉 -->
+        <div id="roll-bar"></div>
         <div id="task-columns"></div>
         <div class="card" id="review-card"></div>
         <div id="link-card"></div>
@@ -260,18 +262,18 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=73"></script>
-  <script src="js/ui.js?v=73"></script>
-  <script src="js/tasks.js?v=73"></script>
-  <script src="js/timeline.js?v=73"></script>
-  <script src="js/stats.js?v=73"></script>
-  <script src="js/settings.js?v=73"></script>
-  <script src="js/sport.js?v=73"></script>
-  <script src="js/lecture.js?v=73"></script>
-  <script src="js/calendar.js?v=73"></script>
-  <script src="js/link.js?v=73"></script>
-  <script src="js/demo.js?v=73"></script>
-  <script src="js/app.js?v=73"></script>
+  <script src="js/store.js?v=74"></script>
+  <script src="js/ui.js?v=74"></script>
+  <script src="js/tasks.js?v=74"></script>
+  <script src="js/timeline.js?v=74"></script>
+  <script src="js/stats.js?v=74"></script>
+  <script src="js/settings.js?v=74"></script>
+  <script src="js/sport.js?v=74"></script>
+  <script src="js/lecture.js?v=74"></script>
+  <script src="js/calendar.js?v=74"></script>
+  <script src="js/link.js?v=74"></script>
+  <script src="js/demo.js?v=74"></script>
+  <script src="js/app.js?v=74"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
@@ -378,8 +380,8 @@
    有文件没传上去 → 顶部弹红条点名，别再靠猜"为什么改了没生效"。
    控制台可用：__checkBuild() 重查 / __checkBuild(true) 强制绕过缓存重查 */
 window.__BUILD_SIZES = {
-  "css/style.css": 49707,
-  "js/app.js": 32306,
+  "css/style.css": 50489,
+  "js/app.js": 33206,
   "js/calendar.js": 35078,
   "js/demo.js": 8261,
   "js/lecture.js": 41483,
@@ -388,11 +390,11 @@ window.__BUILD_SIZES = {
   "js/sport.js": 25754,
   "js/stats.js": 24805,
   "js/store.js": 17253,
-  "js/tasks.js": 305844,
+  "js/tasks.js": 309520,
   "js/timeline.js": 19744,
   "js/ui.js": 12061,
   "sw.js": 2587,
-  "version.html": 46000
+  "version.html": 47499
 };
 (function () {
   var S = window.__BUILD_SIZES;
