@@ -3060,6 +3060,8 @@
     bindTodayEvents();
     bindPendingBar(box);
     renderStreakBar();
+    renderSettleBar();
+    bindSettleBar();
     renderSlotBar();
     renderRollBar();
     renderReviewBanner();
@@ -5395,6 +5397,53 @@
   }
 
 
+
+  /* ---------- \u23F0 v76：还没结算的日子，摆在首页上 + 一键结算 ---------- */
+  /** 有没有「今天以前、还没结算、而且那天真有东西」的日子？（最多回看 7 天）
+      只找今天以前的 —— 今天还没到结算点，不算漏。 */
+  function missedSettleKey() {
+    for (let i = 1; i <= 7; i++) {
+      const dd = new Date(); dd.setDate(dd.getDate() - i);
+      const k = S().dateKey(dd);
+      const pd = (S().peekDay ? S().peekDay(k) : null);
+      if (pd && !pd.ended && !isEmptyDay(pd)) return k;
+    }
+    return null;
+  }
+  function renderSettleBar() {
+    const bar = document.getElementById('settle-bar');
+    if (!bar) return;
+    const k = missedSettleKey();
+    if (!k) { bar.innerHTML = ''; return; }
+    const st = S().settings();
+    const autoOff = st.autoEndDay === false;
+    const noRoll = st.rollover === false;
+    let warn = '';
+    if (autoOff) {
+      warn += '<br><span class="settle-warn">\u26A0\uFE0F 「到点自动结算」是<b>关着</b>的（设置 \u2192 \u23F0 到点自动结算），所以它不会自己结。</span>';
+    }
+    if (noRoll) {
+      warn += '<br><span class="settle-warn">\u26A0\uFE0F 「每日未完成任务自动顺延到明天」也是<b>关着</b>的（设置 \u2192 \u{1F518} 行为开关），所以结算完任务也不会搬过来。</span>';
+    }
+    bar.innerHTML = '<div class="settle-bar">' +
+      '<span class="settle-txt">\u23F0 <b>' + S().shortDateCN(k) +
+      '</b> 还没结算 \u2014\u2014 那天没做完的任务还没搬过来。' + warn + '</span>' +
+      '<button class="btn btn-small btn-primary" data-act="settle-now">\u{1F3C1} 现在结算</button>' +
+      '</div>';
+  }
+  function bindSettleBar() {
+    const bar = document.getElementById('settle-bar');
+    if (!bar || bar.dataset.bound) return;
+    bar.dataset.bound = '1';
+    bar.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-act]');
+      if (b && b.dataset.act === 'settle-now') {
+        try { App.ui.closeModal(); } catch (err) { /* 忽略 */ }
+        endDay();   // 它自己会用 pickSettleKey() 找到"那天"，不用你来选
+      }
+    });
+  }
+
   /* ---------- \u21A9 v74：昨天搬过来的任务，一眼认得出 + 一键清掉 ---------- */
   /** 今天有哪些是「昨天没做完搬过来的」（只数必须/理想栏的 rolled） */
   function rolledList() {
@@ -5534,6 +5583,8 @@
     slotNewStats: slotNewStats, renderSlotBar: renderSlotBar, slotHintHTML: slotHintHTML,
     // ↩ v74 昨天搬来的任务
     renderRollBar: renderRollBar, rolledList: rolledList, rollClear: rollClear,
+    // ⏰ v76 漏结算提醒
+    missedSettleKey: missedSettleKey, renderSettleBar: renderSettleBar,
     modeTagHTML: modeTagHTML, srLogWork: srLogWork, srCheckDue: srCheckDue,
     srAfterTaskDone: srAfterTaskDone, srRunPending: srRunPending,
     srFindTask: srFindTask, srShortModal: srShortModal, srOpenReview: srOpenReview,

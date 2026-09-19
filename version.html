@@ -108,6 +108,7 @@ const SLIDES = [
       '<div class="tl" data-i="18"><div class="n">v18</div><div class="t">学完当天多考自己几次</div></div>'+
       '<div class="tl" data-i="19"><div class="n">v19</div><div class="t">几点学新、几点复习</div></div>'+
       '<div class="tl" data-i="20"><div class="n">v20</div><div class="t">昨天的任务认得出</div></div>'+
+      '<div class="tl" data-i="21"><div class="n">v21</div><div class="t">忘结算会提醒</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -521,6 +522,23 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#f59e0b"><h4>💡 判断标准只有一个</h4><ul><li>看到一条任务就问：<b>「我今天要做吗？」</b></li><li>不做就清掉 —— 不用管它是今天定的还是昨天剩的</li><li>顺延的意思是<b>别忘了</b>，不是<b>欠着</b></li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v21 · 忘了结算的那天，首页会摆给你看", badge:{t:"v21 · ⏰ 结算不再靠记性",c:"#e2545d"},
+    tag:"结算只在这两个时候发生 —— 到点了、或你点了结束今天；两条都没走到，那天就一直挂着",
+    cols:[
+      {t:"⏰ 首页最上面那条", c:"#e2545d", items:[
+        "有「今天以前、还没结算、那天真有东西」的日子 → 自动亮一条",
+        "写着「9月18日 还没结算 —— 那天没做完的任务还没搬过来」",
+        "旁边一个「🏁 现在结算」，点一下就行"]},
+      {t:"🖱 不用翻回去找那天", c:"#0ea5e9", items:[
+        "点「现在结算」它会自己找到该结的那一天（最多回看 7 天）",
+        "弹窗标题会写清楚在结哪一天，不会误结今天",
+        "顺手把开关状态也写出来：自动结算关了？顺延关了？它直接告诉你"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#f59e0b"><h4>💡 为什么会漏</h4><ul><li>默认 23:59 自动结算，但<b>那一刻页面得开着</b></li><li>「这次没开 → 下次打开补结」也是有的，但如果那次页面本身没加载成功，就补不上</li><li>所以干脆让它<b>看得见</b>：漏了就一直摆在你眼前</li></ul></div>'+
       '</div>'
   },
   {

@@ -928,6 +928,16 @@ body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b
   border: 1px solid #f2cfd3;
 }
 
+/* \u23F0 v76：漏结算提醒条（摆在首页最上面） */
+.settle-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 10px 14px; margin-bottom: 10px; border-radius: 10px; font-size: 13.5px;
+  background: var(--card); border: 1px solid var(--line); border-left: 4px solid #e2545d;
+  background-image: linear-gradient(90deg, rgba(226,84,93,.12), transparent 72%);
+}
+.settle-bar .settle-txt { flex: 1; min-width: 0; }
+.settle-bar .settle-warn { color: #b0262e; font-size: 12.5px; }
+
 /* \u21A9 v74：必须/理想栏昨天没做完顺延过来的任务 */
 .rolled-tag {
   display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
