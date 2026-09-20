@@ -5,8 +5,11 @@
  *   顶部一个入口（跟 ✨演示 / 📖指南 同一排），上面直接写着最近的节点还剩几天；
  *   点开能看全部节点、能加能改能删；≤30 天亮红、≤100 天亮橙。
  *
- * 数据：data.milestones = [{id, name, start, end, note}]
- *   start / end 都是 'YYYY-MM-DD'；end 可空（只有一天时不用填）
+ * 数据：data.milestones = [{id, name, due, note}]
+ *   due = 截止日期，'YYYY-MM-DD' —— **只有一个日期**（v81 改的）。
+ *   早期版本照参考文件抄了 start + end 两个框，但「截止日期」本来就该是一个点，
+ *   两个框只会让人填错（用户实测：把开始日期填成今天，倒计时就变成「就是今天」）。
+ *   MS() 里会自动迁移：due = 旧 end || 旧 start。
  * ============================================================ */
 (function () {
   'use strict';
@@ -28,17 +31,29 @@
     if (!Array.isArray(d.milestones)) {
       d.milestones = [];
       S().save();
-    } else if (d.milestones.some(function (m) { return JUNK_IDS.indexOf(m.id) >= 0; })) {
-      d.milestones = d.milestones.filter(function (m) { return JUNK_IDS.indexOf(m.id) < 0; });
-      S().save();
+      return d.milestones;
     }
+    let dirty = false;
+    if (d.milestones.some(function (m) { return JUNK_IDS.indexOf(m.id) >= 0; })) {
+      d.milestones = d.milestones.filter(function (m) { return JUNK_IDS.indexOf(m.id) < 0; });
+      dirty = true;
+    }
+    /* ⚠️ v80 及以前是「开始日期 + 结束日期」两个字段（照参考文件抄的）。
+       v81 改成只有一个「截止日期」：迁移时**优先用原来的结束日期**（那才是他填的截止那天），
+       没有就退回开始日期。 */
+    d.milestones.forEach(function (m) {
+      if (!m.due) { m.due = m.end || m.start || ''; dirty = true; }
+      if ('start' in m) { delete m.start; dirty = true; }
+      if ('end' in m) { delete m.end; dirty = true; }
+    });
+    if (dirty) S().save();
     return d.milestones;
   }
 
   /* ---------- 日期 ---------- */
   function daysLeft(m) {
-    if (!m || !m.start) return null;
-    const a = S().keyToDate(m.start).getTime();
+    if (!m || !m.due) return null;
+    const a = S().keyToDate(m.due).getTime();
     const b = S().keyToDate(S().todayKey()).getTime();
     return Math.round((a - b) / DAY);
   }
@@ -56,15 +71,12 @@
     if (n === 1) return '明天';
     return '还有 ' + n + ' 天';
   }
-  function rangeText(m) {
-    if (!m.start) return '';
-    const a = S().shortDateCN(m.start);
-    if (m.end && m.end !== m.start) return a + ' – ' + S().shortDateCN(m.end);
-    return a;
+  function dateText(m) {
+    return m.due ? S().shortDateCN(m.due) : '（没填日期）';
   }
   function sorted() {
     return MS().slice().sort(function (a, b) {
-      return String(a.start || '').localeCompare(String(b.start || ''));
+      return String(a.due || '').localeCompare(String(b.due || ''));
     });
   }
   /** 最近的「还没过」的那个；全过了就返回 null */
@@ -89,19 +101,19 @@
     el.textContent = m.name + ' ' + (n === 0 ? '今天' : (n === 1 ? '明天' : n + '天'));
     el.className = 'ms-mini ' + (n === 0 || n <= 30 ? 'ms-mini-now' : (n <= 100 ? 'ms-mini-soon' : ''));
     if (btn) {
-      btn.title = '最近：' + m.name + '（' + rangeText(m) + '）· ' + ddText(n) + ' —— 点开看全部';
+      btn.title = '最近：' + m.name + '（截止 ' + dateText(m) + '）· ' + ddText(n) + ' —— 点开看全部';
     }
   }
 
   /* ---------- 列表 ---------- */
   function listModal() {
     const list = sorted();
-    let h = '<p class="hint" style="margin-top:0">任何<b>有确定日期</b>的事都能放这儿 —— 报名截止、交作业、考试、' +
+    let h = '<p class="hint" style="margin-top:0">任何<b>有一个截止日期</b>的事都能放这儿 —— 报名截止、交作业、考试、' +
       '面试、还书、缴费……<b>≤30 天标红、≤100 天标橙</b>，顶部那个入口常年显示最近的一个。</p>';
 
     if (!list.length) {
       h += '<div class="q-empty"><b>一条都没预填</b> —— 你要记什么就加什么。<br>' +
-        '写上名字 + 挑个日期就行，只有一天的话「结束日期」留空。</div>';
+        '写上名字 + 挑<b>截止日期</b>就行，就这两个。</div>';
     } else {
       h += '<div class="ms-list">';
       list.forEach(function (m) {
@@ -109,7 +121,7 @@
         h += '<div class="ms-row ' + lvl(n) + '">' +
           '<div class="ms-info">' +
           '<div class="ms-name">' + esc(m.name) + '</div>' +
-          '<div class="ms-sub">' + esc(rangeText(m)) + (m.note ? ' · ' + esc(m.note) : '') + '</div>' +
+          '<div class="ms-sub">' + esc(dateText(m)) + (m.note ? ' · ' + esc(m.note) : '') + '</div>' +
           '</div>' +
           '<div class="ms-dd">' + ddText(n) + '</div>' +
           '<div class="ms-acts">' +
@@ -149,19 +161,15 @@
   function editModal(id) {
     const isNew = !id;
     const m = isNew
-      ? { name: '', start: '', end: '', note: '' }
+      ? { name: '', due: '', note: '' }
       : MS().filter(function (x) { return x.id === id; })[0];
     if (!m) return;
 
     App.ui.openModal(isNew ? '⏳ 添加截止日期' : '⏳ 编辑 · ' + esc(m.name),
       '<div><label class="q-lab">名称</label>' +
       '<input id="ms-name" class="q-input" type="text" value="' + esc(m.name) + '" placeholder="如：交作业 / 报名截止 / 考试" /></div>' +
-      '<div style="display:flex;gap:10px;margin-top:8px">' +
-      '<div style="flex:1"><label class="q-lab">开始日期</label>' +
-      '<input id="ms-start" class="q-input" type="date" value="' + (m.start || '') + '" /></div>' +
-      '<div style="flex:1"><label class="q-lab">结束日期（选填）</label>' +
-      '<input id="ms-end" class="q-input" type="date" value="' + (m.end || '') + '" /></div>' +
-      '</div>' +
+      '<div style="margin-top:8px"><label class="q-lab">截止日期</label>' +
+      '<input id="ms-due" class="q-input" type="date" value="' + (m.due || '') + '" /></div>' +
       '<div style="margin-top:8px"><label class="q-lab">备注（选填）</label>' +
       '<input id="ms-note" class="q-input" type="text" value="' + esc(m.note || '') + '" placeholder="说明（选填）：交到哪 / 具体要求" /></div>',
       '<button class="btn btn-primary" data-act="save">保存</button>' +
@@ -172,16 +180,14 @@
     App.ui.bindActions({
       save: function () {
         const name = (q('#ms-name').value || '').trim();
-        const start = q('#ms-start').value;
-        const end = q('#ms-end').value;
+        const due = q('#ms-due').value;
         const note = (q('#ms-note').value || '').trim();
         if (!name) { App.ui.toast('给它起个名字吧'); return; }
-        if (!start) { App.ui.toast('挑一个日期吧'); return; }
-        if (end && end < start) { App.ui.toast('结束日期比开始还早，改一下'); return; }
+        if (!due) { App.ui.toast('挑一个截止日期吧'); return; }
         if (isNew) {
-          MS().push({ id: S().uid(), name: name, start: start, end: end, note: note });
+          MS().push({ id: S().uid(), name: name, due: due, note: note });
         } else {
-          m.name = name; m.start = start; m.end = end; m.note = note;
+          m.name = name; m.due = due; m.note = note;
         }
         S().save();
         refresh();
