@@ -2265,6 +2265,10 @@
       if (srOn() && task.mode === SR_MODE_NEW && !task.sp) {
         srAfterTaskDone(task, listKey, dayKey);
       }
+      // 📋 v82：这是队列实体化的副本 → 完成队列项、发队列分（下一条顶上等总结窗关掉）
+      if (task.fromQueue && App.queue && App.queue.onTaskDone) {
+        try { App.queue.onTaskDone(task); } catch (e) { /* 忽略 */ }
+      }
     } else {
       // 取消完成 → 撤销对应积分
       const type = listKey === 'ideal' ? 'earn-ideal' : listKey === 'extra' ? 'earn-extra' : null;
@@ -2291,7 +2295,11 @@
           perfectRewardModal();
         }
         // 🌱 总结窗关掉之后再弹「排不满 / 设知识点」，免得两个弹窗打架
-        setTimeout(srRunPending, 300);
+        // 📋 v82：队列的「下一条顶上 + 这条以后怎么处理」也排在总结窗之后（和 sr 串行，不抢弹窗）
+        setTimeout(function () {
+          srRunPending();
+          if (App.queue && App.queue.runPending) App.queue.runPending();
+        }, 300);
       });
     }
   }
@@ -2538,6 +2546,11 @@
     o = o || {};
     const settings = S().settings();
     const extPointsOf = function (t) { return t.points != null ? t.points : (settings.extPoints || 0); };
+    // 📋 v82：队列副本不参与结算 —— 未完成的静默收回队列（不进补记弹窗、不扣分、不顺延），
+    //    队列项天然「还在队列里」，之后哪天做都行；正在做的那条明天会重新实体化回来
+    try {
+      if (App.queue && App.queue.settleSweep) App.queue.settleSweep(day);
+    } catch (e) { /* 忽略 */ }
     const undoneAll = [];
     ['required', 'ideal', 'extra'].forEach(function (k) {
       (day.tasks[k] || []).filter(function (t) { return !t.done; }).forEach(function (t) { undoneAll.push({ k: k, task: t }); });
@@ -2961,6 +2974,10 @@
       · movedOut  → 当天没做完、已经移到明天的原任务（留在当天只作记录） */
   function carryTagHTML(t) {
     if (!t) return '';
+    // 📋 v82：队列实体化的副本 —— 顶上一条「来自队列」；完成率统计里不算它
+    if (t.fromQueue) {
+      return '<span class="fromqueue-tag" title="这条来自队列 —— 是当前正在做的那条。它不进「必须 0/x」的统计，做完会自动完成队列项、下一条顶上">📋 来自队列</span>';
+    }
     if (t.carried) {
       return '<span class="carry-tag" title="昨天没做完，自动移到今天来的 \u2014\u2014 今天做完就不扣分">\u21A9 昨天移过来' +
         (t.carriedFailed ? ' \u00b7 已扣分' : '') + '</span>';
@@ -3049,6 +3066,15 @@
       let addBtn = '';
       if (col.key !== 'extra' || S().settings().extAppendable) {
         addBtn = '<div class="extra-append"><button class="btn btn-small" data-act="add">＋ 添加任务（临时）</button></div>';
+      }
+      // 🧲 v83：队列优先模式 + 这一栏一条任务都没有 → 收起成一行提示（不再给"今天要完成几条"的空壳）
+      if (S().settings().queueFirst && list.length === 0) {
+        return '<div class="task-col ' + col.style + ' qf-collapsed" data-col="' + col.key + '">' +
+          '<div class="task-col-head"><h3>' + col.name + '</h3>' +
+          '<span class="badge">0/0</span></div>' +
+          '<p class="hint" style="margin:2px 0 8px">空着 —— 队列优先模式下不在这里定任务，想做的事进 <b>📋 队列</b> 按顺序做。</p>' +
+          addBtn +
+          '</div>';
       }
       return '<div class="task-col ' + col.style + '" data-col="' + col.key + '">' +
         '<div class="task-col-head"><h3>' + col.name + '</h3>' +

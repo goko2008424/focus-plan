@@ -13,10 +13,11 @@
   /* ---------- 顶部统计条 ---------- */
   function refreshStats() {
     const day = S().getDay(S().todayKey());
-    const done = function (k) { return day.tasks[k].filter(function (t) { return t.done; }).length; };
-    document.getElementById('stat-req').textContent = done('required') + '/' + day.tasks.required.length;
-    document.getElementById('stat-ideal').textContent = done('ideal') + '/' + day.tasks.ideal.length;
-    document.getElementById('stat-extra').textContent = done('extra') + '/' + day.tasks.extra.length;
+    // 📋 v82：队列实体化的副本不进统计 —— 不给队列制造「0/1」这种分母
+    const cnt = function (k, f) { return day.tasks[k].filter(function (t) { return !t.fromQueue && f(t); }).length; };
+    document.getElementById('stat-req').textContent = cnt('required', function (t) { return t.done; }) + '/' + cnt('required', function () { return true; });
+    document.getElementById('stat-ideal').textContent = cnt('ideal', function (t) { return t.done; }) + '/' + cnt('ideal', function () { return true; });
+    document.getElementById('stat-extra').textContent = cnt('extra', function (t) { return t.done; }) + '/' + cnt('extra', function () { return true; });
 
     const pts = S().pointsTotal();
     const ptsEl = document.getElementById('stat-points');
@@ -236,8 +237,8 @@
     const dbtn = document.getElementById('btn-demo');
     if (dbtn) dbtn.onclick = function () { App.demo.open(); };
 
-    // 初始化各视图
-    switchView('tasks');
+    // 初始化各视图（🧲 v83：队列优先模式下直接落在队列页）
+    switchView(S().settings().queueFirst ? 'queue' : 'tasks');
     App.tasks.renderAll();
     App.timeline.init();
 

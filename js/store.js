@@ -108,6 +108,8 @@
       // 📋 v77 队列 + 📌 每日必做
       queuePoints: 5,       // 📋 完成一条队列任务的积分
       queueBarOn: true,     // 📋 任务页顶部显示「现在做这条」
+      queueFirst: false,    // 🧲 v83 队列优先：打开 app 落在队列页 + 空栏目收起（用户自己选）
+      queueFirst: false,    // 🧲 v83 队列优先：打开 app 落在队列页 + 空栏目收起（用户自己选）
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },
@@ -283,9 +285,10 @@
         list.push(t);
       }
     };
-    src.tasks.required.filter(function (t) { return !t.done; }).forEach(function (t) { add('required', t.text, t.points); });
-    src.tasks.ideal.filter(function (t) { return !t.done; }).forEach(function (t) { add('ideal', t.text, t.points); });
-    src.tasks.extra.filter(function (t) { return !t.done; }).forEach(function (t) { add('extra', t.text, t.points); });
+    // 📋 v82：队列副本不参与顺延 —— 它的「本体」在队列里，天然不会丢
+    src.tasks.required.filter(function (t) { return !t.done && !t.fromQueue; }).forEach(function (t) { add('required', t.text, t.points); });
+    src.tasks.ideal.filter(function (t) { return !t.done && !t.fromQueue; }).forEach(function (t) { add('ideal', t.text, t.points); });
+    src.tasks.extra.filter(function (t) { return !t.done && !t.fromQueue; }).forEach(function (t) { add('extra', t.text, t.points); });
     save();
   }
 

@@ -944,6 +944,19 @@ body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b
   background: #f3f0fb; color: #5b4a95; font-size: 11.5px; font-weight: 600;
   white-space: nowrap; vertical-align: middle; border: 1px solid #ded5f5;
 }
+/* 🧲 v83：队列优先模式下，空栏目收起成轻量提示 */
+.task-col.qf-collapsed { opacity: .72; }
+.task-col.qf-collapsed .task-col-head .desc { display: none; }
+
+/* 📋 v82：队列实体化副本的「来自队列」标记 */
+.fromqueue-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
+  background: #e8f2fd; color: #1d6fb8; font-size: 11.5px; font-weight: 600;
+  white-space: nowrap; vertical-align: middle; border: 1px solid #c9e0f7;
+}
+body[data-theme="dark"] .fromqueue-tag {
+  background: #17253c; color: #7cb8ea; border-color: #24405f;
+}
 /* 清单顶上那条：有昨天搬来的任务时出现 */
 .roll-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;

@@ -168,6 +168,7 @@
       '<div class="set-group"><h4>📋 队列 + 📌 每日必做</h4>' +
       numRow('set-queue-points', '完成一条队列任务的积分', (s.queuePoints == null ? 5 : s.queuePoints), '分/条') +
       switchRow('set-queue-bar', '任务页顶部显示「📋 现在做这条」', s.queueBarOn !== false) +
+      switchRow('set-qfirst', '🧲 队列优先模式：打开 app 直接进队列页；任务页空着的栏目自动收起（适合「不定任务、按顺序做、到点收工」的用法）', s.queueFirst === true) +
       '<p class="hint">队列是一串<b>按顺序做</b>的任务：页面上只显示「现在做这条」，做完下一条自动顶上，<b>刻意不显示完成率</b>。复习、听力、单词这类每天都要碰的放进「📌 每日必做」，打勾即可、也不算完成率。</p>' +
       '</div>' +
       '<div class="set-group"><h4>⏰ 到点自动结算</h4>' +
@@ -239,6 +240,7 @@
     // 📋 v77 队列
     bind('set-queue-points', function () { s.queuePoints = Math.max(0, +this.value || 0); S().save(); });
     bind('set-queue-bar', function () { s.queueBarOn = this.checked; S().save(); if (App.queue) App.queue.refreshBar(); });
+    bind('set-qfirst', function () { s.queueFirst = this.checked; S().save(); if (App.tasks) App.tasks.renderAll(); });
     bind('set-auto-end', function () { s.autoEndDay = this.checked; S().save(); });
     bind('set-auto-end-at', function () { s.autoEndDayAt = this.value || '23:59'; S().save(); });
     bind('set-ext-debt-rate', function () { s.extDebtRate = Math.max(0, +this.value || 0); S().save(); });

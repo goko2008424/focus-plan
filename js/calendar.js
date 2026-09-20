@@ -488,6 +488,7 @@
           '<div class="t-btns">' +
           '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（实际做完了在这里补勾划掉）">☑</button>' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
+          (t.fromQueue ? '' : '<button class="task-timer-btn" data-act="q-enqueue" data-col="' + c.k + '" data-id="' + t.id + '" title="把这条整任务排进队列末尾（按顺序做）">📥</button>') +
           (dupOf(t) ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" data-col="' + c.k + '" data-id="' + t.id + '" title="这一栏有两条同名的「' + esc(t.text) + '」，点这里合并成一条">🔗</button>' : '') +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" data-col="' + c.k + '" data-id="' + t.id + '" title="删除">🗑</button>' +
@@ -570,6 +571,13 @@
           if (task.done) task.summary = { done: true, text: '（手动补勾）', at: new Date().toISOString() };
           S().save();
           render();
+        }
+        else if (b.dataset.act === 'q-enqueue') {
+          // 📋 v82：整条任务（含小任务/任务组）排进队尾，进度重置
+          if (App.queue && App.queue.enqueueTask && App.queue.enqueueTask(task)) {
+            App.ui.toast('📥 已排进队列末尾 —— 到队列页能调顺序');
+            render();
+          }
         }
         else if (b.dataset.act === 'dup-merge') App.tasks.dupMergeModal(selKey, col, id);
         else if (b.dataset.act === 'edit') App.tasks.editTaskModal(col, id, selKey, false);

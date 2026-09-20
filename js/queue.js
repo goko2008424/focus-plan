@@ -6,9 +6,13 @@
  * 只告诉你「现在这一条是什么」，做完下一条自动顶上。
  *
  * 数据结构（懒初始化，老数据不用迁移）：
- *   data.queue      = [ {id,text,note,createdAt} ]        数组顺序 = 执行顺序
+ *   data.queue      = [ {id,text,note,createdAt, points?,mode?,standard?,subs?,groups?} ]
+ *                     数组顺序 = 执行顺序；v82 起是完整任务对象
  *   data.queueDone  = [ {id,text,note,doneDay,doneAt} ]   已完成，可「↻ 放回队列」
  *   data.daily      = [ {id,text,days:{'2026-09-20':ts}} ] 每日必做
+ *
+ * v82 实体化：当前条自动在「今天 · 必须」顶部生成一份真任务副本（fromQueue 指回队列项）
+ * —— 计时 / 听课三步 / 悬浮窗 / 小任务·任务组 / 编辑 全部原生可用，一行渲染代码都不用改。
  * ============================================================ */
 (function () {
   'use strict';
@@ -60,6 +64,307 @@
     return n;
   }
 
+  /* ---------- v82 实体化：队列当前条 = 任务页必须栏顶上的真任务 ---------- */
+
+  function timingId() {
+    const t = (App.tasks && App.tasks.getTimer) ? App.tasks.getTimer() : null;
+    return t ? t.taskId : null;
+  }
+
+  /** 找某条队列项在今天的未完成副本 */
+  function findCopyOf(qid) {
+    const day = S().getDay(S().todayKey());
+    let out = null;
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      (day.tasks[k] || []).forEach(function (c) {
+        if (!out && c.fromQueue === qid && c.done !== true) out = c;
+      });
+    });
+    return out;
+  }
+
+  /** 队列项 → 任务副本（小任务进度原样带上 —— 跨天续做） */
+  function copyOf(it) {
+    const c = { id: S().uid(), text: it.text, done: false, fromQueue: it.id };
+    if (it.points != null) c.points = it.points;
+    if (it.mode) c.mode = it.mode;
+    if (it.standard) c.standard = it.standard;
+    if (it.subs && it.subs.length) c.subs = JSON.parse(JSON.stringify(it.subs));
+    if (it.groups && it.groups.length) c.groups = JSON.parse(JSON.stringify(it.groups));
+    return c;
+  }
+
+  /** 把副本上的改动写回队列项（不 save —— 调用方存） */
+  function syncBack(copy) {
+    const it = findIn(Q(), copy.fromQueue);
+    if (!it) return;
+    it.text = copy.text;
+    if (copy.points != null) it.points = copy.points; else delete it.points;
+    if (copy.mode) it.mode = copy.mode; else delete it.mode;
+    if (copy.standard) it.standard = copy.standard; else delete it.standard;
+    if (copy.subs && copy.subs.length) it.subs = JSON.parse(JSON.stringify(copy.subs)); else delete it.subs;
+    if (copy.groups && copy.groups.length) it.groups = JSON.parse(JSON.stringify(copy.groups)); else delete it.groups;
+  }
+
+  /** 保证「当前条」在任务页上有一条未完成的真副本；不是当前条的旧副本收回队列 */
+  function ensureMaterialized() {
+    const d = S().data();
+    if (!d || !Array.isArray(d.queue)) return false;
+    const cur = d.queue[0] || null;
+    const day = S().getDay(S().todayKey());
+    if (!day || !day.tasks || !day.tasks.required) return false;
+    const tid = timingId();
+    let dirty = false;
+
+    // ① 不是当前条的未完成副本 → 收回队列（⏱ 正在计时的绝不删，等下一轮再收）
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      const arr = day.tasks[k] || [];
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const c = arr[i];
+        if (!c.fromQueue || c.done === true) continue;
+        if (cur && c.fromQueue === cur.id) continue;
+        if (tid && c.id === tid) continue;
+        syncBack(c);
+        arr.splice(i, 1);
+        dirty = true;
+      }
+    });
+
+    if (cur) {
+      const arr = day.tasks.required;
+      // ② 同一条多个未完成副本 → 只留一个（优先留正在计时的那个）
+      const copies = arr.filter(function (c) { return c.fromQueue === cur.id && c.done !== true; });
+      const keep = copies.filter(function (c) { return c.id === tid; })[0] || copies[0] || null;
+      copies.forEach(function (c) {
+        if (c === keep) return;
+        if (tid && c.id === tid) return;
+        const j = arr.indexOf(c);
+        if (j >= 0) { arr.splice(j, 1); dirty = true; }
+      });
+      // ③ 没有副本 → 造一个，插到必须栏顶部
+      if (!keep) {
+        arr.unshift(copyOf(cur));
+        dirty = true;
+      } else {
+        // ④ 轻量同步：任务页上的改动（改名 / 小任务进度）写回队列项
+        const snap = function () { return JSON.stringify([cur.text, cur.points, cur.mode, cur.standard, cur.subs, cur.groups]); };
+        const before = snap();
+        syncBack(keep);
+        if (snap() !== before) dirty = true;
+      }
+    }
+    if (dirty) S().save();
+    return dirty;
+  }
+
+  /** 结算前清场：未完成的队列副本静默收回队列（不进补记弹窗、不扣分、不顺延） */
+  function settleSweep(day) {
+    let n = 0;
+    if (!day || !day.tasks) return 0;
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      const arr = day.tasks[k] || [];
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const c = arr[i];
+        if (c.fromQueue && c.done !== true) { syncBack(c); arr.splice(i, 1); n++; }
+      }
+    });
+    return n;
+  }
+
+  /** 日历 📥 入队：整条任务（含小任务/任务组）排到队尾，进度重置（重做语义） */
+  function enqueueTask(task) {
+    if (!task || !task.text) return false;
+    const it = { id: S().uid(), text: task.text, note: task.note || '', createdAt: new Date().toISOString() };
+    if (task.points != null) it.points = task.points;
+    if (task.mode) it.mode = task.mode;
+    if (task.standard) it.standard = task.standard;
+    if (task.subs && task.subs.length) it.subs = task.subs.map(function (s) {
+      return { id: S().uid(), text: s.text, minutes: s.minutes || 0, points: s.points || 0, done: null };
+    });
+    if (task.groups && task.groups.length) it.groups = task.groups.map(function (g) {
+      return { id: S().uid(), name: g.name, subs: (g.subs || []).map(function (s) {
+        return { id: S().uid(), text: s.text, minutes: s.minutes || 0, points: s.points || 0, done: null };
+      }) };
+    });
+    Q().push(it);
+    S().save();
+    render();
+    return true;
+  }
+
+  /* ---------- 任务页打勾 → 队列完成（v82） ---------- */
+  let pendingDone = null;   // 刚完成的队列项，等总结窗关掉后再弹「这条以后怎么处理」
+
+  function qPoints() {
+    const v = (S().settings() || {}).queuePoints;
+    return (v == null ? 5 : +v) || 0;
+  }
+
+  /** 任务页上的队列副本被勾成「完成」→ 完成队列项、发队列分（下一条顶上等 runPending） */
+  function onTaskDone(task) {
+    const it = findIn(Q(), task.fromQueue);
+    if (!it) return;
+    syncBack(task);
+    const i = idxOf(Q(), it.id);
+    if (i < 0) return;
+    const fin = Q().splice(i, 1)[0];
+    fin.doneDay = S().todayKey();
+    fin.doneAt = new Date().toISOString();
+    QD().unshift(fin);
+    const pts = qPoints();
+    if (pts > 0) S().addLedger(S().todayKey(), 'earn-queue', { points: pts, note: '📋 队列完成：' + fin.text });
+    S().save();
+    pendingDone = fin;
+    refreshBar();
+  }
+
+  /** 总结窗关闭之后调用：下一条顶上 + 刷新 + 弹「这条以后怎么处理」 */
+  function runPending() {
+    try { ensureMaterialized(); } catch (e) { /* 忽略 */ }
+    render();
+    if (!pendingDone) return;
+    const it = pendingDone;
+    pendingDone = null;
+    let delivered = false;   // ⚠️ 必须每次调用都是新的 —— 放外面会让第二次完成永远不弹窗
+    const deliver = function () {
+      if (delivered) return;
+      delivered = true;
+      const pts = qPoints();
+      App.ui.toast('✅ 做完了' + (pts > 0 ? '（+' + pts + ' 分）' : '') +
+        (current() ? ' · 下一条顶上来了' : ' · 队列空了'), 3400);
+      askAfterDone(it);
+    };
+    // 🌱 的「设知识点 / 排不满」弹窗先来 —— 它关掉后再来我们的（不抢弹窗）
+    if (document.querySelector('#modal-root .modal-mask')) {
+      const iv = setInterval(function () {
+        if (!document.querySelector('#modal-root .modal-mask')) { clearInterval(iv); delivered = true; deliver(); }
+      }, 500);
+      setTimeout(function () { clearInterval(iv); deliver(); }, 15000);
+    } else {
+      deliver();
+    }
+  }
+
+  /* ---------- 📥 从以前的日子搬任务（v84）----------
+   * 以前没做完的任务散在日历里，一个个翻太麻烦。
+   * 这里一次列出：过去每天没做完的 + 今天清单里「↩ 昨天没做完」的，
+   * 点 📥 整任务排进队尾（小任务进度重置），原来那天就不留这条 —— 它归队列管。 */
+  function pastUndone() {
+    const today = S().todayKey();
+    const days = (S().data() || {}).days || {};
+    const out = [];
+    Object.keys(days).sort().reverse().forEach(function (k) {
+      if (k > today) return;
+      const day = days[k];
+      if (!day || !day.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (col) {
+        (day.tasks[col] || []).forEach(function (t) {
+          if (t.done || t.fromQueue || !String(t.text || '').trim()) return;
+          if (k === today && !t.rolled) return;   // 今天的只收「↩ 昨天没做完」的
+          out.push({ day: k, col: col, id: t.id, text: t.text });
+        });
+      });
+    });
+    return out.slice(0, 60);
+  }
+
+  function removePastTask(day, col, id) {
+    const d = S().data().days[day];
+    if (!d || !d.tasks || !d.tasks[col]) return null;
+    const arr = d.tasks[col];
+    const i = arr.findIndex(function (t) { return t.id === id; });
+    if (i < 0) return null;
+    const t = arr.splice(i, 1)[0];
+    S().save();
+    return t;
+  }
+
+  function pastModal() {
+    const list = pastUndone();
+    let body;
+    if (!list.length) {
+      body = '<p class="hint" style="margin-top:0">以前没有挂着的没做完任务 🎉' +
+        '（今天清单里「↩ 昨天没做完」的也算，会列在这里）</p>';
+    } else {
+      const byDay = {};
+      list.forEach(function (x) { (byDay[x.day] = byDay[x.day] || []).push(x); });
+      body = '<p class="hint" style="margin-top:0">这些是<b>以前没做完、一直挂着的</b>。' +
+        '点 📥 排进队列末尾（整任务带过去，小任务进度重置），<b>原来那天就不留这条了</b> —— 它归队列管。</p>';
+      Object.keys(byDay).sort().reverse().forEach(function (k) {
+        body += '<div class="q-head" style="margin-top:10px"><span>' +
+          (k === S().todayKey() ? '今天（↩ 昨天剩的）' : S().shortDateCN(k)) +
+          '</span><span>' + byDay[k].length + ' 条</span></div>';
+        byDay[k].forEach(function (x) {
+          body += '<div class="q-row"><span class="q-text">' + esc(x.text) + '</span>' +
+            '<span class="q-acts"><button class="q-ib" data-act="pq-add" data-day="' + x.day +
+            '" data-col="' + x.col + '" data-id="' + x.id + '" title="排进队列末尾">📥</button></span></div>';
+        });
+      });
+      body += '<div class="btn-row" style="margin-top:12px">' +
+        '<button class="btn btn-primary" data-act="pq-all">📥 全部排进队列（' + list.length + ' 条）</button></div>';
+    }
+    App.ui.openModal('📥 从以前的日子搬任务', body,
+      '<button class="btn" data-act="pq-close">关闭</button>');
+    App.ui.bindActions({
+      'pq-add': function (el) {
+        // bindActions 会把按钮元素当第一参数传进来（fn(this)）
+        doEnqueue(el.dataset.day, el.dataset.col, el.dataset.id);
+      },
+      'pq-all': function () {
+        // ⚠️ 自动结算会把没做完的任务沿日期链复制副本（9/17 原件 → 9/18 副本 → … → 今天），
+        //    所以外表同名的一律视为**同一条任务**：只入队一次，其余副本全部清掉。
+        // 按日期**从早到晚**：带小任务的原件先入队，后面的顺延链副本走嫁接/清理
+        const list2 = pastUndone().slice().sort(function (a, b) { return a.day < b.day ? -1 : 1; });
+        let n = 0, cleaned = 0;
+        list2.forEach(function (x) {
+          const exists = Q().some(function (q) { return q.text === x.text; });
+          const t = removePastTask(x.day, x.col, x.id);
+          if (!t) return;
+          if (exists) {
+            graftIfRicher(findIn(Q(), Q().filter(function (q) { return q.text === x.text; })[0].id), t);
+            S().save();
+            cleaned++;   // 队列里已经有了 → 数据嫁接后清掉这份副本，不重复入队
+            return;
+          }
+          enqueueTask(t);
+          n++;
+        });
+        render();
+        pastModal();   // 保持弹窗打开，显示刷新后的（通常是空的）列表
+        App.ui.toast('📥 搬了 ' + n + ' 条进队列' +
+          (cleaned ? '（另有 ' + cleaned + ' 条同名副本顺手清掉了）' : '') +
+          (pastUndone().length ? '' : ' —— 以前没有挂着的了 🎉'), 3600);
+      },
+      'pq-close': function () { App.ui.closeModal(); }
+    });
+  }
+
+  /** 同名去重时，别把小任务弄丢：顺延链副本不带 subs/groups，原件带 —— 谁富用谁补谁 */
+  function graftIfRicher(existing, incoming) {
+    if (!existing || !incoming) return;
+    if (!existing.subs && incoming.subs) existing.subs = incoming.subs;
+    if (!existing.groups && incoming.groups) existing.groups = incoming.groups;
+    if (existing.points == null && incoming.points != null) existing.points = incoming.points;
+    if (!existing.mode && incoming.mode) existing.mode = incoming.mode;
+    if (!existing.standard && incoming.standard) existing.standard = incoming.standard;
+  }
+
+  function doEnqueue(day, col, id) {
+    const t = removePastTask(day, col, id);
+    if (!t) { App.ui.toast('这条已经不在了'); pastModal(); return; }
+    const exists = Q().some(function (q) { return q.text === t.text; });
+    if (exists) {
+      // 队列里已有同名（多半是它的顺延副本）→ 数据嫁接给队列那条，再清掉这份
+      graftIfRicher(findIn(Q(), Q().filter(function (q) { return q.text === t.text; })[0].id), t);
+      S().save();
+      App.ui.toast('队列里已经有这条了，这份重复的顺手清掉了');
+    } else {
+      enqueueTask(t);
+      App.ui.toast('📥 已排进队列末尾：' + t.text.slice(0, 14));
+    }
+    pastModal();   // 刷新弹窗列表
+  }
+
   /* ---------- 写操作 ---------- */
   function addItem(text, note) {
     const it = { id: S().uid(), text: text, note: note || '', createdAt: new Date().toISOString() };
@@ -93,8 +398,18 @@
     S().save();
   }
 
-  /** 做完一条：从队列挪到「已完成」，记下今天、发积分，然后问一句要不要进每日必做 */
+  /** 做完一条：从队列挪到「已完成」，记下今天、发积分，然后问一句要不要进每日必做
+   *  v82：当前条已实体化成任务页的真任务 → 走 toggleTask 全流程（计时/听课/总结/积分都齐） */
   function finish(id) {
+    const cur0 = current();
+    if (cur0 && cur0.id === id) {
+      const copy = findCopyOf(id);
+      if (copy && App.tasks && App.tasks.toggleTask) {
+        if (timingId() === copy.id) { App.ui.toast('这条正在计时，先结束计时再打勾'); return; }
+        App.tasks.toggleTask('required', copy.id);   // 完成后回调 onTaskDone → runPending
+        return;
+      }
+    }
     const list = Q();
     const i = idxOf(list, id);
     if (i < 0) return;
@@ -279,6 +594,17 @@
           const nt = App.ui.query('#q-ed-note');
           if (nt) it.note = (nt.value || '').trim();
         }
+        // 📋 v82：已实体化的副本要跟着改名，不然两个编辑口会互相覆盖
+        try {
+          const day = S().getDay(S().todayKey());
+          let touched = false;
+          ['required', 'ideal', 'extra'].forEach(function (k) {
+            (day.tasks[k] || []).forEach(function (c) {
+              if (c.fromQueue === it.id && c.done !== true) { c.text = t; touched = true; }
+            });
+          });
+          if (touched && App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+        } catch (e) { /* 忽略 */ }
         S().save();
         App.ui.closeModal();
         render();
@@ -333,6 +659,7 @@
         (c.note ? '<div class="q-now-note">' + esc(c.note) + '</div>' : '') +
         '<div class="q-now-acts">' +
         '<button class="btn btn-primary btn-small" data-act="q-done" data-id="' + c.id + '">✓ 做完了</button>' +
+        '<button class="btn btn-small" data-act="go-tasks" title="它已经是一条真任务：计时、听课三步、悬浮窗都在任务页">▶ 去任务页做</button>' +
         '<button class="btn btn-small" data-act="q-sched" data-id="' + c.id + '">📅 安排到某天</button>' +
         '<button class="btn btn-small" data-act="q-end" data-id="' + c.id + '">↧ 排到最后</button>' +
         '<button class="btn btn-small" data-act="q-edit" data-id="' + c.id + '">✏️ 改</button>' +
@@ -341,7 +668,8 @@
     }
 
     h += '<div class="q-head"><span>接下来</span>' +
-      '<button class="btn btn-small" data-act="q-add">+ 加一条</button></div>';
+      '<span><button class="btn btn-small" data-act="pq-open" title="以前没做完的任务，一键搬进队列">📥 从以前搬任务</button> ' +
+      '<button class="btn btn-small" data-act="q-add">+ 加一条</button></span></div>';
 
     if (list.length > 1) {
       for (let i = 1; i < list.length; i++) h += rowQ(list[i], i + 1);
@@ -398,6 +726,7 @@
   }
 
   function render() {
+    try { ensureMaterialized(); } catch (e) { /* 忽略 */ }
     const root = document.getElementById('queue-view');
     if (root) root.innerHTML = queueCard() + dailyCard();
     refreshBar();
@@ -440,6 +769,8 @@
     const id = b.dataset.id;
 
     if (act === 'go-queue') { App.app.switchView('queue'); return; }
+    if (act === 'go-tasks') { App.app.switchView('tasks'); return; }
+    if (act === 'pq-open') { pastModal(); return; }
     if (act === 'q-add') { addModal(false); return; }
     if (act === 'd-add') { addModal(true); return; }
     if (act === 'q-toggledone') { showDone = !showDone; render(); return; }
@@ -515,6 +846,13 @@
     if (root) root.addEventListener('click', onClick);
     const bar = document.getElementById('queue-bar');
     if (bar) bar.addEventListener('click', onClick);
+    // ⏱ v82：60 秒兜底 —— 计时结束 / 跨天 / 其他入口改动后，把当前条重新实体化
+    setInterval(function () {
+      try {
+        if (ensureMaterialized() && App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+        refreshBar();
+      } catch (e) { /* 忽略 */ }
+    }, 60000);
     render();
   }
 
@@ -524,6 +862,13 @@
     refreshBar: refreshBar,
     addItem: addItem,
     addDaily: addDaily,
-    current: current
+    current: current,
+    // v82 实体化
+    ensureMaterialized: ensureMaterialized,
+    settleSweep: settleSweep,
+    enqueueTask: enqueueTask,
+    onTaskDone: onTaskDone,
+    runPending: runPending,
+    findCopyOf: findCopyOf
   };
 })();
