@@ -3059,7 +3059,8 @@
       '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务 / 导出长图发人看</span></div>' +
       pendingBarHTML() +                     // ★ v56：待办衔接（某题没标结果 / 接着做还是休息）
       COLS.map(function (col) {
-      const list = day.tasks[col.key];
+      // 🧲 v85：队列实体化的副本不在三栏里渲染 —— 它住在队列页（那边有全套按钮）
+      const list = day.tasks[col.key].filter(function (t) { return !t.fromQueue; });
       const doneN = list.filter(function (t) { return t.done; }).length;
       const rows = list.map(function (t) { return taskRowHTML(col.key, t); }).join('');
       // 每栏底部"＋ 添加任务"（当天临时加任务；拓展栏受"可追加"开关控制）
@@ -3095,6 +3096,10 @@
     bindRollBar();
     renderReview(dayKey);
     renderHourPlan(dayKey);
+    // 🧲 v85：用户正看着队列页时，嵌在里面的任务行也要跟手（计时/打勾/完成状态）
+    try {
+      if (App.queue && App.queue.render && App.app && App.app.currentView() === 'queue') App.queue.render();
+    } catch (e) { /* 忽略 */ }
   }
 
   /* ---------- 复盘/总结类 textarea 的自动保存（边打边存，关窗不丢） ---------- */
@@ -3767,7 +3772,11 @@
     if (App.lecture && App.lecture.startFromTask) App.lecture.startFromTask(task, fromTomorrow);
   }
   function bindTodayEvents() {
-    const box = document.getElementById('task-columns');
+    bindTaskAreaEvents(document.getElementById('task-columns'));
+  }
+
+  /** 🧲 v85：任务区域的统一事件委托 —— tasks 页三栏和队列页嵌入的当前条共用同一套 */
+  function bindTaskAreaEvents(box) {
     // 单独定价：修改任务积分
     box.onchange = function (e) {
       const inp = e.target.closest('.task-points');
@@ -5592,6 +5601,7 @@
     dayContentSummary: dayContentSummary,
     init: init, renderAll: renderAll, renderToday: renderToday,
     carryTagHTML: carryTagHTML, settleDayCore: settleDayCore,
+    taskRowHTML: taskRowHTML, bindTaskAreaEvents: bindTaskAreaEvents,
     autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,

@@ -41,6 +41,15 @@
   }
 
   function current() { return Q()[0] || null; }
+
+  /** 🧩 v85：这条下面挂着任务组/小任务时，列表里显示出来（搬任务时一眼看清会带上什么） */
+  function subHintHTML(ss, gs) {
+    if (!ss && !gs) return '';
+    return '<div class="q-sub-hint">' +
+      (gs ? '🧩 任务组 ×' + gs : '') +
+      (gs && ss ? ' · ' : '') +
+      (ss ? '📝 小任务 ×' + ss : '') + '</div>';
+  }
   function findIn(list, id) {
     return list.filter(function (x) { return x.id === id; })[0] || null;
   }
@@ -261,7 +270,8 @@
         (day.tasks[col] || []).forEach(function (t) {
           if (t.done || t.fromQueue || !String(t.text || '').trim()) return;
           if (k === today && !t.rolled) return;   // 今天的只收「↩ 昨天没做完」的
-          out.push({ day: k, col: col, id: t.id, text: t.text });
+          out.push({ day: k, col: col, id: t.id, text: t.text,
+                     ss: (t.subs || []).length, gs: (t.groups || []).length });
         });
       });
     });
@@ -295,7 +305,7 @@
           (k === S().todayKey() ? '今天（↩ 昨天剩的）' : S().shortDateCN(k)) +
           '</span><span>' + byDay[k].length + ' 条</span></div>';
         byDay[k].forEach(function (x) {
-          body += '<div class="q-row"><span class="q-text">' + esc(x.text) + '</span>' +
+          body += '<div class="q-row"><span class="q-text">' + esc(x.text) + subHintHTML(x.ss, x.gs) + '</span>' +
             '<span class="q-acts"><button class="q-ib" data-act="pq-add" data-day="' + x.day +
             '" data-col="' + x.col + '" data-id="' + x.id + '" title="排进队列末尾">📥</button></span></div>';
         });
@@ -617,7 +627,7 @@
   function rowQ(it, n) {
     return '<div class="q-row" data-id="' + it.id + '">' +
       '<span class="q-idx">' + n + '</span>' +
-      '<span class="q-text">' + esc(it.text) + '</span>' +
+      '<span class="q-text">' + esc(it.text) + subHintHTML((it.subs || []).length, (it.groups || []).length) + '</span>' +
       '<span class="q-acts">' +
       '<button class="q-ib" data-act="q-done" data-id="' + it.id + '" title="做完了">✓</button>' +
       '<button class="q-ib" data-act="q-up" data-id="' + it.id + '" title="上移">↑</button>' +
@@ -653,13 +663,17 @@
       h += '<div class="q-empty">队列是空的。<br>往里加一条，以后就按顺序做 —— 不用再想「今天要完成几条」。</div>';
     } else {
       const c = list[0];
+      const copy = findCopyOf(c.id);
       h += '<div class="q-now">' +
         '<div class="q-now-tag">▶ 现在做这条</div>' +
-        '<div class="q-now-text">' + esc(c.text) + '</div>' +
-        (c.note ? '<div class="q-now-note">' + esc(c.note) + '</div>' : '') +
+        // 🧲 v85：直接嵌入完整任务行 —— 计时 / 🎧 听课三步 / 小任务·任务组 全在原地，不用去任务页
+        (copy && App.tasks && App.tasks.taskRowHTML
+          ? '<div class="task-col q-now-area" data-col="required" id="q-now-area">' +
+            App.tasks.taskRowHTML('required', copy) + '</div>'
+          : '<div class="q-now-text">' + esc(c.text) + '</div>' +
+            (c.note ? '<div class="q-now-note">' + esc(c.note) + '</div>' : '')) +
         '<div class="q-now-acts">' +
         '<button class="btn btn-primary btn-small" data-act="q-done" data-id="' + c.id + '">✓ 做完了</button>' +
-        '<button class="btn btn-small" data-act="go-tasks" title="它已经是一条真任务：计时、听课三步、悬浮窗都在任务页">▶ 去任务页做</button>' +
         '<button class="btn btn-small" data-act="q-sched" data-id="' + c.id + '">📅 安排到某天</button>' +
         '<button class="btn btn-small" data-act="q-end" data-id="' + c.id + '">↧ 排到最后</button>' +
         '<button class="btn btn-small" data-act="q-edit" data-id="' + c.id + '">✏️ 改</button>' +
@@ -729,6 +743,10 @@
     try { ensureMaterialized(); } catch (e) { /* 忽略 */ }
     const root = document.getElementById('queue-view');
     if (root) root.innerHTML = queueCard() + dailyCard();
+    // 🧲 v85：嵌入的当前条 = 完整任务行 → 接上同一套事件委托，听课三步也要接
+    const area = document.getElementById('q-now-area');
+    if (area && App.tasks && App.tasks.bindTaskAreaEvents) App.tasks.bindTaskAreaEvents(area);
+    if (App.lecture && App.lecture.bindInline) App.lecture.bindInline();
     refreshBar();
   }
 

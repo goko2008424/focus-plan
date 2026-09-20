@@ -944,6 +944,13 @@ body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b
   background: #f3f0fb; color: #5b4a95; font-size: 11.5px; font-weight: 600;
   white-space: nowrap; vertical-align: middle; border: 1px solid #ded5f5;
 }
+/* 🧲 v85：队列列表里的小任务/任务组提示 + 嵌入任务行的间距 */
+.q-sub-hint {
+  font-size: 11.5px; color: var(--muted); margin-top: 2px; font-weight: 400;
+}
+.q-now-area { margin: 6px 0 2px; }
+.q-now-area .task-row { border-bottom: none; }
+
 /* 🧲 v83：队列优先模式下，空栏目收起成轻量提示 */
 .task-col.qf-collapsed { opacity: .72; }
 .task-col.qf-collapsed .task-col-head .desc { display: none; }
