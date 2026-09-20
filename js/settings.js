@@ -165,6 +165,11 @@
       switchRow('set-rollover', '每日未完成任务自动顺延到明天', s.rollover) +
       switchRow('set-ext-strict', '🌱 长期拓展：没做完自动搬到第二天的拓展栏（明天还能打勾/计时），第二天还没做完才扣分', s.extStrict) +
       '</div>' +
+      '<div class="set-group"><h4>📋 队列 + 📌 每日必做</h4>' +
+      numRow('set-queue-points', '完成一条队列任务的积分', (s.queuePoints == null ? 5 : s.queuePoints), '分/条') +
+      switchRow('set-queue-bar', '任务页顶部显示「📋 现在做这条」', s.queueBarOn !== false) +
+      '<p class="hint">队列是一串<b>按顺序做</b>的任务：页面上只显示「现在做这条」，做完下一条自动顶上，<b>刻意不显示完成率</b>。复习、听力、单词这类每天都要碰的放进「📌 每日必做」，打勾即可、也不算完成率。</p>' +
+      '</div>' +
       '<div class="set-group"><h4>⏰ 到点自动结算</h4>' +
       switchRow('set-auto-end', '每天到点自动结算今天（不用自己点「🏁 结束今天」）', s.autoEndDay) +
       '<div class="set-row"><span class="set-label">每天几点结算</span>' +
@@ -231,6 +236,9 @@
     bind('set-ext-append', function () { s.extAppendable = this.checked; S().save(); });
     bind('set-rollover', function () { s.rollover = this.checked; S().save(); });
     bind('set-ext-strict', function () { s.extStrict = this.checked; S().save(); render(); });
+    // 📋 v77 队列
+    bind('set-queue-points', function () { s.queuePoints = Math.max(0, +this.value || 0); S().save(); });
+    bind('set-queue-bar', function () { s.queueBarOn = this.checked; S().save(); if (App.queue) App.queue.refreshBar(); });
     bind('set-auto-end', function () { s.autoEndDay = this.checked; S().save(); });
     bind('set-auto-end-at', function () { s.autoEndDayAt = this.value || '23:59'; S().save(); });
     bind('set-ext-debt-rate', function () { s.extDebtRate = Math.max(0, +this.value || 0); S().save(); });

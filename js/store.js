@@ -105,6 +105,9 @@
       lectureBonusPts: 15,  // 🎓 听课三步：三步齐发的大奖默认积分（开课时可临时改）
       floatPiP: true,       // 🪟 计时悬浮窗拖出浏览器（Document PiP）；关掉就用页内悬浮窗
       notifyOnEnd: true,    // ⏰ 到点发系统通知（小时代 / 休息结束）
+      // 📋 v77 队列 + 📌 每日必做
+      queuePoints: 5,       // 📋 完成一条队列任务的积分
+      queueBarOn: true,     // 📋 任务页顶部显示「现在做这条」
       redeemTable: [
         { points: 10, item: '一包零食' },
         { points: 30, item: '玩一小时游戏' },
@@ -136,6 +139,9 @@
       createdAt: nowIso(),
       settings: defaultSettings(),
       days: {},
+      queue: [],      // 📋 v77 队列：未完成，数组顺序 = 执行顺序
+      queueDone: [],  // 📋 v77 已完成（可「↻ 放回队列」）
+      daily: [],      // 📌 v77 每日必做：{id,text,days:{'2026-09-20':ts}}
       ledger: [], // 账本事件 [{id, date, type, points, leisure, note, at}]
       trash: []   // 回收站 [{id, kind, dayKey, col, taskId, groupId, payload, at}]
     };

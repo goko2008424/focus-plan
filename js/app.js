@@ -37,6 +37,10 @@
     document.getElementById('stat-main').textContent = S().fmtDur(mainMs / 60000);
     document.getElementById('stat-extend').textContent = S().fmtDur(extMs / 60000);
     document.getElementById('stat-aux').textContent = S().fmtDur(auxMs / 60000);
+
+    // 📋 v77：任务页顶部那条「现在做这条」跟着一起刷新
+    if (App.queue && App.queue.refreshBar) App.queue.refreshBar();
+    if (App.ms && App.ms.refresh) App.ms.refresh();
   }
 
   /* ---------- 公告 / 使用指南 ---------- */
@@ -57,6 +61,7 @@
       '<h4 style="margin:14px 0 6px;color:#2d3a4a">🗂 所有功能是干什么的？</h4>' +
       '<ul class="about-guide-list" style="font-size:13.5px;padding-left:20px;line-height:1.9">' +
       '<li><b>任务</b>：三栏目标——✅必须完成（核心任务）/ ⭐理想（状态好时额外做，得积分）/ 🌱拓展（兴趣技能类每日推进，得积分）。每条任务可选「主线推进 / 辅助推进 / 长期推进」，编辑时可在三栏之间移动。顶部用 <b>有效学习 / 扩展 / 辅助</b> 三段时间分开记账（不复原已删的休闲体系）。</li>' +
+      '<li><b>📋 队列 + 📌 每日必做（v77）</b>：<b>一串按顺序做的任务</b>——新任务往队列里加，页面上只显示「现在做这条」，做完下一条自己顶上，想调顺序就 ↑ ↓ 或「排到最后」。<b>这里刻意没有完成率</b>：不显示「今天要完成几条」，只有「现在这条」（「每天要完成 N 条」这个标准从来不是按真实产能定的，只要分母在，每天都会得出「没完成」）。复习、听力、单词这类每天都要碰的，放进「📌 每日必做」，打勾就行、也不算完成率；做完一条队列任务时会问你一句，要不要把它加进每日必做。任务页顶部会有一条「📋 现在做 XXX」，点一下就跳过来。</li>' +
       '<li><b>📋 从往日粘贴任务</b>：把某一天整批任务（含小题 / 任务组）一键复制到今天对应栏，再叉掉已做的——订正十几道题时不用每天重输。</li>' +
       '<li><b>🗑 回收站</b>：删任务 / 小题 / 任务组都会先进回收站，误删点「♻ 恢复」放回原处，永远不会因为手滑丢任务。</li>' +
       '<li><b>🖼 一键导出任务长图</b>：任务页顶部点「🖼 导出长图」，今天的任务清单立刻变成一张竖长图（PNG）——必须 / 理想 / 长期拓展三栏、每条的完成状态和分值、当天汇总（完成几条 / 计时多久 / 赚了多少分）全在上面，任务名长会自动折行。发给家长 / 老师 / 同学看进度，一张图就够；「明天」页也能导出。</li>' +
@@ -157,6 +162,7 @@
       if (App.sport.renderToday) App.sport.renderToday();
       if (App.sport.renderPlan) App.sport.renderPlan();
     }
+    if (v === 'queue' && App.queue) App.queue.render();
     if (v === 'notes') notesPing();
     if (v !== 'timeline') { /* timeline 隐藏时仍可渲染，无碍 */ }
   }
@@ -216,6 +222,8 @@
     // 计时悬浮窗按钮：统一交给 tasks.js 绑（悬浮窗被小窗搬走 / 自愈重造后也能重新绑上）
     if (App.tasks.bindFloatButtons) App.tasks.bindFloatButtons(document.getElementById('timer-float'));
 
+    if (App.queue && App.queue.init) App.queue.init();
+    if (App.ms && App.ms.init) App.ms.init();
     App.tasks.init();
     App.settings.init();
     App.settings.render();

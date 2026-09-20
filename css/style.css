@@ -52,7 +52,7 @@ input, select, textarea { font-family: inherit; }
 }
 .brand h1 { font-size: 19px; font-weight: 700; }
 .brand p { font-size: 11.5px; opacity: .75; margin-top: 1px; }
-#main-nav { display: flex; gap: 4px; }
+#main-nav { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }  /* v79：按钮变多了，窄屏让它换行而不是溢出 */
 .nav-btn {
   background: transparent;
   color: rgba(255,255,255,.75);
@@ -1018,3 +1018,74 @@ body[data-theme="dark"] .lec-tag, body[data-theme="purple"] .lec-tag { color: #b
 .rev-big-q { font-size: 15px; line-height: 1.9; padding: 10px 12px; background: #f7f9fb;
   border-radius: 9px; border: 1px solid #e5e8ec; white-space: pre-wrap; }
 .btn-mini { padding: 3px 9px; font-size: 12.5px; border-radius: 7px; }
+/* ---------- 📋 队列 + 📌 每日必做（v77） ---------- */
+.q-card h2 { margin-bottom: 4px; }
+.q-empty {
+  padding: 16px 14px; border: 1px dashed var(--line); border-radius: 12px;
+  color: var(--muted); font-size: 13.5px; text-align: center; line-height: 1.8;
+}
+.q-now {
+  margin: 12px 0 4px; padding: 14px 16px; border-radius: 14px;
+  border: 1px solid var(--primary); background: rgba(59,130,246,.06);
+}
+.q-now-tag { font-size: 12.5px; color: var(--primary); font-weight: 600; letter-spacing: .03em; }
+.q-now-text { font-size: 19px; font-weight: 600; margin: 6px 0 2px; line-height: 1.4; word-break: break-word; }
+.q-now-note { font-size: 13px; color: var(--muted); }
+.q-now-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.q-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 16px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600;
+}
+.q-row { display: flex; align-items: center; gap: 8px; padding: 8px 2px; border-bottom: 1px dashed var(--line); }
+.q-row:last-child { border-bottom: none; }
+.q-idx { flex: none; width: 22px; text-align: center; font-size: 12.5px; color: var(--muted); }
+.q-text { flex: 1; min-width: 0; font-size: 14.5px; word-break: break-word; }
+.q-meta { flex: none; font-size: 12px; color: var(--muted); }
+.q-row-done .q-text { color: var(--muted); text-decoration: line-through; }
+.q-acts { flex: none; display: flex; gap: 3px; }
+.q-ib {
+  border: 1px solid var(--line); background: #f8fafc; border-radius: 7px;
+  width: 27px; height: 27px; font-size: 12.5px; line-height: 1; padding: 0;
+  cursor: pointer; color: var(--ink); display: inline-flex; align-items: center; justify-content: center;
+}
+.q-ib:hover { background: #eef2f7; }
+.q-row .task-check { padding: 0; cursor: pointer; font-size: 12px; color: #fff; }
+.q-lab { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+.q-input {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 9px; font-size: 14px; box-sizing: border-box; background: #fff; color: var(--ink);
+}
+.q-bar { margin: 8px 0 0; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+.q-bar-line { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.q-bar-line + .q-bar-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.q-bar-tag { flex: none; font-size: 12px; color: var(--muted); }
+.q-bar-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-bar-go { flex: none; border: none; background: none; color: var(--primary); font-size: 12.5px; cursor: pointer; padding: 0; }
+/* 深色 / 紫色主题下，队列的小方按钮和输入框要跟着变暗，否则浅底浅字=看不见 */
+body[data-theme="dark"] .q-ib, body[data-theme="purple"] .q-ib,
+body[data-theme="dark"] .q-input, body[data-theme="purple"] .q-input {
+  background: var(--card) !important;
+  color: var(--ink) !important;
+  border-color: var(--line) !important;
+}
+body[data-theme="dark"] .q-ib:hover, body[data-theme="purple"] .q-ib:hover { background: #223052 !important; }
+/* ---------- ⏳ 时间节点 / 截止日期（v79） ---------- */
+.ms-mini { font-weight: 600; color: #fff; }
+.ms-mini-now { color: #ffb0b0 !important; }    /* 顶部深色栏上用浅色 */
+.ms-mini-soon { color: #ffd48a !important; }
+
+.ms-list { border-top: 1px dashed var(--line); }
+.ms-row { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px dashed var(--line); }
+.ms-row:last-child { border-bottom: none; }
+.ms-info { flex: 1; min-width: 0; }
+.ms-name { font-size: 15px; font-weight: 600; word-break: break-word; }
+.ms-sub { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+.ms-dd { flex: none; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.ms-row.ms-now .ms-dd { color: #c0392b; }
+.ms-row.ms-soon .ms-dd { color: #d97706; }
+.ms-row.ms-past .ms-dd { color: var(--muted); }
+.ms-acts { flex: none; display: flex; gap: 3px; }
+
+/* 深色 / 紫色主题：弹窗里的红橙要换成浅色版，否则暗底暗字看不清 */
+body[data-theme="dark"] .ms-row.ms-now .ms-dd, body[data-theme="purple"] .ms-row.ms-now .ms-dd { color: #ff9b9b !important; }
+body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-row.ms-soon .ms-dd { color: #ffc46b !important; }
