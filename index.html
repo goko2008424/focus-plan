@@ -6,12 +6,12 @@
   <script>
     /* 版本号。v67 起提到 <head>：设置页等模块渲染得比页尾的 build-check 早，
        以前写在页尾，渲染时读到 undefined 就显示成 "v?"。 */
-    window.__BUILD = 88;
+    window.__BUILD = 91;
   </script>
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=88" />
+  <link rel="stylesheet" href="css/style.css?v=91" />
   <style id="pip-style">
     /* ===== 🪟 只在小窗（Document Picture-in-Picture）里生效：让悬浮窗铺满整个小窗 ===== */
     html.pip, html.pip body { background: var(--bg, #f5f7fa); margin: 0; padding: 0; }
@@ -273,20 +273,21 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=88"></script>
-  <script src="js/ui.js?v=88"></script>
-  <script src="js/tasks.js?v=88"></script>
-  <script src="js/timeline.js?v=88"></script>
-  <script src="js/stats.js?v=88"></script>
-  <script src="js/settings.js?v=88"></script>
-  <script src="js/sport.js?v=88"></script>
-  <script src="js/lecture.js?v=88"></script>
-  <script src="js/calendar.js?v=88"></script>
-  <script src="js/link.js?v=88"></script>
-  <script src="js/demo.js?v=88"></script>
-  <script src="js/queue.js?v=88"></script>
-  <script src="js/milestones.js?v=88"></script>
-  <script src="js/app.js?v=88"></script>
+  <script src="js/store.js?v=91"></script>
+  <script src="js/ui.js?v=91"></script>
+  <script src="js/tasks.js?v=91"></script>
+  <script src="js/timeline.js?v=91"></script>
+  <script src="js/stats.js?v=91"></script>
+  <script src="js/settings.js?v=91"></script>
+  <script src="js/sport.js?v=91"></script>
+  <script src="js/lecture.js?v=91"></script>
+  <script src="js/calendar.js?v=91"></script>
+  <script src="js/link.js?v=91"></script>
+  <script src="js/demo.js?v=91"></script>
+  <script src="js/queue.js?v=91"></script>
+  <script src="js/milestones.js?v=91"></script>
+  <script src="js/memcards.js?v=91"></script>
+  <script src="js/app.js?v=91"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
@@ -393,23 +394,28 @@
    有文件没传上去 → 顶部弹红条点名，别再靠猜"为什么改了没生效"。
    控制台可用：__checkBuild() 重查 / __checkBuild(true) 强制绕过缓存重查 */
 window.__BUILD_SIZES = {
-  "css/style.css": 56651,
-  "js/app.js": 36302,
+  "css/style.css": 60069,
+  "js/app.js": 38735,
+  "js/memcards.js": 25608,
+  "js/marked.min.js": 35481,
+  "js/katex.min.js": 275415,
+  "js/mhchem.min.js": 33731,
+  "css/katex.css": 773106,
   "js/calendar.js": 37719,
   "js/demo.js": 8261,
-  "js/lecture.js": 41483,
+  "js/lecture.js": 42183,
   "js/link.js": 20240,
   "js/milestones.js": 10183,
-  "js/queue.js": 52011,
+  "js/queue.js": 60882,
   "js/settings.js": 28992,
   "js/sport.js": 25754,
   "js/stats.js": 24805,
   "js/store.js": 18088,
-  "js/tasks.js": 314509,
+  "js/tasks.js": 315654,
   "js/timeline.js": 19744,
   "js/ui.js": 12061,
-  "sw.js": 3480,
-  "version.html": 61660
+  "sw.js": 3599,
+  "version.html": 66029
 };
 (function () {
   var S = window.__BUILD_SIZES;

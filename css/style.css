@@ -1113,3 +1113,58 @@ body[data-theme="dark"] .q-ib:hover, body[data-theme="purple"] .q-ib:hover { bac
 /* 深色 / 紫色主题：弹窗里的红橙要换成浅色版，否则暗底暗字看不清 */
 body[data-theme="dark"] .ms-row.ms-now .ms-dd, body[data-theme="purple"] .ms-row.ms-now .ms-dd { color: #ff9b9b !important; }
 body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-row.ms-soon .ms-dd { color: #ffc46b !important; }
+
+/* ============================================================
+ * 🃏 设问卡（v90）
+ * 全部走主题变量，深浅色主题天然可读（别在这里写死颜色）
+ * ============================================================ */
+.mc-body { max-height: 62vh; overflow: auto; padding-right: 2px; }
+.mc-head { border-bottom: 1px dashed var(--line); padding-bottom: 8px; margin-bottom: 10px; }
+.mc-head b { font-size: 15px; }
+.mc-cnt { color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+.mc-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.mc-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mc-lab { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+.mc-add { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--card); }
+.mc-ta, .mc-inp, .mc-imp {
+  width: 100%; box-sizing: border-box; margin-bottom: 6px; resize: vertical;
+  background: var(--bg, transparent); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px;
+  font-size: 13.5px; font-family: inherit; line-height: 1.6;
+}
+.mc-imp { min-height: 140px; }
+.mc-prev { border: 1px dashed var(--line); border-radius: 8px; padding: 7px 9px; margin: 2px 0 8px; }
+.mc-prevlab { font-size: 12px; color: var(--muted); display: block; margin-bottom: 3px; }
+.mc-prevbody { font-size: 13.5px; line-height: 1.65; }
+.mc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mc-list { margin-top: 12px; }
+.mc-card { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+.mc-card-top { display: flex; align-items: flex-start; gap: 8px; }
+.mc-idx { color: var(--muted); font-size: 12px; min-width: 18px; }
+.mc-front { flex: 1; cursor: pointer; font-size: 13.5px; line-height: 1.6; min-width: 0; }
+.mc-ib {
+  flex: none; border: 1px solid var(--line); background: transparent; color: var(--ink);
+  border-radius: 7px; padding: 2px 7px; cursor: pointer; font-size: 12.5px;
+}
+.mc-back { margin: 6px 0 0 26px; padding-left: 8px; border-left: 2px solid var(--primary); font-size: 13.5px; line-height: 1.65; }
+.mc-edit { margin-top: 8px; }
+.mc-face {
+  border: 1px solid var(--line); border-radius: 12px; padding: 18px 16px; min-height: 92px;
+  font-size: 16px; line-height: 1.75; cursor: pointer; background: var(--card);
+}
+.mc-face.mc-back { border-left: 3px solid var(--primary); font-size: 14.5px; }
+.mc-flip-hint { color: var(--muted); font-size: 12.5px; margin: 8px 0; text-align: center; }
+.mc-revtop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.mc-revacts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.mc-body .katex { font-size: 1.02em; }
+/* —— 🏷 v91：队列里的属性徽标（点一下能改）+ ↩ 点错了条 —— */
+.mode-plain { background: #f1f3f6; color: #6b7280; border-color: #dfe3e9; }
+.q-mtag { cursor: pointer; font-family: inherit; line-height: 1.5; }
+.q-mtag:hover { filter: brightness(.96); }
+.q-now-mode { margin: 2px 0 4px; }
+.q-undo {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  border: 1px solid var(--line); border-left: 3px solid #e0a02c;
+  background: var(--card); border-radius: 9px; padding: 7px 11px; margin: 8px 0 10px; font-size: 13px;
+}
+.q-undo-acts { margin-left: auto; display: flex; gap: 6px; }

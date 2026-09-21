@@ -138,6 +138,10 @@
     if (it.standard) c.standard = it.standard;
     if (it.subs && it.subs.length) c.subs = JSON.parse(JSON.stringify(it.subs));
     if (it.groups && it.groups.length) c.groups = JSON.parse(JSON.stringify(it.groups));
+    // 🌱 v91：间隔复习的排期（sp）和知识点（kps）必须跟着走 ——
+    //   以前它们只活在副本上，副本一被收回/重建，排好的 3 轮复习就整块丢了
+    if (it.sp) c.sp = JSON.parse(JSON.stringify(it.sp));
+    if (it.kps) c.kps = JSON.parse(JSON.stringify(it.kps));
     return c;
   }
 
@@ -162,6 +166,8 @@
     if (copy.points != null) it.points = copy.points;
     if (copy.mode) it.mode = copy.mode;
     if (copy.standard) it.standard = copy.standard;
+    if (copy.sp) it.sp = JSON.parse(JSON.stringify(copy.sp));
+    if (copy.kps) it.kps = JSON.parse(JSON.stringify(copy.kps));
   }
 
   /** 保证「当前条」在任务页上有一条未完成的真副本；不是当前条的旧副本收回队列 */
@@ -216,6 +222,8 @@
           else if (keep.subs) { delete keep.subs; dirty = true; }
           if (cur.groups && cur.groups.length) keep.groups = JSON.parse(JSON.stringify(cur.groups));
           else if (keep.groups) { delete keep.groups; dirty = true; }
+          if (cur.sp) keep.sp = JSON.parse(JSON.stringify(cur.sp));
+          if (cur.kps) keep.kps = JSON.parse(JSON.stringify(cur.kps));
         }
       }
     }
@@ -273,14 +281,21 @@
     syncBack(task);
     const i = idxOf(Q(), it.id);
     if (i < 0) return;
+    lastDone = { id: it.id, idx: i, text: it.text, ledId: null };   // ↩ 手滑撤销用
     const fin = Q().splice(i, 1)[0];
     fin.doneDay = S().todayKey();
     fin.doneAt = new Date().toISOString();
     QD().unshift(fin);
     const pts = qPoints();
-    if (pts > 0) S().addLedger(S().todayKey(), 'earn-queue', { points: pts, note: '📋 队列完成：' + fin.text });
+    if (pts > 0) {
+      S().addLedger(S().todayKey(), 'earn-queue', { points: pts, note: '📋 队列完成：' + fin.text });
+      const led = S().data().ledger;
+      if (led && led.length) lastDone.ledId = led[led.length - 1].id;   // 撤销时退这一笔
+    }
     S().save();
     pendingDone = fin;
+    dropCopy(fin.id);   // 🧹 队列项已经进「已完成」了，镜像副本别留在任务页/日历里
+    render();           // ⚠️ v91：必须立刻重画队列页 —— 「↩ 刚才点错了」那条和新的当前条都在这一帧上
     refreshBar();
   }
 
@@ -442,8 +457,17 @@
     return it;
   }
 
-  function addDaily(text) {
+  function addDaily(text, subs, groups) {
     const it = { id: S().uid(), text: text, days: {}, createdAt: new Date().toISOString() };
+    // 🧩 v89：从队列搬过来 / 做完转过来的，把「里面有什么」一起带上（不然明细就丢了）
+    if (subs && subs.length) it.subs = JSON.parse(JSON.stringify(subs)).map(function (s) {
+      return { id: S().uid(), text: s.text, minutes: s.minutes || 0, points: s.points || 0, done: null };
+    });
+    if (groups && groups.length) it.groups = JSON.parse(JSON.stringify(groups)).map(function (g) {
+      return { id: S().uid(), name: g.name, subs: (g.subs || []).map(function (s) {
+        return { id: S().uid(), text: s.text, minutes: s.minutes || 0, points: s.points || 0, done: null };
+      }) };
+    });
     DY().push(it);
     S().save();
     return it;
@@ -469,7 +493,20 @@
 
   /** 做完一条：从队列挪到「已完成」，记下今天、发积分，然后问一句要不要进每日必做
    *  v82：当前条已实体化成任务页的真任务 → 走 toggleTask 全流程（计时/听课/总结/积分都齐） */
+  /** ✅ v91：点「做完了」先弹一次确认 —— 确认之后才是真完成，
+   *  而且完成时会在队列页顶上留一条「↩ 点错了」随时能放回原位。 */
   function finish(id) {
+    const it = findIn(Q(), id);
+    if (!it) return;
+    const copy = findCopyOf(id);
+    if (copy && timingId() === copy.id) { App.ui.toast('这条正在计时，先结束计时再打勾'); return; }
+    App.ui.confirm('「<b>' + esc(it.text) + '</b>」做完了？<br>' +
+      '<span class="hint">点错了没关系 —— 完成之后队列页最上面会留一条「↩ 刚才点错了」，' +
+      '能把它<b>放回原来的位置</b>。</span>',
+      '✅ 做完了', function () { doFinish(id); });
+  }
+
+  function doFinish(id) {
     const cur0 = current();
     if (cur0 && cur0.id === id) {
       const copy = findCopyOf(id);
@@ -511,7 +548,7 @@
     App.ui.bindActions({
       daily: function () {
         App.ui.closeModal();
-        addDaily(it.text);
+        addDaily(it.text, it.subs, it.groups);
         render();
         App.ui.toast('已加进「每日必做」📌');
       },
@@ -671,7 +708,16 @@
     App.ui.openModal('✏️ 改这一条',
       '<div><label class="q-lab">内容</label>' +
       '<input id="q-ed-text" class="q-input" type="text" value="' + esc(it.text) + '" /></div>' +
-      (isDaily ? '' :
+      // 🧩 v89：每日必做里已经挂着小任务/任务组的（多是从队列搬过来的），也要能改/能清
+      (isDaily && !(it.subs && it.subs.length) && !(it.groups && it.groups.length) ? '' :
+       isDaily && (it.subs && it.subs.length || it.groups && it.groups.length) ?
+        '<div style="margin-top:10px"><label class="q-lab">📝 小任务（每行一个；要限时就写「题名|分钟」。<b>改了会重置进度</b>）</label>' +
+        '<textarea id="q-ed-subs" class="q-input" rows="3" style="width:100%;resize:vertical">' + esc(serializeSubLines(it.subs)) + '</textarea></div>' +
+        '<div style="margin-top:8px"><label class="q-lab">🧩 任务组</label>' +
+        '<div id="q-ed-groups">' +
+        (it.groups || []).map(function (g) { return groupBlockHTML(g.name, serializeSubLines(g.subs)); }).join('') +
+        '</div>' +
+        '<button class="btn btn-small" type="button" id="q-ed-gbtn">＋ 加一个任务组</button></div>' :
         '<div style="margin-top:8px"><label class="q-lab">备注（可选）</label>' +
         '<input id="q-ed-note" class="q-input" type="text" value="' + esc(it.note || '') + '" /></div>' +
         '<div style="margin-top:8px"><label class="q-lab">🌱 知识类型</label>' +
@@ -685,7 +731,7 @@
         '<button class="btn btn-small" type="button" id="q-ed-gbtn">＋ 加一个任务组</button></div>'),
       '<button class="btn btn-primary" data-act="ok">保存</button>' +
       '<button class="btn" data-act="cancel">取消</button>');
-    if (!isDaily) {
+    {
       const gbtn = App.ui.query('#q-ed-gbtn');
       if (gbtn) gbtn.onclick = function () {
         const box = document.getElementById('q-ed-groups');
@@ -702,8 +748,15 @@
           if (nt) it.note = (nt.value || '').trim();
           const emd = (App.ui.query('#q-ed-mode') || {}).value || '';
           if (emd) it.mode = emd; else delete it.mode;
-          it.subs = parseSubLines(App.ui.query('#q-ed-subs').value).map(newSub);
-          it.groups = readGroupBlocks('#modal-root');
+        }
+        // 🧩 v89：明细栏在「有明细」或「不是每日必做」时都收一次（少了就把明细清空）
+        const subsEl = App.ui.query('#q-ed-subs');
+        const hasDetailUI = !!subsEl || !!App.ui.query('#q-ed-groups');
+        if (hasDetailUI) {
+          const ns = subsEl ? parseSubLines(subsEl.value).map(newSub) : [];
+          const ng = readGroupBlocks('#modal-root');
+          if (ns.length) it.subs = ns; else delete it.subs;
+          if (ng.length) it.groups = ng; else delete it.groups;
         }
         // 📋 v82/v86：已实体化的副本要跟着改（文本 + 小任务/任务组一起），不然两个编辑口互相覆盖
         try {
@@ -715,8 +768,8 @@
                 c.text = t;
                 if (!isDaily) {
                   if (it.mode) c.mode = it.mode; else delete c.mode;
-                  if (it.subs.length) c.subs = JSON.parse(JSON.stringify(it.subs)); else delete c.subs;
-                  if (it.groups.length) c.groups = JSON.parse(JSON.stringify(it.groups)); else delete c.groups;
+                  if (it.subs && it.subs.length) c.subs = JSON.parse(JSON.stringify(it.subs)); else delete c.subs;
+                  if (it.groups && it.groups.length) c.groups = JSON.parse(JSON.stringify(it.groups)); else delete c.groups;
                 }
                 touched = true;
               }
@@ -733,10 +786,89 @@
   }
 
   /* ---------- v88：队列 ↔ 每日必做 互换 + 知识类型标注 ---------- */
-  /** 任务属性徽标（新知识/复习）—— 队列项上直接复用 tasks.js 那套 */
-  function mtag(it) {
-    try { return (App.tasks && App.tasks.modeTagHTML) ? App.tasks.modeTagHTML(it) : ''; }
-    catch (e) { return ''; }
+  /** 🏷 v91：属性徽标 —— **没有属性也标出来**（⚪ 普通），点一下就改。
+   *  以前 mode 没设就什么都不显示，用户根本不知道自己忘了标，复习也就不会排。 */
+  function mtag(it, kind, id) {
+    const m = it.mode === 'new' ? ['mode-new', '📘 新知识']
+      : (it.mode === 'review' ? ['mode-rev', '🔄 复习'] : ['mode-plain', '⚪ 普通']);
+    return '<button class="mode-tag q-mtag ' + m[0] + '" data-act="q-mode" data-kind="' + (kind || 'queue') +
+      '" data-id="' + (id || it.id) + '" title="点一下改属性：普通 / 新知识 / 复习">' + m[1] + '</button>';
+  }
+
+  /** 改属性的小弹窗（普通 / 新知识 / 复习 三选一） */
+  function modePickModal(kind, id) {
+    const list = kind === 'daily' ? DY() : (kind === 'done' ? QD() : Q());
+    const it = findIn(list, id);
+    if (!it) return;
+    const opt = function (v, label, hint) {
+      const cur = (it.mode || '') === v;
+      return '<button class="btn' + (cur ? ' btn-primary' : '') + '" data-act="mp-set" data-v="' + v + '" style="margin:0 6px 6px 0;text-align:left">' +
+        label + '<br><span class="hint" style="margin:0">' + hint + (cur ? ' · 当前' : '') + '</span></button>';
+    };
+    App.ui.openModal('🏷 这条是什么属性？',
+      '<p class="hint" style="margin-top:0">「<b>' + esc(it.text) + '</b>」<br>' +
+      '📘 <b>新知识</b>：完成时会引导你出题，并按遗忘曲线排当天 3 轮复习；' +
+      '🔄 <b>复习</b>：只作标记（不排）；⚪ <b>普通</b>：两样都不做。</p>',
+      '<div style="display:flex;flex-wrap:wrap">' + opt('', '⚪ 普通任务', '不排复习') +
+      opt('new', '📘 新知识', '排 3 轮复习') + opt('review', '🔄 复习知识', '只作标记') + '</div>' +
+      '<button class="btn" data-act="mp-cancel">不改了</button>');
+    App.ui.bindActions({
+      'mp-set': function (el) {
+        const v = el.dataset.v || '';
+        if (v) it.mode = v; else delete it.mode;
+        // 同步到已实体化的副本（不然下一次 syncBack 会把旧值盖回来）
+        try {
+          const day = S().getDay(S().todayKey());
+          ['required', 'ideal', 'extra'].forEach(function (k) {
+            (day.tasks[k] || []).forEach(function (c) {
+              if (c.fromQueue === it.id && c.done !== true) { if (v) c.mode = v; else delete c.mode; }
+            });
+          });
+        } catch (e) { /* 忽略 */ }
+        S().save();
+        App.ui.closeModal();
+        render();
+        if (App.tasks && App.tasks.renderAll) App.tasks.renderAll();
+        App.ui.toast(v === 'new' ? '📘 标成新知识 —— 完成时会排 3 轮复习'
+          : (v === 'review' ? '🔄 标成复习知识（只作标记，不排复习）' : '⚪ 改成普通任务'));
+      },
+      'mp-cancel': function () { App.ui.closeModal(); }
+    });
+  }
+
+  /** 把某条队列项在「今天」的镜像副本清掉（含已完成的那份） */
+  function dropCopy(qid) {
+    let n = 0;
+    try {
+      const day = S().getDay(S().todayKey());
+      ['required', 'ideal', 'extra'].forEach(function (k) {
+        const arr = day.tasks[k] || [];
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (arr[i].fromQueue === qid) { arr.splice(i, 1); n++; }
+        }
+      });
+      if (n) S().save();
+    } catch (e) { /* 忽略 */ }
+    return n;
+  }
+
+  /* ---------- ↩ v91：手滑点错「做完了」也能放回来 ---------- */
+  let lastDone = null;   // { id, idx, text, ledId }
+
+  function undoLast() {
+    if (!lastDone) return;
+    const i = idxOf(QD(), lastDone.id);
+    if (i < 0) { lastDone = null; render(); return; }
+    const it = QD().splice(i, 1)[0];
+    delete it.doneDay; delete it.doneAt;
+    const at = Math.max(0, Math.min(lastDone.idx, Q().length));
+    Q().splice(at, 0, it);
+    if (lastDone.ledId && S().undoLastLedger) S().undoLastLedger(lastDone.ledId);   // 退掉那条队列分
+    S().save();
+    const t = lastDone.text;
+    lastDone = null;
+    render();
+    App.ui.toast('↩ 放回来了：' + t.slice(0, 14) + '（回到第 ' + (at + 1) + ' 位）', 3000);
   }
   function modeOptions(cur) {
     cur = cur || '';
@@ -773,7 +905,7 @@
   function rowQ(it, n) {
     return '<div class="q-row" data-id="' + it.id + '">' +
       '<span class="q-idx">' + n + '</span>' +
-      '<span class="q-text">' + esc(it.text) + mtag(it) + subDetailHTML(it.subs, it.groups) + '</span>' +
+      '<span class="q-text">' + esc(it.text) + mtag(it, 'queue') + subDetailHTML(it.subs, it.groups) + '</span>' +
       '<span class="q-acts">' +
       '<button class="q-ib" data-act="q-done" data-id="' + it.id + '" title="做完了">✓</button>' +
       '<button class="q-ib" data-act="q-up" data-id="' + it.id + '" title="上移">↑</button>' +
@@ -788,7 +920,7 @@
   function rowDone(it) {
     return '<div class="q-row q-row-done" data-id="' + it.id + '">' +
       '<span class="q-idx">✓</span>' +
-      '<span class="q-text">' + esc(it.text) + '</span>' +
+      '<span class="q-text">' + esc(it.text) + mtag(it, 'done') + subDetailHTML(it.subs, it.groups) + '</span>' +
       '<span class="q-meta">' + (it.doneDay ? S().shortDateCN(it.doneDay) : '') + '</span>' +
       '<span class="q-acts">' +
       '<button class="q-ib" data-act="q-sched" data-kind="done" data-id="' + it.id + '" title="安排到某一天再做一次">📅</button>' +
@@ -806,6 +938,13 @@
       '<b>这里没有完成率</b>，只有「现在这条」。<br>' +
       '不想现在做？点 <b>📅</b> 把它<b>安排到某一天</b>去做（跟日历里 🔁 是同一套），或者 <b>↧</b> 排到队尾。</p>';
 
+    if (lastDone) {
+      h += '<div class="q-undo">↩ <b>刚才点错了？</b>「' + esc(lastDone.text) + '」已经完成' +
+        (lastDone.idx > 0 ? '（原来在第 ' + (lastDone.idx + 1) + ' 位）' : '') +
+        '<span class="q-undo-acts">' +
+        '<button class="btn btn-small btn-primary" data-act="q-undo">↩ 放回原位</button>' +
+        '<button class="btn btn-small" data-act="q-undo-x">不用了</button></span></div>';
+    }
     if (!list.length) {
       h += '<div class="q-empty">队列是空的。<br>往里加一条，以后就按顺序做 —— 不用再想「今天要完成几条」。</div>';
     } else {
@@ -813,6 +952,7 @@
       const copy = findCopyOf(c.id);
       h += '<div class="q-now">' +
         '<div class="q-now-tag">▶ 现在做这条</div>' +
+        '<div class="q-now-mode">' + mtag(c, 'queue', c.id) + '</div>' +
         // 🧲 v85：直接嵌入完整任务行 —— 计时 / 🎧 听课三步 / 小任务·任务组 全在原地，不用去任务页
         (copy && App.tasks && App.tasks.taskRowHTML
           ? '<div class="task-col q-now-area" data-col="required" id="q-now-area">' +
@@ -841,7 +981,8 @@
 
     if (done.length) {
       h += '<div class="q-head"><span>已完成（' + done.length + '）</span>' +
-        '<button class="btn btn-small" data-act="q-toggledone">' + (showDone ? '收起' : '展开') + '</button></div>';
+        '<button class="btn btn-small" data-act="q-toggledone" title="点开能看见做过的，也能把哪条放回队列">' +
+        (showDone ? '收起' : '展开（能放回队列）') + '</button></div>';
       if (showDone) {
         done.slice(0, 60).forEach(function (it) { h += rowDone(it); });
         if (done.length > 60) h += '<p class="hint">只显示最近 60 条。</p>';
@@ -873,7 +1014,7 @@
         h += '<div class="q-row' + (done ? ' q-row-done' : '') + '" data-id="' + it.id + '">' +
           '<button class="task-check' + (done ? ' checked' : '') + '" data-act="d-toggle" data-id="' + it.id + '">' +
           (done ? '✓' : '') + '</button>' +
-          '<span class="q-text">' + esc(it.text) + '</span>' +
+          '<span class="q-text">' + esc(it.text) + mtag(it, 'daily') + subDetailHTML(it.subs, it.groups) + '</span>' +
           '<span class="q-meta">' + meta + '</span>' +
           '<span class="q-acts">' +
           '<button class="q-ib" data-act="d-toqueue" data-id="' + it.id + '" title="转入队列（按顺序做）">📋</button>' +
@@ -999,6 +1140,9 @@
     if (act === 'q-end') { moveToEnd(id); render(); return; }
     if (act === 'q-todaily') { qToDaily(id); return; }
     if (act === 'd-toqueue') { dToQueue(id); return; }
+    if (act === 'q-mode') { modePickModal(b.dataset.kind || 'queue', id); return; }
+    if (act === 'q-undo') { undoLast(); return; }
+    if (act === 'q-undo-x') { lastDone = null; render(); return; }
     if (act === 'q-edit') { editModal(id, false); return; }
     if (act === 'd-edit') { editModal(id, true); return; }
     if (act === 'd-toggle') { dToggle(id); return; }
@@ -1044,6 +1188,7 @@
       delete it.doneDay;
       delete it.doneAt;
       Q().push(it);
+      dropCopy(it.id);
       S().save();
       render();
       App.ui.toast('↻ 已放回队列末尾 —— 想调位置用 ↑ ↓');

@@ -3025,6 +3025,11 @@
         '</div>';
     }
     const lecBtn = '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步：预习 → 听课 → 整理，三步齐了发大奖">🎧</button>';
+    // 🃏 v90：这条任务有设问卡时才出现 —— 翻卡自测 / 补加 / 导出到 Obsidian
+    const mcN = (App.memcards && App.memcards.countForTask) ? App.memcards.countForTask(task.id) : 0;
+    const mcBtn = mcN
+      ? '<button class="task-timer-btn" data-act="memcards" title="🃏 这套设问卡（' + mcN + ' 张）：翻卡自测、补加卡片、导出到 Obsidian">🃏' + (mcN > 1 ? mcN : '') + '</button>'
+      : '';
     // 🔗 只有这一栏里真的存在「同名的另一条」时才出现，平时不占地方
     const dupBtn = findDupTask(S().todayKey(), listKey, task)
       ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" title="这一栏有两条同名的「' + S().esc(task.text) + '」，点这里合并成一条">🔗</button>'
@@ -3038,6 +3043,7 @@
       lecTagHTML(task) +
       ptsInput +
       lecBtn +
+      mcBtn +
       dupBtn +
       btn +
       '</div>' +
@@ -3827,6 +3833,11 @@
       const listKey = row.dataset.list, taskId = row.dataset.id;
       const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
       if (act === 'lecture') { lecturePickModal(listKey, taskId, false); return; }
+      if (act === 'memcards') {
+        const el = row.querySelector('.task-text');
+        App.memcards.openForTask({ id: taskId, text: el ? el.textContent.trim() : '设问卡' });
+        return;
+      }
       if (act === 'dup-merge') { dupMergeModal(S().todayKey(), listKey, taskId); return; }
       if (act === 'check') toggleTask(listKey, taskId);
       else if (act === 'edit') editTaskModal(listKey, taskId, S().todayKey(), false);
@@ -3862,6 +3873,8 @@
           lecTagHTML(t) +
           ptsInput +
           '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步（会记在今天的时间轴，走完勾掉这条明天的任务）">🎧</button>' +
+          ((App.memcards && App.memcards.countForTask && App.memcards.countForTask(t.id))
+            ? '<button class="task-timer-btn" data-act="memcards" title="🃏 这套设问卡：翻卡自测 / 补加 / 导出">🃏</button>' : '') +
           (findDupTask(S().tomorrowKey(), col.key, t)
             ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" title="这一栏有两条同名的「' + S().esc(t.text) + '」，点这里合并成一条">🔗</button>'
             : '') +
@@ -3912,6 +3925,11 @@
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'lecture' && listKey && row) { lecturePickModal(listKey, row.dataset.id, true); return; }
+      if (act === 'memcards' && row) {
+        const el = row.querySelector('.task-text');
+        App.memcards.openForTask({ id: row.dataset.id, text: el ? el.textContent.trim() : '设问卡' });
+        return;
+      }
       if (act === 'dup-merge' && listKey && row) { dupMergeModal(S().tomorrowKey(), listKey, row.dataset.id); return; }
       if (act === 'cd-start' && listKey) { App.ui.toast('明天的小任务，到了明天再开始倒计时哟'); return; }
       if (act === 'sub-note' && listKey) { editSubSummary(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }

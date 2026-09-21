@@ -1,5 +1,5 @@
 /* Service Worker：离线可用 + 缓存本应用静态资源 */
-const CACHE = 'focus-plan-v88';
+const CACHE = 'focus-plan-v91';
 const ASSETS = [
   './',
   './index.html',
@@ -18,7 +18,12 @@ const ASSETS = [
   './js/demo.js',
   './js/queue.js',
   './js/milestones.js',
+  './js/memcards.js',
   './js/app.js',
+  './js/marked.min.js',
+  './js/katex.min.js',
+  './js/mhchem.min.js',
+  './css/katex.css',
   './manifest.webmanifest',
   './icon.svg',
   './assets/honor/sumneu.jpg',

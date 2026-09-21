@@ -647,7 +647,9 @@
           ' · 听' + Math.round(phaseSeconds(x, 'attend') / 60) +
           ' · 整' + Math.round(phaseSeconds(x, 'cons') / 60) + ' 分 ＝ ' + mins + ' 分钟' +
           (pausedMin > 0 ? '（⏸ 暂停 ' + pausedMin + ' 分钟未计）' : '') + '</span>' +
-          '<span class="lec-hist-flag">' + flag + '</span></div>' +
+          '<span class="lec-hist-flag">' + flag + '</span>' +
+          '<button class="mc-ib" data-act="mc-hist" data-k="' + r.k + '" data-id="' + x.id +
+          '" title="这节整理出的设问卡（课已经上完了也能补加）">🃏</button></div>' +
           (x.chain ? '<div class="lec-hist-chain">🔗 ' + S().esc(x.chain) + '</div>' : '');
       });
       if (rows.length > 25) html += '<div class="lec-hist-more">只显示最近 25 条（共 ' + rows.length + ' 条）</div>';
@@ -702,11 +704,14 @@
         '<button class="btn btn-small btn-danger" id="' + P + 'lec-abandon">🚫 放弃</button></div>';
     }
     const ci3 = clockInfo(L, 'cons');
+    const mcN = (App.memcards && App.memcards.countForTask && L.taskId) ? App.memcards.countForTask(L.taskId) : 0;
     return '<div class="lec-clock" id="' + P + 'lec-clock" style="color:' + ci3.color + '">' + ci3.txt + '</div>' +
       '<div class="lec-hint">这一步<b>可写可不写</b>：想留点东西就写，不想写直接点完成，不影响积分。</div>' +
       '<textarea id="' + P + 'lec-note" class="lec-ta" placeholder="（可留空）">' + S().esc(L.note || '') + '</textarea>' +
       '<div class="lec-actions">' +
       pauseBtns(L, P) +
+      '<button class="btn btn-small" id="' + P + 'lec-cards" title="对着笔记给自己出题：正面提问、反面答案。主动回忆最有效的一步">' +
+      '🃏 设问卡' + (mcN ? '（' + mcN + ' 张）' : '') + '</button>' +
       '<button class="btn btn-small btn-primary" id="' + P + 'lec-cons-done">✅ 完成整理' +
       (allThreeDone(L) ? '（领大奖 +' + (L.pts || 0) + ' 分）' : '') + '</button>' +
       '<button class="btn btn-small" id="' + P + 'lec-skip">⏭ 跳过整理</button>' +
@@ -730,6 +735,8 @@
         refresh();
       };
     });
+    const mcBtn = wrap.querySelector('#' + P + 'lec-cards');
+    if (mcBtn) mcBtn.onclick = function () { App.memcards.openForLecture(L); };
     const pa = wrap.querySelector('#' + P + 'lec-pause');
     if (pa) pa.onclick = pauseLecture;
     const rs = wrap.querySelector('#' + P + 'lec-resume');
