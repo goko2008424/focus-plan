@@ -381,6 +381,26 @@
         '<p style="font-size:13px;color:var(--muted)">🕰 这天还没有时间记录</p>' +
         '<p class="hint">去任务页开始计时、或到时间轴补上休息/吃饭，饼图就会在这里出现。</p></div>';
     }
+    // 📋 v88：按任务名合计 —— 某一项任务今天一共做了多久（番茄 ToDo 式清单）
+    const byTask = {};
+    day.timeline.forEach(function (r) {
+      const m = r.minutes || 0;
+      if (m <= 0 || r.hourPlanId) return;
+      const name = String(r.taskText || '').trim();
+      if (!name) return;
+      byTask[name] = (byTask[name] || 0) + m;
+    });
+    const taskNames = Object.keys(byTask).sort(function (a, b) { return byTask[b] - byTask[a]; });
+    let taskBreakHTML = '';
+    if (taskNames.length) {
+      taskBreakHTML = '<div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">' +
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:4px">📋 单项用时（按任务合计，休息/吃饭不算）</div>' +
+        taskNames.map(function (n) {
+          return '<div class="row" style="justify-content:space-between;align-items:baseline;font-size:13px;padding:2px 4px">' +
+            '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + S().esc(n) + '</span>' +
+            '<b style="flex:none;margin-left:10px">' + S().fmtDur(Math.round(byTask[n])) + '</b></div>';
+        }).join('') + '</div>';
+    }
     const CATS = App.ui.CATS;
     const segs = Object.keys(byCat).map(function (c) { return { c: c, m: byCat[c] }; })
       .sort(function (a, b) { return b.m - a.m; });
@@ -415,7 +435,8 @@
       '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" font-size="12" fill="var(--muted)">总计</text>' +
       '<text x="' + cx + '" y="' + (cy + 16) + '" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">' + S().fmtDur(Math.round(total)) + '</text></svg>' +
       '<div style="flex:1;min-width:220px">' + legend + '</div></div>' +
-      '<p class="hint" style="margin:6px 0 0">按时间轴分类统计（学习/拓展/辅助/生活/其他）；休息和记录也会算进去。</p></div>';
+      taskBreakHTML +
+      '<p class="hint" style="margin:6px 0 0">按时间轴分类统计（学习/拓展/辅助/生活/其他）；休息和记录也会算进去。上面是<b>每个任务各花了多久</b>。</p></div>';
   }
 
   /* 任务的小任务/任务组上下文（只读展示，让人知道这条任务是哪部分） */
@@ -489,6 +510,7 @@
           '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（实际做完了在这里补勾划掉）">☑</button>' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
           (t.fromQueue ? '' : '<button class="task-timer-btn" data-act="q-enqueue" data-col="' + c.k + '" data-id="' + t.id + '" title="把这条整任务排进队列末尾（按顺序做）">📥</button>') +
+          '<button class="task-timer-btn" data-act="cal-daily" data-col="' + c.k + '" data-id="' + t.id + '" title="把这条加进「每日必做」（每天打勾的小事）">📌</button>' +
           (dupOf(t) ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" data-col="' + c.k + '" data-id="' + t.id + '" title="这一栏有两条同名的「' + esc(t.text) + '」，点这里合并成一条">🔗</button>' : '') +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +
           '<button class="task-timer-btn" data-act="del" data-col="' + c.k + '" data-id="' + t.id + '" title="删除">🗑</button>' +
@@ -577,6 +599,15 @@
           if (App.queue && App.queue.enqueueTask && App.queue.enqueueTask(task)) {
             App.ui.toast('📥 已排进队列末尾 —— 到队列页能调顺序');
             render();
+          }
+        }
+        else if (b.dataset.act === 'cal-daily') {
+          // 📌 v87：日历里的任务一键加进「每日必做」（同名不重复加）
+          if (App.queue && App.queue.addDaily) {
+            const already = (S().data().daily || []).some(function (x) { return x.text === task.text; });
+            if (already) { App.ui.toast('「每日必做」里已经有这条了'); return; }
+            App.queue.addDaily(task.text);
+            App.ui.toast('📌 已加进「每日必做」：' + task.text.slice(0, 14));
           }
         }
         else if (b.dataset.act === 'dup-merge') App.tasks.dupMergeModal(selKey, col, id);
