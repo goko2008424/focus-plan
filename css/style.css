@@ -1168,3 +1168,80 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
   background: var(--card); border-radius: 9px; padding: 7px 11px; margin: 8px 0 10px; font-size: 13px;
 }
 .q-undo-acts { margin-left: auto; display: flex; gap: 6px; }
+.q-pts { margin-left: 5px; font-size: 11.5px; color: #b8860b; background: #fdf3d8; border: 1px solid #f0dfae; border-radius: 9px; padding: 1px 6px; }
+
+.mc-rowline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
+.mc-rowmain { flex: 1; min-width: 200px; }
+.mc-rowmain b { font-size: 14px; }
+.mc-rowline .mc-acts { margin-top: 0; }
+/* —— ⇈ v95：队列」调到第一个」 —— */
+.q-ib[data-act="q-top"] { color: #b45309; font-weight: 700; }
+
+/* —— 📷 v95：卡片贴图 —— */
+.mc-file { display: none; }
+.mc-siderow { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.mc-sidetag {
+  font-size: 12px; color: var(--muted); background: var(--bg, transparent);
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px;
+}
+.mc-thumbs { display: flex; flex-wrap: wrap; gap: 7px; margin: 2px 0 8px; }
+.mc-thumb { position: relative; display: inline-block; line-height: 0; }
+.mc-thumb img {
+  max-width: 108px; max-height: 108px; border-radius: 8px;
+  border: 1px solid var(--line); cursor: zoom-in; display: block;
+}
+.mc-thumb-x {
+  position: absolute; top: -6px; right: -6px; width: 19px; height: 19px; line-height: 1;
+  border-radius: 50%; border: 1px solid var(--line); background: var(--card, #fff);
+  color: var(--ink); font-size: 12px; cursor: pointer; padding: 0;
+}
+.mc-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mc-img {
+  max-width: 100%; max-height: 320px; border-radius: 8px;
+  border: 1px solid var(--line); cursor: zoom-in; display: block;
+}
+.mc-face .mc-img { max-height: 420px; }
+.mc-zoomov {
+  position: fixed; inset: 0; z-index: 9999; background: rgba(0, 0, 0, .82);
+  display: flex; align-items: center; justify-content: center; cursor: zoom-out; padding: 18px;
+}
+.mc-zoomov img { max-width: 96vw; max-height: 92vh; border-radius: 8px; }
+.mc-zoomhint { position: absolute; bottom: 16px; color: #fff; opacity: .75; font-size: 12.5px; }
+.mc-rowline .mc-cnt { color: var(--muted); font-size: 12.5px; }
+/* —— ▶ v96：今天的基础任务「现在做（计时）」 —— */
+.q-ib.d-start { color: #0f766e; font-weight: 700; }
+.q-ib.d-start.running { color: #b45309; background: #fdf3d8; border-color: #f0dfae; }
+.q-undo.q-running { border-left-color: #0f766e; }
+/* —— 🃏 v99：复习 = 3D 翻面卡（正反面明确分开，第一眼看不到答案） —— */
+.mc-flipbox { perspective: 1400px; cursor: pointer; margin: 4px 0 2px; }
+.mc-flip-inner { display: grid; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.4,.2,.2,1); }
+.mc-flipbox.flipped .mc-flip-inner { transform: rotateY(180deg); }
+.mc-flip-face {
+  grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  padding: 18px 16px; min-height: 120px; font-size: 16px; line-height: 1.75; overflow: auto;
+}
+.mc-flip-front { border-bottom: 3px solid var(--primary); }
+.mc-flip-back { transform: rotateY(180deg); border-left: 3px solid var(--primary); }
+.mc-face-tag {
+  display: inline-block; font-size: 11.5px; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 7px; margin-bottom: 8px;
+}
+.mc-flip-face .mc-img { max-height: 240px; }
+/* 列表里点开答案时也隔开一点 */
+.mc-back { margin-top: 10px !important; padding-top: 8px !important; }
+/* —— ✅ v99：每天打卡 —— */
+.ck-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
+.ck-row.done { background: rgba(34, 160, 107, .07); border-color: rgba(34, 160, 107, .35); }
+.ck-main { flex: 1; min-width: 200px; }
+.ck-name { font-size: 14px; font-weight: 600; }
+.ck-cnt { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+.ck-streak { margin-left: 7px; font-size: 12px; color: #b45309; background: #fdf3d8;
+  border: 1px solid #f0dfae; border-radius: 9px; padding: 1px 7px; }
+.ck-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.ck-week { display: flex; gap: 4px; margin-top: 6px; }
+.ck-dot { width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--line); background: transparent; }
+.ck-dot.on { background: #22a06b; border-color: #22a06b; }
+.ck-dot.half { background: rgba(34, 160, 107, .35); border-color: rgba(34, 160, 107, .5); }
+.ck-acts { display: flex; gap: 6px; align-items: center; }

@@ -286,9 +286,9 @@
       }
     };
     // 📋 v82：队列副本不参与顺延 —— 它的「本体」在队列里，天然不会丢
-    src.tasks.required.filter(function (t) { return !t.done && !t.fromQueue; }).forEach(function (t) { add('required', t.text, t.points); });
-    src.tasks.ideal.filter(function (t) { return !t.done && !t.fromQueue; }).forEach(function (t) { add('ideal', t.text, t.points); });
-    src.tasks.extra.filter(function (t) { return !t.done && !t.fromQueue; }).forEach(function (t) { add('extra', t.text, t.points); });
+    src.tasks.required.filter(function (t) { return !t.done && !t.fromQueue && !t.fromDaily; }).forEach(function (t) { add('required', t.text, t.points); });
+    src.tasks.ideal.filter(function (t) { return !t.done && !t.fromQueue && !t.fromDaily; }).forEach(function (t) { add('ideal', t.text, t.points); });
+    src.tasks.extra.filter(function (t) { return !t.done && !t.fromQueue && !t.fromDaily; }).forEach(function (t) { add('extra', t.text, t.points); });
     save();
   }
 

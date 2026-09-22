@@ -381,8 +381,10 @@
       否则用户点了「⏹ 结束」会觉得没反应（2026-09-14 自检发现） */
   function bringPageForModal() {
     if (!inPip()) return;
-    // 弹窗会开在小窗里 → 别把焦点抢回页面（否则用户刚要看的窗口反而被压下去）
-    if (App.ui && App.ui.willUsePip && App.ui.willUsePip()) return;
+    // ⚠️ 2026-09-21 用户报「点了完成没反应」—— 就是这个场景：
+    //    把浮动窗「⇱ 拖出」成小窗后点完成，确认窗要么开在小窗里（放不下）、要么开在网页而他正看小窗。
+    //    这个确认窗有大段文字 + 输入框，小窗根本装不下 → 干脆把浮动窗收回主页面，保证他看得见。
+    try { pipBack(); } catch (e) { /* 忽略 */ }
     try { window.focus(); } catch (e) { /* 浏览器可能拒绝，忽略 */ }
   }
 
@@ -564,7 +566,13 @@
     const set = function (id, fn) { const el = f.querySelector('#' + id); if (el) el.onclick = fn; };
     set('timer-pause', function () { togglePause(); });
     set('timer-rest', function () { startSmallRest(); });
-    set('timer-stop', function () { if (timer) stopTimer(); });
+    // ⏹ 完成：以前是 `if (timer) stopTimer()` —— 计时其实已经结束（浮动窗残留 / 计时对象丢了）时
+    // 点它**完全没反应**，用户以为坏了（2026-09-21 反馈）。现在兜底说一句并把窗收掉。
+    set('timer-stop', function () {
+      if (timer) { stopTimer(); return; }
+      App.ui.toast('这会儿没有正在计时的任务了 —— 计时窗已收起', 3600);
+      hideTimerBar();
+    });
     set('cd-pause', function () { toggleCdPause(); });
     set('cd-rest', function () { startSmallRest(); });
     set('cd-split', function () {
@@ -769,8 +777,13 @@
     let doneFlag = true;
     let noteVal = '';
 
+    // ✏️ v98：确认窗里能顺便改任务名（用户：「你同样都不支持改名称」）
+    let nameVal = timer.taskText || timer.planContent || '';
     const body = function () {
       return '' +
+        '<div class="field"><label>任务名称（可以改 —— 比如改成「复习 化学平衡」）</label>' +
+        '<input id="stop-name" type="text" value="' + S().esc(nameVal) + '" ' +
+        'style="width:100%;border:1px solid #e5e8ec;border-radius:8px;padding:7px 9px;font-size:13.5px" /></div>' +
         '<div class="field"><label>预计完成内容</label><p style="font-size:14px">' + S().esc(timer.planContent) + '</p></div>' +
         '<div class="field"><label>预计用时</label><p style="font-size:14px">' + S().fmtDur(planMin) + '</p></div>' +
         '<div class="field"><label>实际用时</label><p style="font-size:14px">' + S().fmtDur(actualMin) +
@@ -787,6 +800,10 @@
         '</div>';
     };
 
+    const grabName = function (m) {
+      const el = m && m.querySelector('#stop-name');
+      if (el && el.value.trim()) nameVal = el.value.trim();
+    };
     function reopen() {
       const modal = App.ui.openModal('✅ 任务完成确认', body(),
         '<button class="btn btn-primary" data-act="done">确认结束并保存</button>' +
@@ -794,17 +811,21 @@
         '<button class="btn" data-act="cancel">取消（不保存）</button>');
       App.ui.bindActions({
         'yes-done': function () {
+          grabName(modal);
           const n1 = modal.querySelector('#stop-note');
           if (n1 && n1.value.trim()) noteVal = n1.value.trim();
           doneFlag = true; App.ui.closeModal(); reopen();
         },
         'not-done': function () {
+          grabName(modal);
           const n2 = modal.querySelector('#stop-note');
           if (n2 && n2.value.trim()) noteVal = n2.value.trim();
           doneFlag = false; App.ui.closeModal(); reopen();
         },
         done: function () {
+          grabName(modal);
           const noteEl = modal.querySelector('#stop-note');
+          applyTimerRename(nameVal);                     // ✏️ 先改名（任务那条 + 队列/基础任务的源）
           saveSession(actualMin, doneFlag, noteEl ? noteEl.value.trim() : '');
           App.ui.closeModal();
         },
@@ -813,6 +834,24 @@
       });
     }
     reopen();
+  }
+
+  /** ✏️ v98：把这次计时的任务改名（改到"任务页那条 + 队列项 / 今天的基础任务条目"上） */
+  function applyTimerRename(newName) {
+    const v = String(newName == null ? '' : newName).trim();
+    if (!timer || !v || v === timer.taskText) return false;
+    const day = S().getDay(S().dateKey(new Date(timer.startedAt)));
+    let task = null;
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      (day.tasks[k] || []).forEach(function (t) { if (!task && t.id === timer.taskId) task = t; });
+    });
+    if (task && App.queue && App.queue.renameByTask) {
+      App.queue.renameByTask(task, v);          // 顺带改队列项 / 基础任务条目
+    } else if (task) {
+      task.text = v; S().save();
+    }
+    timer.taskText = v;                          // 时间轴 / 会话记录也跟着用新名字
+    return true;
   }
 
   function saveSession(actualMin, doneFlag, noteText) {
@@ -925,6 +964,7 @@
           if (group) { group.subs = group.subs || []; group.subs.push({ id: S().uid(), text: text, minutes: mins, points: pts, done: null }); }
           else { task.subs = task.subs || []; task.subs.push({ id: S().uid(), text: text, minutes: mins, points: pts, done: null }); }
         }
+        pushQ(task);
         S().save();
         App.ui.closeModal();
         App.tasks.renderAll();
@@ -1122,6 +1162,14 @@
   }
 
 
+  function pushQ(task) {
+    // 🧩 v93：队列副本上的增删改要回写队列项，否则下一次实体化会盖回来
+    try {
+      if (task && task.fromQueue && App.queue && App.queue.pushConfigFromCopy) {
+        App.queue.pushConfigFromCopy(task.id);
+      }
+    } catch (e) { /* 忽略 */ }
+  }
   function delSub(taskKey, taskId, subId, dayKey) {
     const day = S().getDay(dayKey || S().todayKey());
     const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
@@ -1132,6 +1180,7 @@
       trashPush({ kind: 'sub', dayKey: dayKey || S().todayKey(), col: taskKey, taskId: taskId, payload: JSON.parse(JSON.stringify(sub)) });
       const idx = subs.findIndex(function (s) { return s.id === subId; });
       if (idx >= 0) subs.splice(idx, 1);
+      pushQ(task);
       if (cdTimer && cdTimer.subId === subId) {
         cdTimer = null;
         stopTickIfIdle();
@@ -1286,6 +1335,7 @@
         task.groups = task.groups || [];
         const rwIn = m.querySelector('#g-reward');
         task.groups.push({ id: S().uid(), name: name, subs: [], rewardPoints: Math.max(0, +(rwIn ? rwIn.value : 0) || 0) });
+        pushQ(task);
         S().save(); App.ui.closeModal(); App.tasks.renderAll();
       },
       cancel: App.ui.closeModal
@@ -1306,6 +1356,7 @@
         g.name = m.querySelector('#g-name').value.trim() || g.name;
         const rwIn2 = m.querySelector('#g-reward');
         if (rwIn2) g.rewardPoints = Math.max(0, +rwIn2.value || 0);
+        pushQ(task);
         // ⚠️ 这里过去会 delete g.awarded（"已领过奖励"的标记）——
         //    结果改个组名就把标记清了 → 整组奖励会被重复发。v63 起不再清。
         S().save(); App.ui.closeModal(); App.tasks.renderAll();
@@ -1322,6 +1373,7 @@
       trashPush({ kind: 'group', dayKey: dayKey || S().todayKey(), col: taskKey, taskId: taskId, payload: JSON.parse(JSON.stringify(g)) });
       const idx = task.groups.findIndex(function (x) { return x.id === groupId; });
       task.groups.splice(idx, 1);
+      pushQ(task);
       if (cdTimer && cdTimer.groupId === groupId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
       S().save(); App.ui.toast('已删除 · 可到回收站恢复'); App.tasks.renderAll();
       dropLectureIfDeleted(taskId, null, groupId);
@@ -1338,6 +1390,7 @@
       trashPush({ kind: 'sub', dayKey: dayKey || S().todayKey(), col: taskKey, taskId: taskId, groupId: groupId, payload: JSON.parse(JSON.stringify(sub)) });
       const idx = subs.findIndex(function (s) { return s.id === subId; });
       subs.splice(idx, 1);
+      pushQ(task);
       if (cdTimer && cdTimer.groupId === groupId && cdTimer.subId === subId) { cdTimer = null; stopTickIfIdle(); showTimerBar(); }
       S().save(); App.ui.toast('已删除 · 可到回收站恢复'); App.tasks.renderAll();
       dropLectureIfDeleted(taskId, subId, null);
@@ -2264,10 +2317,18 @@
       // 🌱 v70：新知识任务 → 按遗忘曲线排当天复习（真正的弹窗等总结窗关掉后再来）
       if (srOn() && task.mode === SR_MODE_NEW && !task.sp) {
         srAfterTaskDone(task, listKey, dayKey);
+      } else if (srOn() && !task.sp) {
+        // 🌱 v93：没标「新知识」的任务不排复习时，**明确说一句**，别让用户以为是漏了
+        const mm = task.mode === 'review' ? '🔄 复习（只作标记）' : '⚪ 普通（不排复习）';
+        App.ui.toast('🌱 这条标的是「' + mm + '」，所以今天不排复习 —— 想排就点它的属性改成 📘 新知识', 4800);
       }
       // 📋 v82：这是队列实体化的副本 → 完成队列项、发队列分（下一条顶上等总结窗关掉）
       if (task.fromQueue && App.queue && App.queue.onTaskDone) {
         try { App.queue.onTaskDone(task); } catch (e) { /* 忽略 */ }
+      }
+      // 📌 v96：这是「今天的基础任务」的副本 → 那条也一起勾上
+      if (task.fromDaily && App.queue && App.queue.onDailyDone) {
+        try { App.queue.onDailyDone(task); } catch (e) { /* 忽略 */ }
       }
     } else {
       // 取消完成 → 撤销对应积分
@@ -2553,7 +2614,9 @@
     } catch (e) { /* 忽略 */ }
     const undoneAll = [];
     ['required', 'ideal', 'extra'].forEach(function (k) {
-      (day.tasks[k] || []).filter(function (t) { return !t.done; }).forEach(function (t) { undoneAll.push({ k: k, task: t }); });
+      // 📌 v99：副本（队列当前条 / 今天的基础任务）不算「今天没做完的任务」
+      (day.tasks[k] || []).filter(function (t) { return !t.done && !t.fromQueue; })
+        .forEach(function (t) { undoneAll.push({ k: k, task: t }); });
     });
     const undone = settings.extStrict ? undoneAll.filter(function (u) { return u.k !== 'extra'; }) : undoneAll.slice();
     const extItems = settings.extStrict ? undoneAll.filter(function (u) { return u.k === 'extra'; }) : [];
@@ -2774,7 +2837,9 @@
 
       const undoneAll = [];
       ['required', 'ideal', 'extra'].forEach(function (k) {
-        day.tasks[k].filter(function (t) { return !t.done; }).forEach(function (t) { undoneAll.push({ k: k, task: t }); });
+        // 📌 v99：副本不算「今天没做完的任务」
+        day.tasks[k].filter(function (t) { return !t.done && !t.fromQueue; })
+          .forEach(function (t) { undoneAll.push({ k: k, task: t }); });
       });
       // 🌱 严格模式：拓展不顺延（不进顺延名单），改挂账宽限
       const undone = settings.extStrict ? undoneAll.filter(function (u) { return u.k !== 'extra'; }) : undoneAll.slice();
@@ -2978,6 +3043,10 @@
     if (t.fromQueue) {
       return '<span class="fromqueue-tag" title="这条来自队列 —— 是当前正在做的那条。它不进「必须 0/x」的统计，做完会自动完成队列项、下一条顶上">📋 来自队列</span>';
     }
+    // 📌 v96：从「今天的基础任务」点 ▶ 开始做时生成的副本
+    if (t.fromDaily) {
+      return '<span class="fromqueue-tag" title="这条来自「今天的基础任务」—— 是你在队列页点 ▶ 开始做的那条。它不进「必须 0/x」的统计，做完会自动把基础任务勾上">📌 来自今天的基础</span>';
+    }
     if (t.carried) {
       return '<span class="carry-tag" title="昨天没做完，自动移到今天来的 \u2014\u2014 今天做完就不扣分">\u21A9 昨天移过来' +
         (t.carriedFailed ? ' \u00b7 已扣分' : '') + '</span>';
@@ -3066,6 +3135,9 @@
       pendingBarHTML() +                     // ★ v56：待办衔接（某题没标结果 / 接着做还是休息）
       COLS.map(function (col) {
       // 🧲 v85：队列实体化的副本不在三栏里渲染 —— 它住在队列页（那边有全套按钮）
+      // 📌 v99：但「今天的基础任务」点 ▶ 之后那份**要在这里显示** —— 用户说它可能是"安排到今天的复习任务"，
+      //        得能主题拆解、能听课、能加小任务/任务组，所以它跟今天别的任务一样住在这儿（带「📌 来自今天的基础」标签）。
+      //        （没点 ▶ 的基础任务不会生成副本，所以只有"真要动手做的"才会出现在这里。）
       const list = day.tasks[col.key].filter(function (t) { return !t.fromQueue; });
       const doneN = list.filter(function (t) { return t.done; }).length;
       const rows = list.map(function (t) { return taskRowHTML(col.key, t); }).join('');
@@ -4092,12 +4164,7 @@
       '<div class="field"><label>任务内容（支持多行，一行一条）</label>' +
       '<textarea id="add-text" placeholder=""></textarea></div>' +
       ptsField +
-      '<div class="field"><label>推进类型</label>' +
-      '<select id="add-kind" class="select-small">' +
-      '<option value="main">主线推进（直接推进课程，纯学习，计入「有效学习」）</option>' +
-      '<option value="aux">辅助推进（复盘 / 整理 / 写计划等，计入「辅助」）</option>' +
-      '<option value="long">长期推进（长期自我提升，如兴趣/技能，计入「扩展」）</option>' +
-      '</select></div>' +
+      // v93：不再让用户选「推进类型」（都按主线推进计，计入有效学习）—— 列表用法下这一栏没有意义
       '<div class="field"><label>🌱 知识类型（决定要不要按遗忘曲线复习）</label>' +
       '<select id="add-mode" class="select-small">' +
       '<option value="">普通任务（不排复习）</option>' +
@@ -4116,8 +4183,7 @@
         if (!lines.length) { App.ui.toast('请至少输入一条任务'); return; }
         const ptsInput = modal.querySelector('#add-points');
         const pts = ptsInput ? Math.max(0, +ptsInput.value || 0) : null;
-        const kind = modal.querySelector('#add-kind');
-        const kv = kind ? kind.value : 'main';
+        const kv = 'main';   // v93：推进类型不再让用户选
         const modeEl = modal.querySelector('#add-mode');
         const modeV = modeEl ? modeEl.value : '';
         const plan = readLecPlan(modal, 'add');
@@ -4151,18 +4217,7 @@
       '<textarea id="edit-text">' + S().esc(task.text) + '</textarea></div>' +
       ptsField +
       '<div class="field-row">' +
-      '<div class="field"><label>任务分类（可移到别栏）</label>' +
-      '<select id="edit-list" class="select-small">' +
-      '<option value="required"' + (listKey === 'required' ? ' selected' : '') + '>必须完成任务</option>' +
-      '<option value="ideal"' + (listKey === 'ideal' ? ' selected' : '') + '>理想任务（选做）</option>' +
-      '<option value="extra"' + (listKey === 'extra' ? ' selected' : '') + '>长期拓展任务</option>' +
-      '</select></div>' +
-      '<div class="field"><label>推进类型</label>' +
-      '<select id="edit-kind" class="select-small">' +
-      '<option value="main"' + (!task.aux && !task.long ? ' selected' : '') + '>主线推进（纯学习）</option>' +
-      '<option value="aux"' + (task.aux ? ' selected' : '') + '>辅助推进（复盘/整理等）</option>' +
-      '<option value="long"' + (task.long ? ' selected' : '') + '>长期推进（自我提升，计入「扩展」）</option>' +
-      '</select></div>' +
+      // v93：去掉「任务分类（可移到别栏）」—— 用队列/列表的人不需要在弹窗里搬栏
       '<div class="field"><label>🌱 知识类型</label>' +
       '<select id="edit-mode" class="select-small">' +
       '<option value=""' + (!task.mode ? ' selected' : '') + '>普通任务（不排复习）</option>' +
@@ -4190,11 +4245,7 @@
           const mv = modeEl2.value;
           if (mv) task.mode = mv; else delete task.mode;
         }
-        const kindEl = modal.querySelector('#edit-kind');
-        if (kindEl) {
-          task.aux = kindEl.value === 'aux';
-          task.long = kindEl.value === 'long';
-        }
+        // v93：推进类型不再让用户选（保留原来的 aux/long 不动作）
         // 🎧 听课预设：勾了就存下来，取消勾选就把预设删掉（回到"开课时再配"）
         if (modal.querySelector('#edit-lec-on')) {
           const plan = readLecPlan(modal, 'edit');
@@ -5093,6 +5144,15 @@
   }
 
   /** 今天跑不满 3 轮 → 让用户自己决定 */
+  /** 日期字符串 + N 天 */
+  function srShiftDay(key, n) {
+    const p = String(key || '').split('-');
+    const d = new Date(+p[0], (+p[1]) - 1, +p[2]);
+    d.setDate(d.getDate() + n);
+    const z = function (x) { return (x < 10 ? '0' : '') + x; };
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+  }
+
   function srShortModal(q) {
     const task = srFindTask(q.id);
     if (!task) return;
@@ -5106,7 +5166,8 @@
     const m = App.ui.openModal('🌱 今天排不满 3 轮，怎么办？', body +
       '<div class="btn-row">' +
       '<button class="btn btn-small btn-primary" data-act="fit">只排今天跑得完的 ' + q.fit.length + ' 轮</button>' +
-      '<button class="btn btn-small" data-act="all">照排 3 轮</button>' +
+      '<button class="btn btn-small" data-act="rest">今天排 ' + q.fit.length + ' 轮，剩下的安排到某天</button>' +
+      '<button class="btn btn-small" data-act="all">照排 3 轮（最后一轮会到 ' + srHHMM(last.due) + '）</button>' +
       '<button class="btn btn-small" data-act="none">今天不排了</button>' +
       '</div>');
     const setSp = function (plan, msg) {
@@ -5119,6 +5180,53 @@
     App.ui.bindActions({
       fit: function () { setSp(q.fit, '🌱 已排 ' + q.fit.length + ' 轮：' + q.fit.map(function (x) { return srHHMM(x.due); }).join(' / ')); },
       all: function () { setSp(q.all, '🌱 已照排 3 轮，最后一轮到 ' + srHHMM(last.due)); },
+      // 📅 v98：今天排不下的那几轮 → 挑一天接着复习（用户：「完成前面几轮之后，要加一个安排到哪一天的选项」）
+      rest: function () {
+        const leftN = q.all.length - q.fit.length;
+        const base = q.dayKey || S().todayKey();
+        let pickKey = srShiftDay(base, 1);
+        let nm = task.text + ' · 复习';
+        const mm = App.ui.openModal('📅 今天 ' + q.fit.length + ' 轮，剩下 ' + leftN + ' 轮安排到哪天？',
+          '<p class="rev-hint">今天先跑：<b>' + q.fit.map(function (x) { return srHHMM(x.due); }).join(' · ') + '</b><br>' +
+          '剩下的 <b>' + leftN + '</b> 轮今天跑不完（会到 ' + srHHMM(last.due) + ' 之后），挑一天接着复习 —— ' +
+          '那天它会出现在<b>日历</b>和任务清单里，做的时候再按 📘/🔄 走就行。</p>' +
+          '<div class="field"><label>哪一天</label>' +
+          '<input type="date" id="sr-rest-date" value="' + pickKey + '" style="width:180px" /></div>' +
+          '<div class="field"><label>名称（可以改）</label>' +
+          '<input type="text" id="sr-rest-name" value="' + S().esc(nm) + '" style="width:100%" /></div>',
+          '<button class="btn btn-primary" data-act="sr-rest-ok">✔ 就这么安排</button>' +
+          '<button class="btn" data-act="sr-rest-cancel">取消</button>');
+        const dtEl = mm.querySelector('#sr-rest-date');
+        if (dtEl) dtEl.onchange = function () { pickKey = dtEl.value || pickKey; };
+        App.ui.bindActions({
+          'sr-rest-ok': function () {
+            const nmEl = mm.querySelector('#sr-rest-name');
+            nm = (nmEl && nmEl.value.trim()) ? nmEl.value.trim() : nm;
+            if (pickKey < S().todayKey()) { App.ui.toast('那一天已经过去了，往后挑一天'); return; }
+            if (!App.calendar || !App.calendar.copyTaskToDay) { App.ui.toast('日历模块没加载，先刷新一下'); return; }
+            const okN = App.calendar.copyTaskToDay({ text: nm }, q.listKey || 'required', pickKey, '', false, 'required');
+            if (!okN) { App.ui.toast('那一天已经有同名任务了，改个名字或换一天'); return; }
+            // 给安排过去的那条标成「🔄 复习」，到那天一眼看出是复习
+            try {
+              const d2 = S().getDay(pickKey);
+              let hit = null;
+              ['required', 'ideal', 'extra'].forEach(function (k) {
+                (d2.tasks[k] || []).forEach(function (t) { if (!hit && t.text === nm) hit = t; });
+              });
+              if (hit) { hit.mode = SR_MODE_REV; hit.srFrom = task.id; }
+            } catch (e) { /* 忽略 */ }
+            task.sp = { planned: q.fit, dl: q.dl, at: Date.now(), bonus: false };
+            S().save();
+            App.ui.closeModal();
+            App.tasks.renderAll();
+            App.ui.toast('🌱 今天 ' + q.fit.length + ' 轮（' + q.fit.map(function (x) { return srHHMM(x.due); }).join(' / ') +
+              '）· 📅 「' + nm + '」已安排到 ' + pickKey, 6000);
+            srPendKp = { id: q.id, listKey: q.listKey, dayKey: q.dayKey };
+            setTimeout(srRunPending, 320);
+          },
+          'sr-rest-cancel': function () { App.ui.closeModal(); }
+        });
+      },
       none: function () {
         App.ui.closeModal();
         srPendKp = { id: q.id, listKey: q.listKey, dayKey: q.dayKey };
@@ -5644,6 +5752,7 @@
     srFindTask: srFindTask, srShortModal: srShortModal, srOpenReview: srOpenReview,
     srRenderKps: srRenderKps, srSaveKps: srSaveKps, srPaintKps: srPaintKps,
     getTimer: function () { return timer; },
+    srShortModal: function (q) { srShortModal(q); },
     getCdTimer: function () { return cdTimer; },
     startSmallRest: startSmallRest, endSmallRest: endSmallRest,
     isRunning: isRunning, elapsedMs: elapsedMs,

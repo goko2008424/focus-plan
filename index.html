@@ -6,12 +6,12 @@
   <script>
     /* 版本号。v67 起提到 <head>：设置页等模块渲染得比页尾的 build-check 早，
        以前写在页尾，渲染时读到 undefined 就显示成 "v?"。 */
-    window.__BUILD = 91;
+    window.__BUILD = 99;
   </script>
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=91" />
+  <link rel="stylesheet" href="css/style.css?v=99" />
   <style id="pip-style">
     /* ===== 🪟 只在小窗（Document Picture-in-Picture）里生效：让悬浮窗铺满整个小窗 ===== */
     html.pip, html.pip body { background: var(--bg, #f5f7fa); margin: 0; padding: 0; }
@@ -38,6 +38,8 @@
       <nav id="main-nav">
         <button class="nav-btn active" data-view="tasks">任务</button>
         <button class="nav-btn" data-view="queue">📋 队列</button>
+        <button class="nav-btn" data-view="cards" title="听课时给自己出的设问卡；正面问自己、反面是答案">🃏 卡片</button>
+        <button class="nav-btn" data-view="checkin" title="每天要养成的小习惯：喝水、保健品、运动、几点休息…打卡得积分">✅ 打卡</button>
         <button class="nav-btn" data-view="calendar">📅 日历</button>
         <button class="nav-btn" data-view="notes" id="nav-notes" style="display:none" title="本机网课笔记工坊（仅限装有笔记服务的电脑）">🎙 笔记</button>
         <button class="nav-btn" data-view="sport">🏃 运动</button>
@@ -143,6 +145,14 @@
     </section>
 
     <!-- 📋 队列视图（v77）：按顺序做，没有完成率 -->
+    <section id="view-cards" class="view">
+      <div id="cards-view"></div>
+    </section>
+
+    <section id="view-checkin" class="view">
+      <div id="checkin-view"></div>
+    </section>
+
     <section id="view-queue" class="view">
       <div id="queue-view"></div>
     </section>
@@ -273,21 +283,22 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=91"></script>
-  <script src="js/ui.js?v=91"></script>
-  <script src="js/tasks.js?v=91"></script>
-  <script src="js/timeline.js?v=91"></script>
-  <script src="js/stats.js?v=91"></script>
-  <script src="js/settings.js?v=91"></script>
-  <script src="js/sport.js?v=91"></script>
-  <script src="js/lecture.js?v=91"></script>
-  <script src="js/calendar.js?v=91"></script>
-  <script src="js/link.js?v=91"></script>
-  <script src="js/demo.js?v=91"></script>
-  <script src="js/queue.js?v=91"></script>
-  <script src="js/milestones.js?v=91"></script>
-  <script src="js/memcards.js?v=91"></script>
-  <script src="js/app.js?v=91"></script>
+  <script src="js/store.js?v=99"></script>
+  <script src="js/ui.js?v=99"></script>
+  <script src="js/tasks.js?v=99"></script>
+  <script src="js/timeline.js?v=99"></script>
+  <script src="js/stats.js?v=99"></script>
+  <script src="js/settings.js?v=99"></script>
+  <script src="js/sport.js?v=99"></script>
+  <script src="js/lecture.js?v=99"></script>
+  <script src="js/calendar.js?v=99"></script>
+  <script src="js/link.js?v=99"></script>
+  <script src="js/demo.js?v=99"></script>
+  <script src="js/queue.js?v=99"></script>
+  <script src="js/milestones.js?v=99"></script>
+  <script src="js/memcards.js?v=99"></script>
+  <script src="js/checkin.js?v=99"></script>
+  <script src="js/app.js?v=99"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
@@ -394,28 +405,29 @@
    有文件没传上去 → 顶部弹红条点名，别再靠猜"为什么改了没生效"。
    控制台可用：__checkBuild() 重查 / __checkBuild(true) 强制绕过缓存重查 */
 window.__BUILD_SIZES = {
-  "css/style.css": 60069,
-  "js/app.js": 38735,
-  "js/memcards.js": 25608,
+  "css/style.css": 64692,
+  "js/app.js": 43156,
+  "js/memcards.js": 54100,
+  "js/checkin.js": 10971,
   "js/marked.min.js": 35481,
   "js/katex.min.js": 275415,
   "js/mhchem.min.js": 33731,
   "css/katex.css": 773106,
-  "js/calendar.js": 37719,
+  "js/calendar.js": 38414,
   "js/demo.js": 8261,
   "js/lecture.js": 42183,
   "js/link.js": 20240,
   "js/milestones.js": 10183,
-  "js/queue.js": 60882,
+  "js/queue.js": 77109,
   "js/settings.js": 28992,
   "js/sport.js": 25754,
   "js/stats.js": 24805,
-  "js/store.js": 18088,
-  "js/tasks.js": 315654,
+  "js/store.js": 18136,
+  "js/tasks.js": 322769,
   "js/timeline.js": 19744,
   "js/ui.js": 12061,
-  "sw.js": 3599,
-  "version.html": 66029
+  "sw.js": 3621,
+  "version.html": 74032
 };
 (function () {
   var S = window.__BUILD_SIZES;
