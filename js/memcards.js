@@ -57,6 +57,7 @@
       taskId: o.taskId || null,
       subId: o.subId || null,
       course: o.course || o.name || '',
+      subject: o.subject || '',
       dayKey: o.dayKey || S().todayKey(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -68,6 +69,90 @@
   }
 
   function touch(col) { col.updatedAt = new Date().toISOString(); save(); }
+
+  /* ---------- 🏷 v101：学科（高中九科打底，用户自己加的会一直留着） ---------- */
+  const SUBJECTS_DEF = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
+  const NO_SUB = '（未分学科）';
+
+  function subjects() {
+    const d = S().data() || {};
+    return (d.subjects && d.subjects.length) ? d.subjects.slice() : SUBJECTS_DEF.slice();
+  }
+
+  function addSubject(name) {
+    const v = String(name || '').trim();
+    if (!v) return;
+    const d = S().data();
+    if (!d.subjects) d.subjects = SUBJECTS_DEF.slice();
+    if (d.subjects.indexOf(v) < 0) { d.subjects.push(v); save(); }
+  }
+
+  function subjectOf(col) { return (col && col.subject) || ''; }
+
+  /** 📅 v101：把「整个合集」或「某一张卡」排到日历某一天 —— 那天出现一条 🔄 复习 任务，
+   *  点它右边的 🃏 直接翻卡。用户：「我添加进去的每个知识卡都要支持添加到日历」。 */
+  function schedCardModal(col, cards) {
+    const isOne = !!(cards && cards.length === 1);
+    const nmDefault = isOne
+      ? ('🃏 ' + (oneLine(cards[0].front).slice(0, 16) || '（看图那张）'))
+      : ('🃏 复习 · ' + col.name);
+    let pickKey = S().todayKey();
+    const mm = App.ui.openModal('📅 安排到某一天复习',
+      '<p class="hint" style="margin-top:0">到那天，日历和任务页里会多一条任务 —— ' +
+      '点它右边的 <b>🃏</b> 就直接进翻卡自测。<br>本次要排的是：<b>' +
+      (isOne ? '这一张' : '整个合集（' + (col.cards || []).length + ' 张）') + '</b></p>' +
+      '<div class="field"><label>哪一天</label>' +
+      '<input type="date" id="mc-sch-date" value="' + pickKey + '" style="width:180px" /></div>' +
+      '<div class="field"><label>那天它叫什么（可以改，比如「复习 化学平衡」）</label>' +
+      '<input type="text" id="mc-sch-name" value="' + esc(nmDefault) + '" style="width:100%" /></div>',
+      '<button class="btn btn-primary" data-act="mc-sch-ok">✔ 就排这天</button>' +
+      '<button class="btn" data-act="mc-sch-cancel">取消</button>');
+    const dt = mm.querySelector('#mc-sch-date');
+    if (dt) dt.onchange = function () { pickKey = dt.value || pickKey; };
+    App.ui.bindActions({
+      'mc-sch-ok': function () {
+        // ⚠️ 别只依赖 onchange —— 直接改 input.value 是不触发 change 的（2026-09-22 被测试抓出来）
+        if (dt && dt.value) pickKey = dt.value;
+        const nmEl = mm.querySelector('#mc-sch-name');
+        const nm = (nmEl && nmEl.value.trim()) ? nmEl.value.trim() : nmDefault;
+        if (pickKey < S().todayKey()) { App.ui.toast('那天已经过去了，往后挑一天'); return; }
+        if (!App.calendar || !App.calendar.copyTaskToDay) { App.ui.toast('日历模块没加载，先刷新一下'); return; }
+        const okN = App.calendar.copyTaskToDay({ text: nm }, 'required', pickKey, '', false, 'required');
+        if (!okN) { App.ui.toast('那天已经有同名任务了 —— 改个名字或换一天'); return; }
+        // 给它标成「🔄 复习」，并记住它对应哪几张卡
+        try {
+          const d2 = S().getDay(pickKey);
+          let hit = null;
+          ['required', 'ideal', 'extra'].forEach(function (k) {
+            (d2.tasks[k] || []).forEach(function (t) { if (!hit && t.text === nm) hit = t; });
+          });
+          if (hit) {
+            hit.mode = 'review';
+            hit.mcRef = {
+              colId: col.id,
+              cardIds: isOne ? [cards[0].id] : null,
+              n: isOne ? 1 : (col.cards || []).length
+            };
+          }
+        } catch (e) { /* 忽略 */ }
+        S().save();
+        App.ui.closeModal();
+        try { App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+        try { renderPage(); } catch (e) { /* 忽略 */ }
+        App.ui.toast('📅 已排到 ' + pickKey + '：' + nm.slice(0, 16) + ' —— 那天点 🃏 直接翻卡', 5200);
+      },
+      'mc-sch-cancel': function () { App.ui.closeModal(); }
+    });
+  }
+
+  /** 从任务行点 🃏 进来：如果那条任务记着「对应哪几张卡」，就直接开那个合集 */
+  function openRef(ref) {
+    if (!ref || !ref.colId) return false;
+    const col = find(ref.colId);
+    if (!col) { App.ui.toast('这套卡不在了（合集被删过）'); return false; }
+    openCol(col.id, { only: ref.cardIds || null });
+    return true;
+  }
 
   /* ---------- 📷 照片（v95）：正面/反面都能贴图 ----------
    * 为什么不把图直接塞进 data：localStorage 只有 ~5MB，两三张手机照片就爆了。
@@ -156,24 +241,29 @@
     fr.onerror = function () { cb('', 0, 0); };
     fr.readAsDataURL(file);
   }
-  /** 一批 File → 存好 → 回调拿 id 数组 */
+  /** 一批 File → 存好 → 回调 (id 数组, 失败的张数)
+   *  ⚠️ v103：**不要**再用 `f.type` 过滤 —— 真机上「从相机导入 / HEIC / 从聊天记录另存的图」
+   *  经常给一个**空的 type**，一过滤就被默默丢掉，表现就是「点选了一张图，什么都没发生」
+   *  （用户 2026-09-22 报的）。改成全都试着解码，解不出来自然淘汰，并把失败数报回去。 */
   function takeImages(files, cb) {
     const arr = [];
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      if (!f || !/^image\//.test(f.type || '')) continue;
+      if (!f) continue;
+      const looksImg = /^image\//.test(f.type || '') || /\.(png|jpe?g|webp|gif|bmp|heic|heif|avif)$/i.test(f.name || '');
+      if (!looksImg) continue;                       // 明显不是图的（比如误选了 PDF）才跳过
       arr.push(f);
     }
-    if (!arr.length) { cb([]); return; }
+    if (!arr.length) { cb([], 0); return; }
     const out = [];
-    let left = arr.length;
+    let left = arr.length, bad = 0;
     const done = function () {
       left--;
-      if (left <= 0) cb(out);
+      if (left <= 0) cb(out, bad);
     };
     arr.forEach(function (f) {
       compressImage(f, function (dataUrl) {
-        if (!dataUrl) { done(); return; }
+        if (!dataUrl) { bad++; done(); return; }
         const id = 'p' + S().uid().slice(0, 8) + Date.now().toString(36).slice(-4);
         phPut(id, dataUrl);
         out.push(id);
@@ -254,7 +344,7 @@
     const addCss = function () {
       if (document.getElementById('katex-css')) return;
       const l = document.createElement('link');
-      l.id = 'katex-css'; l.rel = 'stylesheet'; l.href = 'css/katex.css?v=99';
+      l.id = 'katex-css'; l.rel = 'stylesheet'; l.href = 'css/katex.css?v=104';
       document.head.appendChild(l);
     };
     const load = function (src) {
@@ -267,10 +357,10 @@
       });
     };
     addCss();
-    load('js/marked.min.js?v=99').then(function () {
-      return load('js/katex.min.js?v=99');
+    load('js/marked.min.js?v=104').then(function () {
+      return load('js/katex.min.js?v=104');
     }).then(function () {
-      return load('js/mhchem.min.js?v=99');
+      return load('js/mhchem.min.js?v=104');
     }).then(done, done);
   }
 
@@ -629,6 +719,23 @@
       return;
     }
 
+    if (state.mode === 'subject') {
+      const now = subjectOf(col);
+      box.innerHTML =
+        '<div class="mc-lab">这门课属于哪个学科？（卡片页会按学科分组，以后多了也好找）</div>' +
+        '<div class="mc-subgrid">' +
+        subjects().map(function (s) {
+          return '<button class="mc-subpick' + (s === now ? ' on' : '') + '" data-act="mc-dosubject" data-v="' + esc(s) + '">' + esc(s) + '</button>';
+        }).join('') +
+        '<button class="mc-subpick' + (now ? '' : ' on') + '" data-act="mc-dosubject" data-v="">（先不分）</button>' +
+        '</div>' +
+        '<div class="mc-row" style="margin-top:12px">' +
+        '<input class="mc-inp" id="mc-newsubject" placeholder="也可以自己加一个学科，比如「信息技术」" style="flex:1" />' +
+        '<button class="btn btn-small" data-act="mc-addsubject">＋ 新增</button></div>' +
+        '<div class="mc-row" style="margin-top:8px"><button class="btn" data-act="mc-backbox">← 返回</button></div>';
+      return;
+    }
+
     if (state.mode === 'rename') {
       box.innerHTML =
         '<div class="mc-lab">合集名字（以后认它就靠这个，写清楚一点）</div>' +
@@ -644,6 +751,7 @@
       return '<div class="mc-card" data-id="' + c.id + '">' +
         '<div class="mc-card-top"><span class="mc-idx">' + (i + 1) + '</span>' +
         '<span class="mc-front" data-act="mc-toggle">' + (faceHTML(c) || '<span class="hint" style="margin:0">（只有图 / 空）</span>') + '</span>' +
+        '<button class="mc-ib" data-act="mc-card-sched" data-id="' + c.id + '" title="把这一张排到某天复习">📅</button>' +
         '<button class="mc-ib" data-act="mc-card-ed" data-id="' + c.id + '" title="改">✏️</button>' +
         '<button class="mc-ib" data-act="mc-card-del" data-id="' + c.id + '" title="删">🗑</button></div>' +
         (state.openId === c.id ? '<div class="mc-back">' + (backHTML(c) || '<span class="hint" style="margin:0">（反面还没写）</span>') + '</div>' : '') +
@@ -662,11 +770,15 @@
 
     box.innerHTML =
       '<div class="mc-head">' +
-      '<div><b>' + esc(col.name) + '</b> <span class="mc-cnt">' + n + ' 张</span></div>' +
+      '<div><b>' + esc(col.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
+      '<button class="mc-tag" data-act="mc-subject" title="改学科">' +
+      (col.subject ? '🏷 ' + esc(col.subject) : '🏷 未分学科') + '</button></div>' +
       '<div class="mc-sub">' + (col.course ? '来自：' + esc(col.course) + ' · ' : '') + (col.dayKey || '') +
       '　·　卡片只存在你本机，<b>复习日期你自己排</b></div>' +
       '<div class="mc-acts">' +
-      '<button class="btn btn-small btn-primary" data-act="mc-review"' + (n ? '' : ' disabled') + '>🃏 开始复习</button>' +
+      '<button class="btn btn-small btn-primary" data-act="mc-review"' + (n ? '' : ' disabled') + '>🃏 开始复习' +
+      (state.only && state.only.length ? '（只这 ' + state.only.length + ' 张）' : '') + '</button>' +
+      '<button class="btn btn-small" data-act="mc-sched"' + (n ? '' : ' disabled') + ' title="整个合集排到某一天复习">📅 安排复习</button>' +
       '<button class="btn btn-small" data-act="mc-import">📋 批量粘贴导入</button>' +
       '<button class="btn btn-small" data-act="mc-rename">✏️ 改名字</button>' +
       '</div></div>' +
@@ -711,6 +823,13 @@
       const box = cur.querySelector('[data-thumbs="' + side + '"]');
       if (box) box.innerHTML = draftThumbs(side);
     });
+    // 🔔 v104：贴了图就把「＋ 加这张」写清楚（带几张图）并跳一跳 —— 别让人以为贴完就存下了
+    const addBtn = cur.querySelector('[data-act="mc-add"]');
+    if (addBtn) {
+      const df = (state.draft.front || []).length + (state.draft.back || []).length;
+      addBtn.textContent = df ? ('＋ 加这张（带 ' + df + ' 张图）') : '＋ 加这张';
+      addBtn.classList.toggle('mc-add-ready', df > 0);
+    }
   }
   /** 点图看大图（覆盖层，点哪都能关） */
   function zoomImg(id) {
@@ -729,20 +848,33 @@
     return (f === 'front' || f === 'back' || f === 'ef' || f === 'eb') ? f : '';
   }
   function addPicked(side, files) {
-    takeImages(files, function (ids) {
-      if (!ids.length) { App.ui.toast('那张图读不出来（换张试试）'); return; }
+    const needSave = (side === 'ef' || side === 'eb');
+    takeImages(files, function (ids, bad) {
+      if (!ids.length) {
+        App.ui.toast(bad
+          ? '😵 这张图浏览器解不开 —— 苹果的 HEIC 照片常这样：先在相册里导出成 JPG 再选，或者直接用截图复制粘贴'
+          : '没读到图片文件（选一张 png / jpg 试试）', 5200);
+        return;
+      }
       state.draft[side] = (state.draft[side] || []).concat(ids);
       paintThumbs();
-      App.ui.toast('📷 贴了 ' + ids.length + ' 张图' + (side === 'ef' || side === 'eb' ? '（记得点保存）' : ''));
+      App.ui.toast('📷 贴了 ' + ids.length + ' 张图' +
+        (bad ? '（有 ' + bad + ' 张解不开，跳过了）' : '') +
+        (needSave ? ' —— 记得点「保存」' : ' —— 记得点「＋ 加这张」才算存进卡里'), 4600);
     });
   }
   function onFilePick(e) {
     const t = e.target;
     if (!t || t.type !== 'file') return;
-    const files = t.files;
+    // 🔴 v103 真凶：`input.files` 是**活的 FileList** —— 先把 `t.value = ''` 执行了，
+    //    那个 FileList 会被一起清空，于是 `files.length` 变 0、**选完图什么都没发生**
+    //    （这也解释了为什么"复制粘贴能用、选文件不行"：粘贴走 onPaste，不经过这里）。
+    //    所以必须**先把文件拷成普通数组**，再清 value。
+    const files = [];
+    for (let i = 0; i < (t.files || []).length; i++) files.push(t.files[i]);
     const side = (state && state.pickSide) || 'front';
     try { t.value = ''; } catch (err) { /* 忽略 */ }
-    if (files && files.length) addPicked(side, files);
+    if (files.length) addPicked(side, files);
   }
   function onPaste(e) {
     const cd = e.clipboardData;
@@ -762,13 +894,79 @@
   }
 
   /* ---------- 事件 ---------- */
+  /** 🃏 把「加卡区」现在的文字 + 草稿图存成一张卡
+   *  （点「＋ 加这张」和关窗时点「加进卡里」共用同一套） */
+  function addCardFromDraft() {
+    const col = state && state.col;
+    if (!cur || !col) return false;
+    const f = cur.querySelector('[data-f="front"]');
+    const bk = cur.querySelector('[data-f="back"]');
+    const fv = f ? (f.value || '').trim() : '';
+    const bv = bk ? (bk.value || '').trim() : '';
+    const fi = (state.draft.front || []).slice();
+    const bi = (state.draft.back || []).slice();
+    if (!fv && !fi.length) { App.ui.toast('正面写一句，或者贴张图 📷'); return false; }
+    const nc = { id: S().uid(), front: fv, back: bv, at: Date.now() };
+    if (fi.length) nc.frontImgs = fi;
+    if (bi.length) nc.backImgs = bi;
+    col.cards.push(nc);
+    touch(col);
+    if (f) f.value = '';
+    if (bk) bk.value = '';
+    state.draft.front = []; state.draft.back = [];
+    state.closeWarned = false;
+    state.focusAdd = true;
+    paint();
+    afterChange();
+    App.ui.toast('🃏 加好了（共 ' + col.cards.length + ' 张）');
+    return true;
+  }
+
+  /** 🚪 v104：关窗前的守门人 —— 加卡区还有没保存的东西就别悄悄关掉
+   *  （用户 2026-09-22：「我明明已经添加两张照片了，但它却显示 0 张」——
+   *   他贴完图直接关了窗，草稿只在内存里，一关就没了） */
+  function draftPending() {
+    const df = ((state.draft.front || []).length + (state.draft.back || []).length);
+    const fEl = cur && cur.querySelector('[data-f="front"]');
+    const bEl = cur && cur.querySelector('[data-f="back"]');
+    const hasText = !!((fEl && fEl.value.trim()) || (bEl && bEl.value.trim()));
+    return { imgs: df, text: hasText, any: (df > 0 || hasText) };
+  }
+
+  function tryClose() {
+    if (!cur) { App.ui.closeModal(); return; }
+    const p = draftPending();
+    if (p.any && !state.closeWarned) {
+      state.closeWarned = true;          // 第二次点「关闭」就直接关（不啰嗦）
+      const old = cur.querySelector('.mc-closewarn');
+      if (old) old.remove();
+      const box = cur.querySelector('.mc-body') || cur;
+      const tip = document.createElement('div');
+      tip.className = 'mc-closewarn';
+      tip.innerHTML = '⚠️ 还有 ' +
+        (p.imgs ? '<b>' + p.imgs + ' 张刚贴的图</b>' : '') +
+        (p.imgs && p.text ? ' 和 ' : '') +
+        (p.text ? '刚写的内容' : '') +
+        ' 没加进卡里 —— 现在加吗？' +
+        '<span class="mc-closewarn-acts">' +
+        '<button class="btn btn-small btn-primary" data-act="mc-save-now" type="button">＋ 加进卡里</button>' +
+        '<button class="btn btn-small" data-act="mc-drop-draft" type="button">不要了，关掉</button>' +
+        '<button class="btn btn-small" data-act="mc-keep" type="button">留在这儿</button>' +
+        '</span>';
+      box.insertBefore(tip, box.firstChild);
+      try { tip.scrollIntoView({ block: 'nearest' }); } catch (e) { /* 忽略 */ }
+      return;
+    }
+    App.ui.closeModal();
+  }
+
   function onClick(e) {
     const b = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!b || !state || !cur) return;
     const act = b.dataset.act;
     const col = state.col;
 
-    if (act === 'mc-close') { App.ui.closeModal(); return; }
+    if (act === 'mc-close') { tryClose(); return; }
     if (act === 'mc-backbox') { state.mode = 'box'; state.flipped = false; state.editId = null; paint(); return; }
     if (act === 'mc-rename') { state.mode = 'rename'; paint(); return; }
     if (act === 'mc-dorename') {
@@ -791,31 +989,46 @@
       afterChange();
       return;
     }
-    if (act === 'mc-add') {
-      const f = cur.querySelector('[data-f="front"]');
-      const bk = cur.querySelector('[data-f="back"]');
-      const fv = f ? (f.value || '').trim() : '';
-      const bv = bk ? (bk.value || '').trim() : '';
-      const fi = (state.draft.front || []).slice();
-      const bi = (state.draft.back || []).slice();
-      if (!fv && !fi.length) { App.ui.toast('正面写一句，或者贴张图 📷'); return; }
-      const nc = { id: S().uid(), front: fv, back: bv, at: Date.now() };
-      if (fi.length) nc.frontImgs = fi;
-      if (bi.length) nc.backImgs = bi;
-      col.cards.push(nc);
-      touch(col);
-      if (f) f.value = ''; if (bk) bk.value = '';
-      state.draft.front = []; state.draft.back = [];
-      state.focusAdd = true;
-      paint();
-      afterChange();
-      App.ui.toast('🃏 加好了（共 ' + col.cards.length + ' 张）');
+    if (act === 'mc-add') { addCardFromDraft(); return; }
+    if (act === 'mc-save-now') { if (addCardFromDraft()) App.ui.closeModal(); return; }
+    if (act === 'mc-drop-draft') { App.ui.closeModal(); return; }
+    if (act === 'mc-keep') {
+      state.closeWarned = false;
+      const tip = cur.querySelector('.mc-closewarn');
+      if (tip) tip.remove();
       return;
     }
     if (act === 'mc-review') {
       state.mode = 'review'; state.idx = 0; state.flipped = false;
-      state.order = (col.cards || []).map(function (c) { return c.id; });
+      const all = (col.cards || []);
+      const only = state.only;
+      const use = (only && only.length) ? all.filter(function (c) { return only.indexOf(c.id) >= 0; }) : all;
+      state.order = use.map(function (c) { return c.id; });
       paint(); return;
+    }
+    if (act === 'mc-subject') { state.mode = 'subject'; paint(); return; }
+    if (act === 'mc-dosubject') {
+      const v = b.dataset.v || '';
+      col.subject = v; touch(col);
+      state.mode = 'box'; paint();
+      App.ui.toast(v ? '🏷 归到「' + v + '」了' : '先不分学科');
+      return;
+    }
+    if (act === 'mc-addsubject') {
+      const el = cur.querySelector('#mc-newsubject');
+      const v = el ? (el.value || '').trim() : '';
+      if (!v) { App.ui.toast('先写个学科名'); return; }
+      addSubject(v);
+      col.subject = v; touch(col);
+      state.mode = 'box'; paint();
+      App.ui.toast('🏷 新增学科「' + v + '」，以后都能选它');
+      return;
+    }
+    if (act === 'mc-sched') { schedCardModal(col, null); return; }
+    if (act === 'mc-card-sched') {
+      const c = (col.cards || []).filter(function (x) { return x.id === b.dataset.id; })[0];
+      if (c) schedCardModal(col, [c]);
+      return;
     }
     if (act === 'mc-shuffle') {
       const o = state.order.slice();
@@ -836,8 +1049,20 @@
     if (act === 'mc-export') { App.ui.toast('导出已经去掉啦 —— 卡片就在这儿复习就好', 3600); return; }
     if (act === 'mc-pick') {
       state.pickSide = b.dataset.side || 'front';
-      const fi = cur.querySelector('.mc-file');
-      if (fi) fi.click();
+      let fi = cur.querySelector('.mc-file');
+      if (!fi) {
+        // 🛟 v103 兜底：正常情况下 input 就在视图里；万一没有（视图切换/模板变动），
+        //   现造一个再点 —— 不然用户看到的就是「点了没反应」
+        fi = document.createElement('input');
+        fi.type = 'file';
+        fi.accept = 'image/*';
+        fi.multiple = true;
+        fi.className = 'mc-file';
+        fi.style.display = 'none';
+        fi.addEventListener('change', onFilePick);
+        cur.appendChild(fi);
+      }
+      try { fi.click(); } catch (e) { App.ui.toast('这个浏览器不让选文件，试试直接复制图片粘贴'); }
       return;
     }
     if (act === 'mc-unpick') {
@@ -898,7 +1123,7 @@
   }
   function onKey(e) {
     if (!state) return;
-    if (e.key === 'Escape') { App.ui.closeModal(); return; }
+    if (e.key === 'Escape') { tryClose(); return; }
     const typing = e.target && /textarea|input/i.test(e.target.tagName);
     if (state.mode !== 'review' || typing) return;
     if (e.key === ' ') { e.preventDefault(); state.flipped = !state.flipped; paint(); }
@@ -918,6 +1143,7 @@
     state = {
       col: col, mode: 'box', idx: 0, flipped: false, order: [], openId: null, editId: null,
       focusAdd: !!(opts && opts.focusAdd),
+      only: (opts && opts.only) || null,          // 📅 从"排到某天的复习任务"进来时，只复习这几张
       draft: { front: [], back: [], ef: [], eb: [] },   // 📷 还没加进卡里的图
       pickSide: 'front'
     };
@@ -1025,21 +1251,39 @@
       h += '<div class="q-empty">还没有卡片。<br>去听课「③ 整理」给自己出几道题，或到任务行点 🃏 补加 —— ' +
         '正面是要问自己的问题，反面是答案要点。</div>';
     } else {
+      // 🏷 v101：按学科分组（高中九科打底，自己加的排在后面，没分类的垫底）
+      const bySub = {};
       list.forEach(function (c) {
-        const n = (c.cards || []).length;
-        h += '<div class="mc-rowline" data-id="' + c.id + '">' +
-          '<div class="mc-rowmain">' +
-          '<b>' + esc(c.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
-          '<div class="mc-sub">' + (c.course ? esc(c.course) + ' · ' : '') + (c.dayKey || '') +
-          ((c.cards || []).length
-            ? ' · 第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26)
-              + (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
-            : '') + '</div>' +
-          '</div>' +
-          '<span class="mc-acts">' +
-          '<button class="btn btn-small btn-primary" data-act="card-open" data-id="' + c.id + '">🃏 打开 / 复习</button>' +
-          '<button class="mc-ib" data-act="card-del" data-id="' + c.id + '" title="删掉这个合集">🗑</button>' +
-          '</span></div>';
+        const s = c.subject || NO_SUB;
+        (bySub[s] = bySub[s] || []).push(c);
+      });
+      const order = subjects().concat([NO_SUB]);
+      const keys = Object.keys(bySub).sort(function (a, b) {
+        const ia = order.indexOf(a), ib = order.indexOf(b);
+        return (ia < 0 ? 900 + a.charCodeAt(0) : ia) - (ib < 0 ? 900 + b.charCodeAt(0) : ib);
+      });
+      keys.forEach(function (s) {
+        const arr = bySub[s];
+        const tot = arr.reduce(function (m, c) { return m + (c.cards || []).length; }, 0);
+        h += '<div class="mc-subhead">' + esc(s) +
+          '<span class="mc-cnt">' + arr.length + ' 个合集 · ' + tot + ' 张</span></div>';
+        arr.forEach(function (c) {
+          const n = (c.cards || []).length;
+          h += '<div class="mc-rowline" data-id="' + c.id + '">' +
+            '<div class="mc-rowmain">' +
+            '<b>' + esc(c.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
+            '<div class="mc-sub">' + (c.course ? esc(c.course) + ' · ' : '') + (c.dayKey || '') +
+            ((c.cards || []).length
+              ? ' · 第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
+                (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
+              : '') + '</div>' +
+            '</div>' +
+            '<span class="mc-acts">' +
+            '<button class="btn btn-small btn-primary" data-act="card-open" data-id="' + c.id + '">🃏 打开 / 复习</button>' +
+            (n ? '<button class="btn btn-small" data-act="card-sched" data-id="' + c.id + '">📅 排到某天</button>' : '') +
+            '<button class="mc-ib" data-act="card-del" data-id="' + c.id + '" title="删掉这个合集">🗑</button>' +
+            '</span></div>';
+        });
       });
     }
     h += '</div>';
@@ -1054,8 +1298,11 @@
 
   function newColModal() {
     App.ui.openModal('🃏 新建一个合集',
-      '<div class="field"><label>合集名字（导出成 Obsidian 文件时用它；默认可以用任务名）</label>' +
+      '<div class="field"><label>合集名字（默认可以用任务名）</label>' +
       '<input id="mc-new-name" class="mc-inp" type="text" placeholder="比如：化学 · 平衡常数那节" /></div>' +
+      '<div class="field"><label>学科（卡片页会按学科分组；也能自己写一个新的）</label>' +
+      '<input id="mc-new-subject" class="mc-inp" type="text" list="mc-sub-list" placeholder="比如：化学" />' +
+      '<datalist id="mc-sub-list">' + subjects().map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('') + '</datalist></div>' +
       '<p class="hint">合集只是个收纳盒 —— 里面一张卡也没有也没关系，打开后随时加。</p>',
       '<button class="btn btn-primary" data-act="mc-nc-ok">建好并打开</button>' +
       '<button class="btn" data-act="mc-nc-cancel">取消</button>');
@@ -1064,7 +1311,10 @@
         const el = App.ui.query('#mc-new-name');
         const v = el ? (el.value || '').trim() : '';
         if (!v) { App.ui.toast('先起个名字'); return; }
-        const col = ensureCollection({ name: v, course: '', dayKey: S().todayKey() });
+        const se = App.ui.query('#mc-new-subject');
+        const sv = se ? (se.value || '').trim() : '';
+        if (sv) addSubject(sv);
+        const col = ensureCollection({ name: v, course: '', subject: sv, dayKey: S().todayKey() });
         App.ui.closeModal();
         renderPage();
         openCol(col.id, { focusAdd: true });
@@ -1109,6 +1359,7 @@
     const col = find(b.dataset.id);
     if (!col) return;
     if (act === 'card-open') { openCol(col.id); return; }
+    if (act === 'card-sched') { schedCardModal(col, null); return; }
     if (act === 'card-export') { exportCol(col); return; }
     if (act === 'card-del') {
       App.ui.confirm('删掉合集「<b>' + esc(col.name) + '</b>」（含里面 ' + (col.cards || []).length + ' 张卡）？' +
@@ -1127,6 +1378,11 @@
     init: init,
     renderPage: renderPage,
     pageHTML: pageHTML,
+    openRef: openRef,
+    schedCardModal: schedCardModal,
+    subjects: subjects,
+    addSubject: addSubject,
+    subjectOf: subjectOf,
     render: render,
     ensureMath: ensureMath,
     exportCol: exportCol,

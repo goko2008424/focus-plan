@@ -1245,3 +1245,82 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
 .ck-dot.on { background: #22a06b; border-color: #22a06b; }
 .ck-dot.half { background: rgba(34, 160, 107, .35); border-color: rgba(34, 160, 107, .5); }
 .ck-acts { display: flex; gap: 6px; align-items: center; }
+/* —— 📌 v100：每日必做的明细展开 / 收起 + 前几天没做完的提示条 —— */
+.q-sub-brief { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.q-sub-brieftxt { color: var(--muted); }
+.q-sub-tog {
+  flex: none; border: 1px solid var(--line); background: transparent; color: var(--primary);
+  border-radius: 7px; padding: 1px 8px; cursor: pointer; font-size: 12px; font-family: inherit;
+}
+.q-sub-tog:hover { background: rgba(127,127,127,.10); }
+.q-sub-open { border-left: 2px solid var(--line); padding-left: 9px; margin-top: 5px; max-height: 44vh; overflow: auto; }
+.q-sub-togline { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; }
+.q-sub-sum { color: var(--muted); font-size: 12px; }
+.q-sub-g { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); margin: 7px 0 3px; }
+.q-sub-gn { flex: none; }
+.q-sub-line {
+  display: flex; align-items: flex-start; gap: 7px; width: 100%; text-align: left;
+  border: 0; background: transparent; color: var(--ink); font-family: inherit;
+  font-size: 13px; line-height: 1.6; padding: 3px 3px; cursor: pointer; border-radius: 6px;
+}
+.q-sub-line:hover { background: rgba(127,127,127,.12); }
+.q-sub-box {
+  flex: none; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 4px;
+  display: flex; align-items: center; justify-content: center; font-size: 11px; margin-top: 2px;
+}
+.q-sub-line.on .q-sub-box { background: #22a06b; border-color: #22a06b; color: #fff; }
+.q-sub-line.on .q-sub-txt { color: var(--muted); text-decoration: line-through; }
+.q-sub-txt { flex: 1; min-width: 0; }
+.q-sub-min { flex: none; color: var(--muted); font-size: 11.5px; }
+.q-stale {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  border: 1px solid var(--line); border-left: 3px solid #d97706; background: var(--card);
+  border-radius: 9px; padding: 7px 11px; margin: 9px 0 4px; font-size: 13px; line-height: 1.7;
+}
+.q-stale-acts { margin-left: auto; display: flex; gap: 6px; }
+/* —— 🏷📅 v101：学科徽标 / 选学科 / 卡片页学科分组 —— */
+.mc-tag {
+  margin-left: 7px; border: 1px solid var(--line); background: transparent; color: var(--primary);
+  border-radius: 9px; padding: 1px 8px; cursor: pointer; font-size: 12px; font-family: inherit;
+}
+.mc-tag:hover { background: rgba(127,127,127,.10); }
+.mc-subgrid { display: flex; flex-wrap: wrap; gap: 7px; }
+.mc-subpick {
+  border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit;
+  border-radius: 9px; padding: 5px 12px; cursor: pointer; font-size: 13.5px;
+}
+.mc-subpick:hover { background: rgba(127,127,127,.10); }
+.mc-subpick.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.mc-subhead {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 13px; font-weight: 700; color: var(--ink);
+  border-bottom: 1px dashed var(--line); padding: 4px 2px 5px; margin: 14px 0 8px;
+}
+.mc-subhead:first-of-type { margin-top: 4px; }
+/* —— ⏱ v102：正计时 —— 纯时钟，不显示"预计时间/进度条"那种压力条 —— */
+#tf-forward.mode-up .tf-line-plan { display: none; }
+#tf-forward.mode-up .tf-track { display: none; }
+#tf-cd.cd-up .tf-track { display: none; }
+#tf-cd.cd-up .tf-drag-hint { display: none; }
+.planmode { display: flex; gap: 8px; }
+.pm-btn {
+  flex: 1; border: 1px solid var(--line); background: transparent; color: var(--ink);
+  font-family: inherit; border-radius: 9px; padding: 8px 10px; cursor: pointer; font-size: 13.5px;
+}
+.pm-btn:hover { background: rgba(127,127,127,.10); }
+.pm-btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+/* —— 📷 v103：文件选择框藏起来（点「📷 贴图」按钮代它触发） —— */
+.mc-file { display: none !important; }
+/* —— ⚠️ v104：关窗前的"还有东西没保存"提示条 + 加卡按钮的"该点了"样式 —— */
+.mc-closewarn {
+  display: block; border: 1px solid var(--line); border-left: 3px solid #d97706;
+  background: var(--card); color: var(--ink);
+  border-radius: 9px; padding: 9px 11px; margin-bottom: 11px;
+  font-size: 13.5px; line-height: 1.75;
+}
+.mc-closewarn-acts { display: inline-flex; gap: 6px; margin-left: 8px; flex-wrap: wrap; vertical-align: middle; }
+.mc-add-ready { animation: mcPulse 1.5s ease-in-out infinite; }
+@keyframes mcPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(226, 84, 93, .16); }
+  50% { box-shadow: 0 0 0 8px rgba(226, 84, 93, .05); }
+}

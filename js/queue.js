@@ -110,16 +110,59 @@
     if (dirty) S().save();
     return DY().filter(function (it) { return it.pinnedDay === k; });
   }
-  /** 把过期的（不是今天加的）清掉 —— 结算时和每次打开时各跑一次 */
-  function pruneDaily() {
+  /** 日期字符串 +/- N 天 */
+  function shiftDayBack(key, n) {
+    const p = String(key || '').split('-');
+    const d = new Date(+p[0], (+p[1]) - 1, +p[2]);
+    d.setDate(d.getDate() - n);
+    const z = function (x) { return (x < 10 ? '0' : '') + x; };
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+  }
+
+  /** 📌 v100：前几天放进来、当天没打勾的 —— 以前这些会被直接删掉（用户：
+   *  「你能不能加一个东西，把昨天没完成的每日任务给移到今天的」），现在留着让他搬。
+   *  只清 30 天以前的，免得无限攒。 */
+  function staleDaily() {
     const k = pinToday();
+    return DY().filter(function (it) {
+      if (!it.pinnedDay || it.pinnedDay >= k) return false;
+      return !dDone(it, it.pinnedDay);            // 那天没打勾的才算「没做完」
+    });
+  }
+
+  function pruneDaily() {
+    const cut = shiftDayBack(pinToday(), 30);
     const list = DY();
     let n = 0;
     for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].pinnedDay && list[i].pinnedDay < k) { list.splice(i, 1); n++; }
+      if (list[i].pinnedDay && list[i].pinnedDay < cut) { list.splice(i, 1); n++; }
     }
     if (n) S().save();
     return n;
+  }
+
+  /** ↩ 把前几天没做完的原样搬回今天 */
+  function pullStale() {
+    const list = staleDaily();
+    if (!list.length) { App.ui.toast('没有要搬的'); return; }
+    const k = pinToday();
+    list.forEach(function (it) { it.pinnedDay = k; });
+    S().save();
+    render();
+    App.ui.toast('↩ 搬回来 ' + list.length + ' 条：' + list.map(function (x) { return x.text; }).join('、').slice(0, 60), 4600);
+  }
+
+  /** 🗑 前几天那些不做了 */
+  function dropStale() {
+    const list = staleDaily();
+    if (!list.length) return;
+    const ids = {};
+    list.forEach(function (it) { ids[it.id] = true; });
+    const arr = DY();
+    for (let i = arr.length - 1; i >= 0; i--) { if (ids[arr[i].id]) arr.splice(i, 1); }
+    S().save();
+    render();
+    App.ui.toast('🗑 丢掉了 ' + list.length + ' 条');
   }
 
   /** 每日必做：连续做了几天（今天还没做就从昨天往前数） */
@@ -1243,6 +1286,89 @@
     return h;
   }
 
+  const openDaily = {};      // 📌 v100：哪几条的明细是展开的
+
+  /** 📌 v100：每日必做的明细 —— 收起时只给一行摘要，展开后逐题列出（能单独勾）
+   *  有副本就用副本的明细（跟任务页那份是同一份东西，不会两边打架）。 */
+  function dailySubHTML(it, expanded) {
+    let src = it;
+    try { src = dailyCopyOf(it.id, true) || it; } catch (e) { src = it; }
+    const groups = src.groups || [];
+    const subs = src.subs || [];
+    const nG = groups.length, nS = subs.length;
+    if (!nG && !nS) return '';
+
+    const all = groups.map(function (g) { return '🧩 ' + (g.name || '任务组') + '（' + (g.subs || []).length + ' 题）'; });
+    if (nS) all.push('📝 ' + nS + ' 个小任务');
+
+    if (!expanded) {
+      const brief = all.slice(0, 2).join(' · ') + (all.length > 2 ? ' 等 ' + all.length + ' 项' : '');
+      return '<div class="q-sub-detail q-sub-brief"><span class="q-sub-brieftxt">' + esc(brief) + '</span>' +
+        '<button class="q-sub-tog" data-act="d-expand" data-id="' + it.id + '" title="展开看每一条">⇣ 展开</button></div>';
+    }
+
+    let h = '<div class="q-sub-detail q-sub-open">';
+    h += '<div class="q-sub-togline"><span class="q-sub-sum">共 ' + esc(all.join(' · ')) + '</span>' +
+      '<button class="q-sub-tog" data-act="d-expand" data-id="' + it.id + '" title="收起来">⇡ 收起</button></div>';
+
+    function line(s, gid) {
+      return '<button class="q-sub-line' + (s.done ? ' on' : '') + '" data-act="d-sub" data-id="' + it.id + '"' +
+        (gid ? ' data-gid="' + gid + '"' : '') + ' data-sid="' + s.id + '" title="点一下勾掉/取消">' +
+        '<span class="q-sub-box">' + (s.done ? '✓' : '') + '</span>' +
+        '<span class="q-sub-txt">' + esc(s.text) + '</span>' +
+        (s.minutes ? '<span class="q-sub-min">' + s.minutes + '′</span>' : '') + '</button>';
+    }
+
+    groups.forEach(function (g) {
+      const gs = g.subs || [];
+      const gd = gs.filter(function (x) { return x.done; }).length;
+      h += '<div class="q-sub-g"><span class="q-sub-gname">🧩 ' + esc(g.name || '任务组') + '</span>' +
+        '<span class="q-sub-gn">' + gd + '/' + gs.length + '</span></div>';
+      gs.forEach(function (s) { h += line(s, g.id); });
+    });
+    if (nS) {
+      h += '<div class="q-sub-g"><span class="q-sub-gname">📝 小任务</span>' +
+        '<span class="q-sub-gn">' + subs.filter(function (x) { return x.done; }).length + '/' + nS + '</span></div>';
+      subs.forEach(function (s) { h += line(s, ''); });
+    }
+    h += '</div>';
+    return h;
+  }
+
+  /** 📌 v100：勾掉展开里的某一小题（源和副本一起改，别分叉） */
+  function toggleDailySub(dayId, gid, sid) {
+    const it = findIn(DY(), dayId);
+    if (!it) return;
+    let copy = null;
+    try { copy = dailyCopyOf(dayId, true); } catch (e) { copy = null; }
+    const target = copy || it;                      // 有副本就操作副本（= 任务页那份）
+    let sub = null;
+    if (gid) {
+      const g = (target.groups || []).filter(function (x) { return x.id === gid; })[0];
+      if (g) sub = (g.subs || []).filter(function (x) { return x.id === sid; })[0];
+    } else {
+      sub = (target.subs || []).filter(function (x) { return x.id === sid; })[0];
+    }
+    if (!sub) { App.ui.toast('这条小题找不到了，刷新一下'); return; }
+    if (sub.done) { sub.done = null; delete sub.doneAt; }
+    else { sub.done = true; sub.doneAt = new Date().toISOString(); }
+
+    // 同 id 的镜像到另一边（源 / 副本），避免两份进度不一致
+    if (copy) {
+      let m = null;
+      if (gid) {
+        const g2 = (it.groups || []).filter(function (x) { return x.id === gid; })[0];
+        if (g2) m = (g2.subs || []).filter(function (x) { return x.id === sid; })[0];
+      } else {
+        m = (it.subs || []).filter(function (x) { return x.id === sid; })[0];
+      }
+      if (m) { m.done = sub.done; if (sub.doneAt) m.doneAt = sub.doneAt; else delete m.doneAt; }
+    }
+    S().save();
+    try { App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+    render();
+  }
+
   function dailyCard() {
     const list = todayDaily();          // 📌 v94：只显示「今天放进来」的
     const k = S().todayKey();
@@ -1250,7 +1376,23 @@
     h += '<h2>📌 今天的基础任务</h2>';
     h += '<p class="hint" style="margin-top:-2px">把<b>今天最底线要做的几件</b>放这儿（复习、听力、单词那类）。打勾就行 —— ' +
       '<b>不算在完成率里</b>。<br>⚠️ <b>只对今天有效</b>：明天要做什么，明天再挑一次（在日历里点 📌、用「📥 从以往提取」，或直接加）。' +
-      '想固定在某一天做，点它右边的 <b>📅</b>。</p>';
+      '想固定在某一天做，点它右边的 <b>📅</b>。<br>💡 挂着小任务/任务组的，点行里的 <b>⇣ 展开</b> 能逐条看、逐条勾。</p>';
+
+    // ↩ v100：前几天没做完的，留着让你搬（以前会被自动删掉）
+    const stale = staleDaily();
+    if (stale.length) {
+      const dset = {};
+      stale.forEach(function (x) { dset[x.pinnedDay] = true; });
+      const ds = Object.keys(dset).sort();
+      const when = ds.length === 1 ? ds[0] : (ds[0] + ' 起');
+      const names = stale.slice(0, 3).map(function (x) { return x.text; }).join('、') +
+        (stale.length > 3 ? ' 等 ' + stale.length + ' 条' : '');
+      h += '<div class="q-stale">↩ <b>' + stale.length + ' 条' + (ds.length === 1 ? '那天' : '前几天') +
+        '没做完</b>（' + esc(when) + '）：' + esc(names) +
+        '<span class="q-stale-acts">' +
+        '<button class="btn btn-small btn-primary" data-act="d-pull">↩ 搬到今天</button>' +
+        '<button class="btn btn-small" data-act="d-stale-drop">不做了</button></span></div>';
+    }
 
     if (!list.length) {
       h += '<div class="q-empty">今天还没挑。<br>把今天必须碰的那几件放进来（做完一条队列任务时可以顺手加，也能直接从下面加）。</div>';
@@ -1266,7 +1408,7 @@
         h += '<div class="q-row' + (done ? ' q-row-done' : '') + '" data-id="' + it.id + '">' +
           '<button class="task-check' + (done ? ' checked' : '') + '" data-act="d-toggle" data-id="' + it.id + '">' +
           (done ? '✓' : '') + '</button>' +
-          '<span class="q-text">' + esc(it.text) + mtag(it, 'daily') + subDetailHTML(it.subs, it.groups) + '</span>' +
+          '<span class="q-text">' + esc(it.text) + mtag(it, 'daily') + dailySubHTML(it, !!openDaily[it.id]) + '</span>' +
           '<span class="q-meta">' + meta + '</span>' +
           '<span class="q-acts">' +
           '<button class="q-ib d-start' + (running ? ' running' : '') + '" data-act="d-start" data-id="' + it.id +
@@ -1289,23 +1431,39 @@
   function dailyPastModal() {
     const dyTexts = {};
     todayDaily().forEach(function (x) { dyTexts[x.text] = true; });
+    const stale = staleDaily().filter(function (x) { return !dyTexts[x.text]; });
     const list = pastUndone().filter(function (x) { return !dyTexts[x.text]; });
-    let body;
+    let body = '';
+
+    // 📌 v100：先列「前几天放进今天的基础、但那天没做完」的（以前这些会被自动删掉）
+    if (stale.length) {
+      body += '<p class="hint" style="margin-top:0">📌 <b>前几天放进「今天的基础」没做完的</b> —— ' +
+        '点 ↩ 原样搬回今天（挂着的明细、勾过的进度都跟着走）。</p>';
+      stale.forEach(function (x) {
+        body += '<div class="q-row"><span class="q-text">' + esc(x.text) + mtag(x, 'daily') +
+          '<div class="q-sub-detail">' + esc(x.pinnedDay) + ' 放的</div></span>' +
+          '<span class="q-acts"><button class="q-ib" data-act="dp-pull" data-id="' + x.id +
+          '" title="搬到今天">↩</button></span></div>';
+      });
+      body += '<div class="q-head" style="margin-top:14px"><span>📋 以往的任务</span><span></span></div>';
+    }
+
     if (!list.length) {
-      body = '<p class="hint" style="margin-top:0">以前没有可以提取的了 🎉' +
-        '（今天已经放进去的不会再出现）</p>';
+      body += '<p class="hint" style="margin-top:0">' +
+        (stale.length ? '（以往的任务没有能提取的了 🎉）'
+                      : '以前没有可以提取的了 🎉（今天已经放进去的不会再出现）') + '</p>';
     } else {
       const byDay = {};
       list.forEach(function (x) { (byDay[x.day] = byDay[x.day] || []).push(x); });
-      body = '<p class="hint" style="margin-top:0">挑一条以前做过的，放进<b>今天的基础任务</b>里。' +
-        '原来那天的记录不动。</p>';
+      body += '<p class="hint" style="margin-top:0">挑一条以前做过的，放进<b>今天的基础任务</b>里 —— ' +
+        '它挂着的小任务 / 任务组会<b>一起带过来</b>（进度重新开始）。原来那天的记录不动。</p>';
       Object.keys(byDay).sort().reverse().forEach(function (k) {
         body += '<div class="q-head" style="margin-top:10px"><span>' +
           (k === S().todayKey() ? '今天' : S().shortDateCN(k)) + '</span><span>' + byDay[k].length + ' 条</span></div>';
         byDay[k].forEach(function (x) {
           body += '<div class="q-row"><span class="q-text">' + esc(x.text) + subDetailHTML(x.subs, x.groups) + '</span>' +
-            '<span class="q-acts"><button class="q-ib" data-act="dp-add" data-text="' + esc(x.text) +
-            '" title="加进「每日必做」">📌</button></span></div>';
+            '<span class="q-acts"><button class="q-ib" data-act="dp-add" data-i="' + list.indexOf(x) +
+            '" title="加进「今天的基础」">📌</button></span></div>';
         });
       });
     }
@@ -1313,10 +1471,19 @@
       '<button class="btn" data-act="dp-close">关闭</button>');
     App.ui.bindActions({
       'dp-add': function (el) {
-        const t = el.dataset.text;
-        addDaily(t);
-        App.ui.toast('📌 已加到今天的基础任务：' + t.slice(0, 14));
+        const x = list[+el.dataset.i];
+        if (!x) return;
+        addDaily(x.text, x.subs, x.groups);      // 📌 v100：明细一起带过来（以前只带了名字）
+        App.ui.toast('📌 已加到今天的基础任务：' + x.text.slice(0, 14));
         render();
+        dailyPastModal();
+      },
+      'dp-pull': function (el) {
+        const it = findIn(DY(), el.dataset.id);
+        if (!it) return;
+        it.pinnedDay = pinToday();
+        S().save(); render();
+        App.ui.toast('↩ 搬回来了：' + it.text.slice(0, 16));
         dailyPastModal();
       },
       'dp-close': function () { App.ui.closeModal(); }
@@ -1408,6 +1575,19 @@
     if (act === 'q-edit') { editModal(id, false); return; }
     if (act === 'd-edit') { editModal(id, true); return; }
     if (act === 'd-toggle') { dToggle(id); return; }
+    if (act === 'd-expand') {
+      if (openDaily[id]) delete openDaily[id]; else openDaily[id] = 1;
+      render();
+      return;
+    }
+    if (act === 'd-sub') { toggleDailySub(id, b.dataset.gid || '', b.dataset.sid || ''); return; }
+    if (act === 'd-pull') { pullStale(); return; }
+    if (act === 'd-stale-drop') {
+      const n = staleDaily().length;
+      App.ui.confirm('前几天那 <b>' + n + '</b> 条不做了，丢掉了？<br><span class="hint">丢掉就没了（今天列表里的不受影响）。</span>',
+        '丢掉', function () { dropStale(); });
+      return;
+    }
     if (act === 'memcards') {
       // 🃏 v99：已完成 / 过去做过的任务也能补写设问卡（用户：「已经完成的任务也要支持补写」）
       const it2 = findIn(Q(), id) || findIn(QD(), id);
@@ -1500,6 +1680,9 @@
     findCopyOf: findCopyOf,
     renameByTask: renameByTask,
     startDaily: startDaily,
+    staleDaily: function () { return staleDaily().map(function (x) { return { id: x.id, text: x.text, pinnedDay: x.pinnedDay }; }); },
+    pullStale: pullStale,
+    shiftDayBack: shiftDayBack,
     onDailyDone: onDailyDone,
     dailyCopyOf: dailyCopyOf,
     dropDailyCopy: dropDailyCopy,

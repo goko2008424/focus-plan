@@ -6,12 +6,12 @@
   <script>
     /* 版本号。v67 起提到 <head>：设置页等模块渲染得比页尾的 build-check 早，
        以前写在页尾，渲染时读到 undefined 就显示成 "v?"。 */
-    window.__BUILD = 99;
+    window.__BUILD = 104;
   </script>
   <meta name="theme-color" content="#2d3a4a" />
   <title>专注计划 · 学习会计系统</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=99" />
+  <link rel="stylesheet" href="css/style.css?v=104" />
   <style id="pip-style">
     /* ===== 🪟 只在小窗（Document Picture-in-Picture）里生效：让悬浮窗铺满整个小窗 ===== */
     html.pip, html.pip body { background: var(--bg, #f5f7fa); margin: 0; padding: 0; }
@@ -83,7 +83,7 @@
     <div class="tf-head" id="tf-head">🪟 计时悬浮窗 <span class="tf-drag-hint">（按住可拖动）</span><button id="tf-pip" class="tf-pip-btn" title="拖出浏览器：变成独立小窗口，可拖到屏幕任何位置、永远置顶">⇱ 拖出</button></div>
     <div id="tf-forward">
       <div class="tf-line">预计完成内容：<b id="tf-content">--</b></div>
-      <div class="tf-line">预计时间：<b id="tf-plan">--</b></div>
+      <div class="tf-line tf-line-plan"><span id="tf-plan-label">预计时间：</span><b id="tf-plan">--</b></div>
       <div class="tf-line">实际时间：<b id="tf-used">00:00</b></div>
       <div class="tf-track"><div id="tf-progress" class="timer-progress"></div></div>
       <div class="tf-actions">
@@ -94,7 +94,7 @@
     </div>
     <div id="tf-cd" class="hidden">
       <div class="tf-line">小任务：<b id="tf-cd-text">--</b></div>
-      <div class="tf-line">剩余/超时：<b id="tf-cd-left">00:00</b> <span id="tf-cd-over" style="color:var(--req);font-weight:700"></span> <span class="tf-drag-hint">（目标 <span id="tf-cd-target">--</span>）</span></div>
+      <div class="tf-line"><span id="tf-cd-label">剩余/超时：</span><b id="tf-cd-left">00:00</b> <span id="tf-cd-over" style="color:var(--req);font-weight:700"></span> <span class="tf-drag-hint">（目标 <span id="tf-cd-target">--</span>）</span></div>
       <div class="tf-track"><div id="tf-cd-progress" class="timer-progress"></div></div>
       <div class="tf-actions">
         <button id="cd-pause" class="btn btn-small">⏸ 暂停</button>
@@ -283,22 +283,22 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
-  <script src="js/store.js?v=99"></script>
-  <script src="js/ui.js?v=99"></script>
-  <script src="js/tasks.js?v=99"></script>
-  <script src="js/timeline.js?v=99"></script>
-  <script src="js/stats.js?v=99"></script>
-  <script src="js/settings.js?v=99"></script>
-  <script src="js/sport.js?v=99"></script>
-  <script src="js/lecture.js?v=99"></script>
-  <script src="js/calendar.js?v=99"></script>
-  <script src="js/link.js?v=99"></script>
-  <script src="js/demo.js?v=99"></script>
-  <script src="js/queue.js?v=99"></script>
-  <script src="js/milestones.js?v=99"></script>
-  <script src="js/memcards.js?v=99"></script>
-  <script src="js/checkin.js?v=99"></script>
-  <script src="js/app.js?v=99"></script>
+  <script src="js/store.js?v=104"></script>
+  <script src="js/ui.js?v=104"></script>
+  <script src="js/tasks.js?v=104"></script>
+  <script src="js/timeline.js?v=104"></script>
+  <script src="js/stats.js?v=104"></script>
+  <script src="js/settings.js?v=104"></script>
+  <script src="js/sport.js?v=104"></script>
+  <script src="js/lecture.js?v=104"></script>
+  <script src="js/calendar.js?v=104"></script>
+  <script src="js/link.js?v=104"></script>
+  <script src="js/demo.js?v=104"></script>
+  <script src="js/queue.js?v=104"></script>
+  <script src="js/milestones.js?v=104"></script>
+  <script src="js/memcards.js?v=104"></script>
+  <script src="js/checkin.js?v=104"></script>
+  <script src="js/app.js?v=104"></script>
   <script>
     // PWA：注册 Service Worker（离线可用 / 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
@@ -405,9 +405,9 @@
    有文件没传上去 → 顶部弹红条点名，别再靠猜"为什么改了没生效"。
    控制台可用：__checkBuild() 重查 / __checkBuild(true) 强制绕过缓存重查 */
 window.__BUILD_SIZES = {
-  "css/style.css": 64692,
-  "js/app.js": 43156,
-  "js/memcards.js": 54100,
+  "css/style.css": 68658,
+  "js/app.js": 45436,
+  "js/memcards.js": 65363,
   "js/checkin.js": 10971,
   "js/marked.min.js": 35481,
   "js/katex.min.js": 275415,
@@ -418,16 +418,16 @@ window.__BUILD_SIZES = {
   "js/lecture.js": 42183,
   "js/link.js": 20240,
   "js/milestones.js": 10183,
-  "js/queue.js": 77109,
+  "js/queue.js": 86420,
   "js/settings.js": 28992,
   "js/sport.js": 25754,
   "js/stats.js": 24805,
   "js/store.js": 18136,
-  "js/tasks.js": 322769,
+  "js/tasks.js": 328719,
   "js/timeline.js": 19744,
   "js/ui.js": 12061,
-  "sw.js": 3621,
-  "version.html": 74032
+  "sw.js": 3622,
+  "version.html": 78841
 };
 (function () {
   var S = window.__BUILD_SIZES;

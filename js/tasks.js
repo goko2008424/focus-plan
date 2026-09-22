@@ -77,14 +77,20 @@
     // 正向计时区
     if (timer) {
       const usedMs = elapsedMs();
-      const planMs = timer.planMinutes * 60000;
       fx('tf-used').textContent = S().fmtClock(usedMs);
-      const pct = planMs > 0 ? Math.min(100, (usedMs / planMs) * 100) : 0;
+      // ⏱ v102：正计时（默认）= 只有一个往上走的时钟；倒计时才画那条进度条
+      const isDown = timer.mode === 'down';
       const prog = fx('tf-progress');
-      prog.style.width = pct + '%';
-      prog.style.background = pct >= 100
-        ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
-        : 'linear-gradient(90deg,#3b82f6,#22a06b)';
+      if (isDown) {
+        const planMs = timer.planMinutes * 60000;
+        const pct = planMs > 0 ? Math.min(100, (usedMs / planMs) * 100) : 0;
+        prog.style.width = pct + '%';
+        prog.style.background = pct >= 100
+          ? 'linear-gradient(90deg,#e2545d,#f59e0b)'
+          : 'linear-gradient(90deg,#3b82f6,#22a06b)';
+      } else if (prog) {
+        prog.style.width = '0%';
+      }
     }
     // 🔥 连续学习累计与小休倒计时都在常驻 tick（hourPlanAutoTick）里，这里不再重复处理
     // 子任务倒计时区（到点继续计时、不自动弹窗，显示超时）
@@ -97,6 +103,14 @@
         const overEl = fx('tf-cd-over');
         if (overEl) overEl.textContent = '☕ 小休中…';
         if (secs <= 0) { resumeCdAfterRest(); App.ui.toast('☕ 小休结束，接着把这题做完吧'); }
+        return;
+      }
+      // ⏱ v102：不限时的小任务 → 正着数（只记花了多久，不提醒、不超时）
+      if (!(cdTimer.minutes > 0)) {
+        const leftEl0 = fx('tf-cd-left');
+        if (leftEl0) { leftEl0.textContent = S().fmtClock(cdElapsedMs()); leftEl0.style.color = ''; }
+        const over0 = fx('tf-cd-over');
+        if (over0) over0.textContent = '';
         return;
       }
       const elapsed = cdElapsedMs();
@@ -323,7 +337,7 @@
     if (pendingNext) {
       html += '<div class="tf-dw-next">' +
         '<button class="btn btn-small btn-primary" data-dw="next">▶ 下一题：' +
-        S().esc(pendingNext.text) + '（' + (pendingNext.minutes || 1) + ' 分钟）</button></div>';
+        S().esc(pendingNext.text) + '（' + (pendingNext.minutes > 0 ? (pendingNext.minutes + ' 分钟') : '不限时') + '）</button></div>';
     } else if (groupDoneInfo) {
       html += '<div class="tf-dw-done">🎉 ' + S().esc(groupDoneInfo.groupName || '这一组') + ' 全部做完了' +
         '<button class="btn btn-small btn-primary" data-dw="back">📋 回网页安排下一步</button></div>';
@@ -418,9 +432,11 @@
   function subEarn(cd) {
     const elapsed = Date.now() - cd.startedAt - (cd.pausedMs || 0);
     const cap = cd.minutes * 60000;
-    let tier = '超时完成', factor = 1;
-    if (elapsed <= cap * 0.7) { tier = '提前完成'; factor = 2; }
+    let tier, factor;
+    if (!(cd.minutes > 0)) { tier = '完成（不限时）'; factor = 1.5; }   // ⏱ v102：不限时按「按时」档
+    else if (elapsed <= cap * 0.7) { tier = '提前完成'; factor = 2; }
     else if (elapsed <= cap) { tier = '按时完成'; factor = 1.5; }
+    else { tier = '超时完成'; factor = 1; }
     cd.earnTier = tier;
     cd.earnFactor = factor;
     cd.earnPoints = (cd.points || 0) > 0 ? Math.round((cd.points || 0) * factor) : 0;
@@ -654,18 +670,29 @@
     const cd = fx('tf-cd');
     if (!fwd || !cd) return;            // 元素还没就位就别往下走（不要再抛异常）
     if (timer) {
+      const isDown = timer.mode === 'down';
       fwd.classList.remove('hidden');
+      fwd.classList.toggle('mode-up', !isDown);     // ⏱ v102：正计时 → 藏掉"预计时间"和进度条
       fx('tf-content').textContent = timer.planContent;
-      fx('tf-plan').textContent = S().fmtDur(timer.planMinutes);
+      if (isDown) {
+        const leftMs = timer.planMinutes * 60000 - elapsedMs();
+        const lab = fx('tf-plan-label');
+        if (lab) lab.textContent = leftMs > 0 ? '还剩：' : '已超时：';
+        fx('tf-plan').textContent = leftMs > 0 ? S().fmtClock(leftMs) : ('+' + S().fmtClock(-leftMs));
+      }
       fx('tf-used').textContent = S().fmtClock(elapsedMs());
       fx('timer-pause').textContent = timer.paused ? '▶ 继续' : '⏸ 暂停';
     } else {
       fwd.classList.add('hidden');
     }
     if (cdTimer) {
+      const cdUp = !(cdTimer.minutes > 0);
       cd.classList.remove('hidden');
+      cd.classList.toggle('cd-up', cdUp);         // ⏱ v102：不限时 → 藏掉目标和进度条
       fx('tf-cd-text').textContent = cdTimer.text;
-      fx('tf-cd-target').textContent = S().fmtDur(cdTimer.minutes);
+      const cdl = fx('tf-cd-label');
+      if (cdl) cdl.textContent = cdUp ? '已用：' : '剩余/超时：';
+      fx('tf-cd-target').textContent = cdUp ? '' : S().fmtDur(cdTimer.minutes);
       fx('cd-pause').textContent = cdTimer.microRest ? '🔚 结束小休' : (cdTimer.paused ? '▶ 继续' : '⏸ 暂停');
       // 来自逐题拆解的倒计时 → 显示「🧭 回拆解」按钮，方便回到拆解互动界面
       const spEl = fx('cd-split');
@@ -704,13 +731,22 @@
     const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
     if (!task || task.done) return;
 
+    // ⏱ v102：默认正计时（用户：「以后计时可不可以用正计时」），上次选过就沿用
+    let planMode = ((S().settings() || {}).planMode === 'down') ? 'down' : 'up';
     const modal = App.ui.openModal('⏱ 开始计时', '' +
-      '<p style="font-size:12.5px;color:#8a919c;margin-bottom:12px">请填写本次计划信息（两项均必填）</p>' +
       '<div class="field">' +
-      '  <label>预计完成内容</label>' +
-      '  <input type="text" id="plan-content" placeholder="" />' +
+      '  <label>计时方式</label>' +
+      '  <div class="planmode">' +
+      '    <button type="button" class="pm-btn" id="pm-up">⏱ 正计时</button>' +
+      '    <button type="button" class="pm-btn" id="pm-down">⏳ 倒计时</button>' +
+      '  </div>' +
+      '  <p class="hint" id="pm-hint" style="margin:6px 0 0"></p>' +
       '</div>' +
       '<div class="field">' +
+      '  <label>这段时间要做什么（写给自己看的）</label>' +
+      '  <input type="text" id="plan-content" placeholder="" />' +
+      '</div>' +
+      '<div class="field" id="plan-dur-wrap">' +
       '  <label>预计用时</label>' +
       '  <div class="field-row">' +
       '    <div class="field"><input type="number" id="plan-h" min="0" max="12" value="0" /><label>小时</label></div>' +
@@ -725,21 +761,42 @@
     const hInput = modal.querySelector('#plan-h');
     const mInput = modal.querySelector('#plan-m');
     const errEl = modal.querySelector('#plan-error');
+    const upBtn = modal.querySelector('#pm-up');
+    const downBtn = modal.querySelector('#pm-down');
+    const durWrap = modal.querySelector('#plan-dur-wrap');
+    const pmHint = modal.querySelector('#pm-hint');
+
+    function paintMode() {
+      const up = planMode === 'up';
+      if (upBtn) upBtn.classList.toggle('on', up);
+      if (downBtn) downBtn.classList.toggle('on', !up);
+      if (durWrap) durWrap.style.display = up ? 'none' : '';
+      if (pmHint) {
+        pmHint.textContent = up
+          ? '⏱ 正计时：只有一个往上走的时钟 —— 不设时限、不提醒、也不会「超时」，就老实记录你花了多久。'
+          : '⏳ 倒计时：设一个时限，到点会显示「已超时 +多少」，提醒这块别拖太久。';
+      }
+    }
+    if (upBtn) upBtn.onclick = function () { planMode = 'up'; paintMode(); };
+    if (downBtn) downBtn.onclick = function () { planMode = 'down'; paintMode(); };
+    paintMode();
 
     function validate() {
       const content = contentInput.value.trim();
       const mins = (+hInput.value || 0) * 60 + (+mInput.value || 0);
-      if (!content) { errEl.textContent = '请填写预计完成内容'; return false; }
-      if (mins <= 0) { errEl.textContent = '请填写预计用时（大于0）'; return false; }
+      if (!content) { errEl.textContent = '请填写这段时间要做什么'; return false; }
+      if (planMode === 'down' && mins <= 0) { errEl.textContent = '倒计时得填一个预计用时（大于 0）'; return false; }
       return true;
     }
     App.ui.bindActions({
       go: function () {
         if (!validate()) return;
+        try { const st = S().settings(); if (st) st.planMode = planMode; S().save(); } catch (e) { /* 忽略 */ }
         timer = {
           taskKey: taskKey, taskId: taskId, taskText: task.text,
           planContent: contentInput.value.trim(),
-          planMinutes: (+hInput.value || 0) * 60 + (+mInput.value || 0),
+          mode: planMode,                                   // ⏱ v102
+          planMinutes: planMode === 'down' ? ((+hInput.value || 0) * 60 + (+mInput.value || 0)) : 0,
           startedAt: Date.now(), pausedMs: 0, paused: false
         };
         App.ui.closeModal();
@@ -774,6 +831,7 @@
     const usedMs = elapsedMs();
     const actualMin = Math.max(1, Math.ceil(usedMs / 60000));
     const planMin = timer.planMinutes;
+    const isDown = timer.mode === 'down';      // ⏱ v102：正计时不算"比预计快慢"（本来就没设预计）
     let doneFlag = true;
     let noteVal = '';
 
@@ -785,10 +843,12 @@
         '<input id="stop-name" type="text" value="' + S().esc(nameVal) + '" ' +
         'style="width:100%;border:1px solid #e5e8ec;border-radius:8px;padding:7px 9px;font-size:13.5px" /></div>' +
         '<div class="field"><label>预计完成内容</label><p style="font-size:14px">' + S().esc(timer.planContent) + '</p></div>' +
-        '<div class="field"><label>预计用时</label><p style="font-size:14px">' + S().fmtDur(planMin) + '</p></div>' +
+        (isDown ? '<div class="field"><label>预计用时</label><p style="font-size:14px">' + S().fmtDur(planMin) + '</p></div>' : '') +
         '<div class="field"><label>实际用时</label><p style="font-size:14px">' + S().fmtDur(actualMin) +
-        (actualMin < planMin ? ' <span style="color:#22a06b">（比预计快，好样的！）</span>' :
-          actualMin > planMin * 1.3 ? ' <span style="color:#e2545d">（超出预计较多）</span>' : '') + '</p></div>' +
+        (isDown
+          ? (actualMin < planMin ? ' <span style="color:#22a06b">（比预计快，好样的！）</span>' :
+             actualMin > planMin * 1.3 ? ' <span style="color:#e2545d">（超出预计较多）</span>' : '')
+          : ' <span style="color:#8a919c">（正计时，只管记下来）</span>') + '</p></div>' +
         '<div class="field"><label>这次做完了吗？（提前结束也算，如实选）</label>' +
         '<div class="btn-row">' +
         '<button class="btn btn-small' + (doneFlag ? ' btn-primary' : '') + '" data-act="yes-done">✅ 做完了</button>' +
@@ -906,7 +966,7 @@
   function subBlockHTML(task) {
     const subs = task.subs || [];
     if (!subs.length) {
-      return '<div class="sub-block"><button class="sub-add" data-act="sub-add" data-task="' + task.id + '">＋ 添加小任务（限时做题，如第3题 5分钟）</button></div>';
+      return '<div class="sub-block"><button class="sub-add" data-act="sub-add" data-task="' + task.id + '">＋ 添加小任务（做题计时 · 可设限时，也可留空正计时）</button></div>';
     }
     return '<div class="sub-block">' +
       subs.map(function (s) {
@@ -918,9 +978,11 @@
         return '<div class="sub-wrap' + (lecPanel ? ' lec-on' : '') + '">' +
           '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
           '<span class="sub-text">' + S().esc(s.text) + '</span>' +
-          '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
+          '<span class="sub-meta">' + (s.minutes > 0 ? ('限' + s.minutes + '分钟') : '⏱ 不限时') +
+          (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
           (running
-            ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
+            ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' :
+                (cdTimer.paused ? '⏸ 已暂停' : (cdTimer.minutes > 0 ? '⏳ 倒计时中…' : '⏱ 计时中…'))) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="cd-start" data-task="' + task.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="sub-note" data-task="' + task.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn task-lec-btn" data-act="sub-lecture" data-task="' + task.id + '" data-sub="' + s.id + '" title="🎧 给这题开课（预习→听课→整理，走完自动勾掉它）">🎧</button>' +
@@ -945,17 +1007,20 @@
     const existing = editId ? subList.find(function (s) { return s.id === editId; }) : null;
     const inGroup = !!group;
     const modal = App.ui.openModal(existing ? '✎ 编辑小任务' : (inGroup ? '🧩 给「' + S().esc(group.name) + '」加小题' : '🧩 添加小任务'), '' +
-      (existing ? '' : '<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">给每个小题设一个限时，到点提醒你完成没，更容易进入心流</p>') +
+      (existing ? '' : ('<p style="font-size:12.5px;color:#8a919c;margin-bottom:10px">' +
+        '想给自己一点紧迫感就设个限时；<b>不想被催就留空</b> —— 它会正着计时，只记你花了多久，不提醒也不超时。</p>')) +
       '<div class="field"><label>小任务内容（如：第3题）</label><input type="text" id="sub-text" value="' + (existing ? S().esc(existing.text) : '') + '" placeholder="" /></div>' +
       '<div class="field-row">' +
-      '<div class="field"><label>限时（分钟）</label><input type="number" id="sub-min" min="1" value="' + (existing ? existing.minutes : 5) + '" /></div>' +
+      '<div class="field"><label>限时（分钟 · 留空 = 正计时）</label>' +
+      '<input type="number" id="sub-min" min="0" placeholder="留空就不限时" value="' +
+      (existing ? (existing.minutes > 0 ? existing.minutes : '') : 5) + '" /></div>' +
       '<div class="field"><label>完成积分</label><input type="number" id="sub-pts" min="0" value="' + (existing ? (existing.points || 0) : (S().settings().subDefaultPoints || 10)) + '" /></div>' +
       '</div>',
       '<button class="btn btn-primary" data-act="ok">' + (existing ? '保存' : '添加') + '</button><button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
       ok: function () {
         const text = modal.querySelector('#sub-text').value.trim();
-        const mins = Math.max(1, +modal.querySelector('#sub-min').value || 1);
+        const mins = Math.max(0, +modal.querySelector('#sub-min').value || 0);   // ⏱ v102：0 = 不限时（正计时）
         const pts = Math.max(0, +modal.querySelector('#sub-pts').value || 0);
         if (!text) { App.ui.toast('请填写小任务内容'); return; }
         if (existing) {
@@ -1280,9 +1345,11 @@
         return '<div class="sub-wrap' + (lecPanel ? ' lec-on' : '') + '">' +
           '<div class="sub-item' + cls + '" data-sub="' + s.id + '">' +
           '<span class="sub-text">' + S().esc(s.text) + '</span>' +
-          '<span class="sub-meta">限' + s.minutes + '分钟' + (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
+          '<span class="sub-meta">' + (s.minutes > 0 ? ('限' + s.minutes + '分钟') : '⏱ 不限时') +
+          (s.points > 0 ? ' · +' + s.points + '分' : '') + stateTxt + '</span>' +
           (running
-            ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' : (cdTimer.paused ? '⏸ 已暂停' : '⏳ 倒计时中…')) + '</span>'
+            ? '<span class="sub-meta running-txt">' + (cdTimer.microRest ? '☕ 小休中…' :
+                (cdTimer.paused ? '⏸ 已暂停' : (cdTimer.minutes > 0 ? '⏳ 倒计时中…' : '⏱ 计时中…'))) + '</span>'
             : '<button class="btn btn-small sub-start" data-act="g-cd-start" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '">▶ 开始</button>') +
           '<button class="task-timer-btn' + (s.summary ? ' noted' : '') + '" data-act="g-sub-note" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="写评语 / 补充">' + (s.summary ? '✍️' : '🖋') + '</button>' +
           '<button class="task-timer-btn task-lec-btn" data-act="g-sub-lecture" data-task="' + task.id + '" data-group="' + g.id + '" data-sub="' + s.id + '" title="🎧 给这题开课（预习→听课→整理，走完自动勾掉它）">🎧</button>' +
@@ -1498,7 +1565,7 @@
     cdTimer = {
       taskKey: taskKey, taskId: taskId, subId: subId, groupId: groupId || null,
       taskText: task.text, text: sub.text,
-      minutes: Math.max(1, sub.minutes || 1), points: sub.points || 0,
+      minutes: Math.max(0, sub.minutes || 0), points: sub.points || 0,   // ⏱ v102：0 = 正计时
       startedAt: Date.now(), pausedMs: 0, paused: false, finished: false,
       microRest: false, microEndAt: 0, srRested: false, srReminded70: false, srForced: false,
       srLastPromptAt: 0
@@ -1507,7 +1574,9 @@
     showTimerBar();
     App.tasks.renderAll();
     pipOpen();          // 🪟 小任务也一样，直接弹成独立小窗
-    App.ui.toast('⏳「' + sub.text + '」限时 ' + cdTimer.minutes + ' 分钟 · ' + QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+    App.ui.toast((cdTimer.minutes > 0
+      ? ('⏳「' + sub.text + '」限时 ' + cdTimer.minutes + ' 分钟 · ')
+      : ('⏱「' + sub.text + '」开始正计时（不限时） · ')) + QUOTES[Math.floor(Math.random() * QUOTES.length)]);
   }
 
   function toggleCdPause() {
@@ -1531,7 +1600,7 @@
     bringPageForModal();
     const cd = cdTimer;
     const elapsed = Date.now() - cd.startedAt - cd.pausedMs;
-    const over = elapsed - cd.minutes * 60000;
+    const over = cd.minutes > 0 ? (elapsed - cd.minutes * 60000) : -1;   // ⏱ v102：不限时不算超时
     // 奖励三档（只奖提前/按时，不罚超时）：提前≤70%用时×2 · 按时×1.5 · 超时×1
     let earnTier = '超时完成';
     let factor = 1;
@@ -1549,17 +1618,21 @@
     cd.earnPoints = earn;
     cd.earnTier = earnTier;
     cd.earnFactor = factor;
-    const timeLine = '实际用时 ' + S().fmtClock(elapsed) + ' / 目标 ' + S().fmtDur(cd.minutes) +
-      (over > 0 ? '  <span style="color:#e2545d">（超时 ' + S().fmtClock(over).replace(/^00:/, '') + '）</span>' : '  <span style="color:#22a06b">（在目标内）</span>');
+    const timeLine = '实际用时 ' + S().fmtClock(elapsed) +
+      (cd.minutes > 0
+        ? (' / 目标 ' + S().fmtDur(cd.minutes) +
+           (over > 0 ? '  <span style="color:#e2545d">（超时 ' + S().fmtClock(over).replace(/^00:/, '') + '）</span>'
+                     : '  <span style="color:#22a06b">（在目标内）</span>'))
+        : '  <span style="color:#8a919c">（不限时 · 正计时）</span>');
     const noteEl = '<div class="field"><label>小总结（超时可写一句为什么超时）</label>' +
       '<textarea id="cd-note" style="width:100%;min-height:56px;border:1px solid #e5e8ec;border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical"></textarea></div>';
     settleCdNow(cd);       // ★ v56：先把时间结算掉（进时间轴 + 今日用时），再弹提示
-    const modal = App.ui.openModal('⏰ 时间到！', '' +
+    const modal = App.ui.openModal(cd.minutes > 0 ? '⏰ 时间到！' : '⏱ 这一题做完了？', '' +
       '<div class="field"><label>小任务</label><p style="font-size:14px;font-weight:700">' + S().esc(cd.text) + '</p></div>' +
       '<p style="font-size:12.5px;color:#8a919c;margin-bottom:8px">所属任务：' + S().esc(cd.taskText) + '</p>' +
       '<div class="field"><label>用时对比</label><p style="font-size:13px">' + timeLine + '</p></div>' +
       (cd.points > 0
-        ? '<div class="field"><label>完成可得（按用时三档）</label><p style="font-weight:700;color:' + (cd.earnFactor === 2 ? '#22a06b' : cd.earnFactor === 1.5 ? '#f59e0b' : '#8a919c') + '">+' + earn + ' 分 ' + (cd.earnFactor > 1 ? '（' + cd.earnTier + '，×' + cd.earnFactor + ' 加成）' : '（' + cd.earnTier + '）') + '</p></div>'
+        ? '<div class="field"><label>完成可得' + (cd.minutes > 0 ? '（按用时三档）' : '') + '</label><p style="font-weight:700;color:' + (cd.earnFactor === 2 ? '#22a06b' : cd.earnFactor === 1.5 ? '#f59e0b' : '#8a919c') + '">+' + earn + ' 分 ' + (cd.earnFactor > 1 ? '（' + cd.earnTier + '，×' + cd.earnFactor + ' 加成）' : '（' + cd.earnTier + '）') + '</p></div>'
         : '') +
       noteEl,
       '<button class="btn btn-primary" data-act="sub-done">✅ 完成了，领取积分</button>' +
@@ -1593,13 +1666,13 @@
     (task.groups || []).forEach(function (g, gi) {
       (g.subs || []).forEach(function (s) {
         items.push({ taskId: task.id, groupId: g.id, subId: s.id, text: s.text,
-          groupName: g.name || ('任务组 ' + (gi + 1)), minutes: s.minutes || 1,
+          groupName: g.name || ('任务组 ' + (gi + 1)), minutes: s.minutes || 0,
           points: s.points || 0, done: s.done === true });
       });
     });
     (task.subs || []).forEach(function (s) {
       items.push({ taskId: task.id, groupId: null, subId: s.id, text: s.text,
-        groupName: '', minutes: s.minutes || 1, points: s.points || 0, done: s.done === true });
+        groupName: '', minutes: s.minutes || 0, points: s.points || 0, done: s.done === true });
     });
     return items;
   }
@@ -1646,7 +1719,7 @@
     const boxes = function () { return [].slice.call(modal.querySelectorAll('.lp-cb')); };
     const sum = function () {
       const on = boxes().filter(function (b) { return b.checked; });
-      const mins = on.reduce(function (a, b) { return a + (items[+b.dataset.i].minutes || 1); }, 0);
+      const mins = on.reduce(function (a, b) { return a + (items[+b.dataset.i].minutes || 0); }, 0);
       const el = modal.querySelector('#lp-sum');
       if (el) el.textContent = '已选 ' + on.length + ' 节 · 预计 ' + mins + ' 分钟';
     };
@@ -1817,7 +1890,7 @@
     if (!P.choice && !P.subs.length) return '';
     let h = '<div class="pend-bar">';
     P.subs.forEach(function (s) {
-      const tag = ' <span style="color:#8a919c">（' + (s.minutes || 1) + ' 分钟已记）</span>';
+      const tag = ' <span style="color:#8a919c">（' + (s.minutes > 0 ? ((s.minutes || 1) + ' 分钟已记') : '已记时') + '）</span>';
       h += '<div class="pend-row"><span class="pend-t">⏱ 「' + S().esc(s.text) + '」已经停了，'
         + '时间也记好了' + tag + ' —— 这题算完成吗？</span>'
         + '<button class="btn btn-small btn-primary" data-pend="subdone" data-pid="' + s.id + '">✅ 完成</button>'
@@ -2144,7 +2217,9 @@
     let path = null;                    // 'A' 明确 / 'B' 不明确
     let stopRec = null;                 // 当前录音的停止函数
     const voice = splitVoiceSupported();
-    const metaMain = '<p style="font-size:12.5px;color:#8a919c;margin-bottom:6px">正在拆解：<b>' + S().esc(sub.text) + '</b> · 限时 ' + sub.minutes + ' 分钟 · 完成按三档给分（提前×2 / 按时×1.5 / 超时×1）</p>';
+    const metaMain = '<p style="font-size:12.5px;color:#8a919c;margin-bottom:6px">正在拆解：<b>' + S().esc(sub.text) + '</b> · ' +
+      (sub.minutes > 0 ? ('限时 ' + sub.minutes + ' 分钟 · 完成按三档给分（提前×2 / 按时×1.5 / 超时×1）')
+                       : '⏱ 不限时 · 完成按「按时」档给分') + '</p>';
 
     function logTxt(stepName, t) {
       if (t && t.trim()) { sub.splitlog.push({ step: stepName, text: t.trim(), at: new Date().toISOString() }); S().save(); }
@@ -2236,11 +2311,14 @@
       const el = App.ui.query ? App.ui.query('#split-cd') : document.querySelector('#split-cd');
       if (!el || !cdTimer) return;
       const ms = Math.max(0, cdElapsedMs());
-      const over = ms - cdTimer.minutes * 60000;
-      let line = '🕑 已用 <b>' + S().fmtClock(ms) + '</b> / 目标 <b>' + S().fmtDur(cdTimer.minutes) + '</b>';
-      line += over > 0
+      // ⏱ v102：不限时（minutes = 0）→ 只显示已用，不判超时
+      const hasTarget = cdTimer.minutes > 0;
+      const over = hasTarget ? (ms - cdTimer.minutes * 60000) : 0;
+      let line = '🕑 已用 <b>' + S().fmtClock(ms) + '</b>' +
+        (hasTarget ? (' / 目标 <b>' + S().fmtDur(cdTimer.minutes) + '</b>') : ' <span style="color:#8a919c">（不限时）</span>');
+      line += !hasTarget ? '' : (over > 0
         ? ' <span style="color:#e2545d">（超时）</span>'
-        : ' <span style="color:#8a919c">（还剩 ' + S().fmtClock(Math.max(0, cdTimer.minutes * 60000 - ms)) + '）</span>';
+        : ' <span style="color:#8a919c">（还剩 ' + S().fmtClock(Math.max(0, cdTimer.minutes * 60000 - ms)) + '）</span>');
       el.innerHTML = line;
     }
     function closeSplit() {
@@ -3094,10 +3172,15 @@
         '</div>';
     }
     const lecBtn = '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步：预习 → 听课 → 整理，三步齐了发大奖">🎧</button>';
-    // 🃏 v90：这条任务有设问卡时才出现 —— 翻卡自测 / 补加 / 导出到 Obsidian
+    // 🃏 v90：这条任务有设问卡时才出现 —— 翻卡自测 / 补加
+    // 📅 v101：从卡片排过来的「复习任务」（带 mcRef）也显示，点它直接进那几张卡
     const mcN = (App.memcards && App.memcards.countForTask) ? App.memcards.countForTask(task.id) : 0;
-    const mcBtn = mcN
-      ? '<button class="task-timer-btn" data-act="memcards" title="🃏 这套设问卡（' + mcN + ' 张）：翻卡自测、补加卡片、导出到 Obsidian">🃏' + (mcN > 1 ? mcN : '') + '</button>'
+    const mcRefN = (task.mcRef && task.mcRef.n) ? task.mcRef.n : 0;
+    const mcNum = mcN || mcRefN;
+    const mcBtn = (mcN || task.mcRef)
+      ? '<button class="task-timer-btn" data-act="memcards" title="🃏 ' +
+        (task.mcRef ? '这套卡（' + mcRefN + ' 张）排到今天复习的 —— 点开翻卡自测' : '这套设问卡（' + mcN + ' 张）：翻卡自测、补加卡片') +
+        '">🃏' + (mcNum > 1 ? mcNum : '') + '</button>'
       : '';
     // 🔗 只有这一栏里真的存在「同名的另一条」时才出现，平时不占地方
     const dupBtn = findDupTask(S().todayKey(), listKey, task)
@@ -3906,6 +3989,9 @@
       const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
       if (act === 'lecture') { lecturePickModal(listKey, taskId, false); return; }
       if (act === 'memcards') {
+        // 📅 v101：如果这条任务是"从卡片排过来的"，直接开那个合集（只翻那几张）
+        const tk = ((S().getDay(S().todayKey()).tasks[listKey] || []).filter(function (t) { return t.id === taskId; })[0]) || null;
+        if (tk && tk.mcRef && App.memcards.openRef && App.memcards.openRef(tk.mcRef)) return;
         const el = row.querySelector('.task-text');
         App.memcards.openForTask({ id: taskId, text: el ? el.textContent.trim() : '设问卡' });
         return;
@@ -3945,8 +4031,9 @@
           lecTagHTML(t) +
           ptsInput +
           '<button class="task-timer-btn task-lec-btn" data-act="lecture" title="🎧 听课三步（会记在今天的时间轴，走完勾掉这条明天的任务）">🎧</button>' +
-          ((App.memcards && App.memcards.countForTask && App.memcards.countForTask(t.id))
-            ? '<button class="task-timer-btn" data-act="memcards" title="🃏 这套设问卡：翻卡自测 / 补加 / 导出">🃏</button>' : '') +
+          (((App.memcards && App.memcards.countForTask && App.memcards.countForTask(t.id)) || t.mcRef)
+            ? '<button class="task-timer-btn" data-act="memcards" title="🃏 ' +
+              (t.mcRef ? '这套卡排到明天复习的 —— 点开翻卡自测' : '这套设问卡：翻卡自测 / 补加') + '">🃏</button>' : '') +
           (findDupTask(S().tomorrowKey(), col.key, t)
             ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" title="这一栏有两条同名的「' + S().esc(t.text) + '」，点这里合并成一条">🔗</button>'
             : '') +
@@ -3998,6 +4085,8 @@
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'lecture' && listKey && row) { lecturePickModal(listKey, row.dataset.id, true); return; }
       if (act === 'memcards' && row) {
+        const tk2 = ((S().getDay(S().tomorrowKey()).tasks[listKey] || []).filter(function (t) { return t.id === row.dataset.id; })[0]) || null;
+        if (tk2 && tk2.mcRef && App.memcards.openRef && App.memcards.openRef(tk2.mcRef)) return;
         const el = row.querySelector('.task-text');
         App.memcards.openForTask({ id: row.dataset.id, text: el ? el.textContent.trim() : '设问卡' });
         return;
@@ -5200,6 +5289,7 @@
         if (dtEl) dtEl.onchange = function () { pickKey = dtEl.value || pickKey; };
         App.ui.bindActions({
           'sr-rest-ok': function () {
+            if (dtEl && dtEl.value) pickKey = dtEl.value;   // 同理：别只靠 onchange
             const nmEl = mm.querySelector('#sr-rest-name');
             nm = (nmEl && nmEl.value.trim()) ? nmEl.value.trim() : nm;
             if (pickKey < S().todayKey()) { App.ui.toast('那一天已经过去了，往后挑一天'); return; }
