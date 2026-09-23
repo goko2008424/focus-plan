@@ -71,7 +71,9 @@
   }
 
   function onTick() {
-    if (!timer && !cdTimer) return;
+    if (!timer && !cdTimer) { snapAt = 0; return; }
+    // 🛟 v107：每 5 秒兜一次快照 —— 万一某个分支忘了写，也不会丢太多（页面被强关也顶多丢 5 秒）
+    if (Date.now() - snapAt > 5000) saveTimerSnap();
     const f = floatRoot();
     if (!f || f.classList.contains('hidden')) return;
     // 正向计时区
@@ -403,6 +405,27 @@
   }
 
   /** 🎓 悬浮窗里的听课面板：和任务行下面那个共用同一份状态，只是换了个地方显示 */
+  /** 🧊 v106：悬浮窗状态条 —— 一眼看清现在到底谁在跑、谁停了。
+      （以前只把按钮文案从「⏸ 暂停」翻成「▶ 继续」，数字停住了也不显眼；
+        主计时和小任务倒计时还能同时跑，两个 ⏸ 长得一模一样，很容易停错那个。） */
+  function renderFloatState() {
+    const el = fx('tf-state');
+    if (!el) return;
+    const day = S().getDay(S().todayKey());
+    const resting = !!(day.activeRest || (App.link && App.link.isPausing && App.link.isPausing()));
+    const bits = [];
+    if (timer) bits.push(timer.paused ? '⏸ 主计时已暂停（不计时）' : '⏱ 主计时在跑');
+    if (cdTimer) bits.push(cdTimer.microRest ? '☕ 小任务小休中（不计时）'
+      : (cdTimer.paused ? '⏸ 小任务已暂停（不计时）' : '⏳ 小任务在跑'));
+    const both = !!(timer && cdTimer);
+    const show = both || resting || (!!timer && timer.paused) || (!!cdTimer && (cdTimer.paused || cdTimer.microRest));
+    el.classList.toggle('hidden', !show);
+    el.classList.toggle('warn', both);
+    el.textContent = resting
+      ? ('😴 休息中 · ' + (bits.join(' · ') || '计时已经停了'))
+      : (bits.join(' · ') + (both ? '　⚠️ 两个计时同时在跑，暂停时看清停的是哪一个' : ''));
+  }
+
   function renderFloatLec() {
     const box = fx('tf-lec');
     if (!box) return;
@@ -660,6 +683,7 @@
     if (timer || cdTimer) wakeKeep();   // 📱 手机：计时中别让屏幕睡过去
     renderFloatLec();
     renderDrawer();
+    renderFloatState();
     // 什么都没在进行（连听课也没有）→ 悬浮窗收起来，别留个空窗在屏幕上
     const lecOn = !!(App.lecture && App.lecture.current && App.lecture.current());
     if (!shouldKeepFloat() && !lecOn) {     // 计时/待办/听课都没在进行 → 才收窗
@@ -799,6 +823,7 @@
           planMinutes: planMode === 'down' ? ((+hInput.value || 0) * 60 + (+mInput.value || 0)) : 0,
           startedAt: Date.now(), pausedMs: 0, paused: false
         };
+        saveTimerSnap();     // 🛟 v107：一开计时就落盘 —— 刷新也能接回来
         App.ui.closeModal();
         showTimerBar();
         startTick();
@@ -820,6 +845,7 @@
       timer.pauseAt = undefined;
       timer.paused = false;
     }
+    saveTimerSnap();             // 🛟 v107：暂停/继续也要落盘（解冻后立刻刷新也能接对）
     showTimerBar();
     renderToday();
   }
@@ -942,10 +968,14 @@
     if (endMin < startMin) endMin = 1439; // 跨午夜截断到开始日 24:00 前
     const span = endMin - startMin;
     const mins = Math.min(actualMin, span > 0 ? span : actualMin);
+    // ✅ v106：把"这段时间里暂停/休息了多少"也写进记录 —— 前端早就写好「（已扣掉暂停 X）」的渲染，
+    //        但计时这条路一直没赋值，所以时间轴上从来只看到一个净时长，没法核对（用户："明显对不上"）。
+    const pausedMin = Math.max(0, Math.round((timer.pausedMs || 0) / 60000));
     day.timeline.push({
       id: S().uid(),
       start: startMin, end: endMin,
       minutes: mins,
+      pausedMin: pausedMin,
       content: timer.planContent,
       category: 'study',
       countAsStudy: true,
@@ -956,6 +986,7 @@
     });
     S().save();
     timer = null;
+    saveTimerSnap();             // 🛟 v107：正常结束 → 快照清掉（没有值得恢复的了）
     stopTick();
     hideTimerBar();
     App.ui.toast('已保存：时间轴已自动生成记录（' + S().hhmmOf(startMin) + '–' + S().hhmmOf(endMin) + '），记得打勾 ☑');
@@ -1570,6 +1601,7 @@
       microRest: false, microEndAt: 0, srRested: false, srReminded70: false, srForced: false,
       srLastPromptAt: 0
     };
+    saveTimerSnap();             // 🛟 v107
     startTick();
     showTimerBar();
     App.tasks.renderAll();
@@ -1590,6 +1622,7 @@
       cdTimer.pauseAt = undefined;
       cdTimer.paused = false;
     }
+    saveTimerSnap();             // 🛟 v107
     showTimerBar();
     App.tasks.renderAll();
   }
@@ -2016,6 +2049,7 @@
       recId: rec.id, sessId: sess.id, at: Date.now()
     });
     cdTimer = null;                 // ★ 关键：计时器清掉 → 用户可以立刻开新任务
+    saveTimerSnap();                // 🛟 v107
     stopTickIfIdle();
     showTimerBar();
     App.tasks.renderAll();
@@ -2092,6 +2126,7 @@
       startAt: stDate.toISOString(), endAt: endDate.toISOString(), pausedMs: cd.pausedMs || 0
     });
     cdTimer = null;
+    saveTimerSnap();                // 🛟 v107
     stopTickIfIdle();
     showTimerBar();
     S().save();
@@ -2692,8 +2727,8 @@
     } catch (e) { /* 忽略 */ }
     const undoneAll = [];
     ['required', 'ideal', 'extra'].forEach(function (k) {
-      // 📌 v99：副本（队列当前条 / 今天的基础任务）不算「今天没做完的任务」
-      (day.tasks[k] || []).filter(function (t) { return !t.done && !t.fromQueue; })
+      // 🧲 v105：副本（队列当前条 / 今天的基础任务）不算「今天没做完的任务」
+      (day.tasks[k] || []).filter(function (t) { return !t.done && !t.fromQueue && !t.fromDaily; })
         .forEach(function (t) { undoneAll.push({ k: k, task: t }); });
     });
     const undone = settings.extStrict ? undoneAll.filter(function (u) { return u.k !== 'extra'; }) : undoneAll.slice();
@@ -2915,8 +2950,8 @@
 
       const undoneAll = [];
       ['required', 'ideal', 'extra'].forEach(function (k) {
-        // 📌 v99：副本不算「今天没做完的任务」
-        day.tasks[k].filter(function (t) { return !t.done && !t.fromQueue; })
+        // 🧲 v105：副本不算「今天没做完的任务」
+        day.tasks[k].filter(function (t) { return !t.done && !t.fromQueue && !t.fromDaily; })
           .forEach(function (t) { undoneAll.push({ k: k, task: t }); });
       });
       // 🌱 严格模式：拓展不顺延（不进顺延名单），改挂账宽限
@@ -3101,6 +3136,186 @@
     App.ui.toast(distracted ? '⚠️ 记了一次消耗，结束今天的运动/任务时会扣 ' + FOCUS_CUT_PER + ' 分' : '✅ 休息结束，接着学吧');
   }
 
+  /* ---------- 🛟 v107：刷新 / 关页面后，计时不再凭空消失 ----------
+     用户：「我有时候计时，然后点了下网页的刷新的按钮，然后发现它的计时没了艾，时间轴上面也没有」。
+     真凶：timer / cdTimer 是**纯内存变量**（模块级 let），刷新一下就没了 —— 而只有"点⏹完成"才会写时间轴，
+     所以刷新 = 这段时间**彻底蒸发**（连记录都没有）。
+
+     做法：状态一变就把快照写进 localStorage（＋每 5 秒兜一次 ＋页面隐藏/卸载再写一次）。
+     下次打开时按"能不能安全接上"分三种：
+       · 快照是**暂停中** → 直接接回来（暂停的空档本来就不算，怎么都不会多算）
+       · 是**在跑**且离最后一次心跳 ≤ 8 分钟 → 直接接着算（刷新这种小空档不影响）
+       · 空档更大 / 那条任务已经不在了 / 那天已结算 → 弹窗让用户自己选：
+         「接着算」/「只记到刷新前（净 Y 分钟）」/「不要了」
+     ⚠️ 关键取舍：空档大时**绝不默认接着算** —— 那会把"关掉页面的两小时"算成学习，
+        跟 v106 修的是同一类错（系统只该为"你真的在学"记账）。 */
+  const SNAP_KEY = 'focusPlan.timer.v1';
+  const SNAP_GAP = 8 * 60000;    // 心跳空档小于这个数才敢直接接着算
+  let snapAt = 0;                // 上次写快照的时间（心跳节流用）
+
+  function saveTimerSnap() {
+    try {
+      if (!timer && !cdTimer) { localStorage.removeItem(SNAP_KEY); snapAt = 0; return; }
+      localStorage.setItem(SNAP_KEY, JSON.stringify({ t: timer, cd: cdTimer, at: Date.now() }));
+      snapAt = Date.now();
+    } catch (e) { /* 存储不可用就算了，不能让计时本身崩掉 */ }
+  }
+  function readTimerSnap() {
+    try {
+      const v = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null');
+      return (v && (v.t || v.cd)) ? v : null;
+    } catch (e) { return null; }
+  }
+  function clearTimerSnap() { try { localStorage.removeItem(SNAP_KEY); snapAt = 0; } catch (e) { /* 忽略 */ } }
+
+  /** 快照里那条任务现在还在不在（同一天、那条任务还在、那天还没结算）*/
+  function snapTaskAlive(s) {
+    if (!s || !s.taskId) return false;
+    try {
+      const d = S().getDay(S().dateKey(new Date(s.startedAt)));
+      if (!d || d.ended) return false;
+      return (d.tasks[s.taskKey] || []).some(function (t) { return t.id === s.taskId; });
+    } catch (e) { return false; }
+  }
+  /** 小任务快照：它挂的那道小题还在不在 */
+  function snapSubAlive(s) {
+    if (!s || !s.taskId || !s.subId) return false;
+    try {
+      const d = S().getDay(S().dateKey(new Date(s.startedAt)));
+      const task = (d.tasks[s.taskKey] || []).filter(function (t) { return t.id === s.taskId; })[0];
+      if (!task) return false;
+      const pool = s.groupId ? (((task.groups || []).filter(function (g) { return g.id === s.groupId; })[0] || {}).subs || []) : (task.subs || []);
+      return pool.some(function (x) { return x.id === s.subId; });
+    } catch (e) { return false; }
+  }
+  /** 快照的净分钟数：只算到最后一次心跳（暂停中的算到暂停那一刻）—— 关页面之后的空档不算 */
+  function snapNetMin(s) {
+    const end = s.at || Date.now();
+    const stop = (s.paused && s.pauseAt) ? Math.min(s.pauseAt, end) : end;
+    return Math.max(1, Math.ceil((stop - s.startedAt - (s.pausedMs || 0)) / 60000));
+  }
+  /** 把一份快照补记进时间轴（只到最后心跳那一刻） */
+  function snapToTimeline(s, tag) {
+    const day = S().getDay(S().dateKey(new Date(s.startedAt)));
+    const st = new Date(s.startedAt), en = new Date(s.at || Date.now());
+    const sMin = st.getHours() * 60 + st.getMinutes();
+    let eMin = en.getHours() * 60 + en.getMinutes();
+    if (eMin < sMin) eMin = 1439;
+    const mins = Math.max(1, Math.min(snapNetMin(s), Math.max(1, eMin - sMin)));
+    day.timeline = day.timeline || [];
+    day.timeline.push({
+      id: S().uid(), start: sMin, end: eMin, minutes: mins,
+      pausedMin: Math.max(0, Math.round((s.pausedMs || 0) / 60000)),
+      content: s.planContent || s.text || s.taskText || '（当时没写内容）',
+      category: 'study', countAsStudy: true, auto: true,
+      taskId: s.taskId || null, taskText: s.taskText || '',
+      note: ((s.note || '') + ' ' + (tag || '')).trim()
+    });
+    S().save();
+    return mins;
+  }
+
+  function restoreTimerSnap() {
+    const snap = readTimerSnap();
+    if (!snap) return;
+    const t0 = snap.t || null, c0 = snap.cd || null;
+    const gapMin = Math.max(0, (Date.now() - (snap.at || 0)) / 60000);
+    const aliveT = t0 ? snapTaskAlive(t0) : false;
+    const aliveC = c0 ? (snapSubAlive(c0) && snapTaskAlive(c0)) : false;
+    const paused = (t0 && t0.paused) || (c0 && (c0.paused || c0.microRest));
+    const sameDay = function (s) { return s && S().dateKey(new Date(s.startedAt)) === S().todayKey(); };
+
+    function attach(msg) {
+      if (t0 && aliveT) timer = JSON.parse(JSON.stringify(t0));
+      if (c0 && aliveC) cdTimer = JSON.parse(JSON.stringify(c0));
+      if (!timer && !cdTimer) return false;
+      startTick();
+      showTimerBar();
+      try { renderAll(); } catch (e) { /* 忽略 */ }
+      App.ui.toast(msg, 4600);
+      saveTimerSnap();
+      return true;
+    }
+
+    // ① 暂停中 → 直接接回（不会多算）
+    if (paused && (aliveT || aliveC)) {
+      if (attach('⏸ 刷新前那个计时还停着，已经接回来了（暂停期间不算时间）')) return;
+    }
+    // ② 在跑 + 空档很小 → 直接接着算
+    if (!paused && gapMin * 60000 <= SNAP_GAP && (aliveT || aliveC)
+        && (!t0 || aliveT) && (!c0 || aliveC)) {
+      if (attach('⏱ 刷新前那个计时还在跑，已经接上了（' + S().fmtDur(snapNetMin(t0 || c0)) + '）')) return;
+    }
+    // ③ 空档大 / 任务被删 / 那天结算了 → 让用户自己定，绝不静默丢
+    const lines = [];
+    const at0 = function (s) { const d = new Date(s.startedAt); return S().hhmmOf(d.getHours() * 60 + d.getMinutes()); };
+    if (t0) lines.push('⏱ <b>主计时</b>：' + S().esc(t0.planContent || t0.taskText || '（没写内容）') +
+      '（' + at0(t0) + ' 开始，净 ' + S().fmtDur(snapNetMin(t0)) + '）' +
+      (aliveT ? '' : ' <span style="color:#e2545d">· 这条任务已经不在了</span>'));
+    if (c0) lines.push('⏳ <b>小任务</b>：' + S().esc(c0.text || '') +
+      '（' + at0(c0) + ' 开始，净 ' + S().fmtDur(snapNetMin(c0)) + '）' +
+      (aliveC ? '' : ' <span style="color:#e2545d">· 这道题已经不在了</span>'));
+    const canKeep = (aliveT || aliveC) && (sameDay(t0 || c0)) && gapMin <= 360;
+    const btns = [];
+    if (canKeep) btns.push('<button class="btn" data-act="snap-keep">⏱ 接着算（空档也算进去）</button>');
+    btns.push('<button class="btn btn-primary" data-act="snap-log">🧾 只记到刷新前</button>');
+    btns.push('<button class="btn" data-act="snap-drop">🗑 不要了</button>');
+    App.ui.openModal('🛟 上次那个计时还在',
+      '<p class="hint" style="margin-top:0">刷新 / 关页面把计时打断了 —— 这段时间<b>不会自己消失</b>，你说怎么算：</p>' +
+      '<div style="font-size:13.5px;line-height:1.9">' + lines.join('<br/>') + '</div>' +
+      '<p class="hint">距上次记到的时间：约 ' + Math.round(gapMin) + ' 分钟' +
+      (canKeep ? '。<b>接着算</b>会把这 ' + Math.round(gapMin) + ' 分钟也算进去（你确实一直在学才这么选）。' :
+        '。空档比较大，或者那条任务已经不在了，所以只能把它记进时间轴（只记到刷新前那一刻）。') + '</p>',
+      btns.join(''));
+    App.ui.bindActions({
+      'snap-keep': function () {
+        App.ui.closeModal();
+        if (!attach('⏱ 已接上，接着算')) clearTimerSnap();
+      },
+      'snap-log': function () {
+        App.ui.closeModal();
+        let n = 0;
+        try {
+          if (t0) n += snapToTimeline(t0, '（刷新后补记）');
+          if (c0) n += snapToTimeline(c0, '（刷新后补记）');
+        } catch (e) { /* 忽略 */ }
+        clearTimerSnap();
+        try { if (App.timeline && App.timeline.render) App.timeline.render(); } catch (e) { /* 忽略 */ }
+        App.ui.toast(n ? ('🧾 已补记进时间轴：共 ' + S().fmtDur(n) + '（在 ' + S().shortDateCN(S().dateKey(new Date((t0 || c0).startedAt))) + ' 那栏）') : '这段太短了，就不记了', 5200);
+      },
+      'snap-drop': function () {
+        App.ui.closeModal();
+        clearTimerSnap();
+        App.ui.toast('🗑 这段不要了');
+      }
+    });
+  }
+
+  /* ---------- 🧊 v106：休息期间不让计时继续跑 ----------
+     用户：「啊？这个你暂停的时间也给我算进去了，明显对不上。我当时暂停了好久。」
+     实测确认：两条休息路径开始后，主计时**根本没停**（休息 2.5 秒，用时涨了 2.5 秒）——
+       ① 「☕ 定一段休息」（day.activeRest）
+       ② 底部「🔄 一段做完了（休息/杂事/娱乐）」（link.js 的 pause 段，独立模块，够不着计时器）
+     两边一起接上：休息开始把**正在跑**的计时冻上（跟 ☕ 小休 用同一套 togglePause），
+     结束时只恢复"本来就是它在跑"的那几个 —— 用户自己停掉的不动。 */
+  let restFroze = null;       // {timer:bool, cd:bool}：这次休息冻住了谁
+  function pauseForRest() {
+    if (restFroze) return restFroze;                 // 已经冻着，别重复
+    const f = { timer: false, cd: false };
+    if (timer && !timer.paused) { togglePause(); f.timer = true; }
+    if (cdTimer && !cdTimer.paused && !cdTimer.microRest) { toggleCdPause(); f.cd = true; }
+    restFroze = f;
+    if (f.timer || f.cd) App.ui.toast('⏸ 顺手把计时停了 —— 休息这段不算进学习时间', 4200);
+    return f;
+  }
+  function resumeAfterRest() {
+    const f = restFroze;
+    restFroze = null;
+    if (!f) return;
+    if (f.timer && timer && timer.paused) togglePause();
+    if (f.cd && cdTimer && cdTimer.paused && !cdTimer.microRest) toggleCdPause();
+  }
+
   /* ---------- 渲染 ---------- */
   const DEFAULT_POINTS = { ideal: 10, extra: 5 };
 
@@ -3218,10 +3433,9 @@
       pendingBarHTML() +                     // ★ v56：待办衔接（某题没标结果 / 接着做还是休息）
       COLS.map(function (col) {
       // 🧲 v85：队列实体化的副本不在三栏里渲染 —— 它住在队列页（那边有全套按钮）
-      // 📌 v99：但「今天的基础任务」点 ▶ 之后那份**要在这里显示** —— 用户说它可能是"安排到今天的复习任务"，
-      //        得能主题拆解、能听课、能加小任务/任务组，所以它跟今天别的任务一样住在这儿（带「📌 来自今天的基础」标签）。
-      //        （没点 ▶ 的基础任务不会生成副本，所以只有"真要动手做的"才会出现在这里。）
-      const list = day.tasks[col.key].filter(function (t) { return !t.fromQueue; });
+      // 🧲 v105：基础任务点 ▶ 之后的副本也一样 —— 它在「今天的基础任务」那一栏**原地**变成长任务行，
+      //         不借住必须栏（用户 v85 那句「都以此为主了，为什么还要排到必须完成的任务里，很别扭」）。
+      const list = day.tasks[col.key].filter(function (t) { return !t.fromQueue && !t.fromDaily; });
       const doneN = list.filter(function (t) { return t.done; }).length;
       const rows = list.map(function (t) { return taskRowHTML(col.key, t); }).join('');
       // 每栏底部"＋ 添加任务"（当天临时加任务；拓展栏受"可追加"开关控制）
@@ -3661,6 +3875,7 @@
         const pts = Math.max(0, +modal.querySelector('#rs-pts').value || 0);
         const tn = type === 'meal' ? '🍚 吃饭' : (type === 'sleep' ? '😴 睡觉' : '☕ 休息');
         day.activeRest = { id: S().uid(), startAt: new Date().toISOString(), duration: dur, type: type, typeName: tn, reward: pts };
+        pauseForRest();                       // 🧊 v106：休息开始 → 正在跑的计时冻上
         S().save(); App.ui.closeModal(); App.tasks.renderToday();
         App.ui.toast('☕ ' + tn + ' 开始：' + dur + ' 分钟，好好休息 +' + pts + ' 分');
       },
@@ -3688,6 +3903,7 @@
         App.store.addLedger(S().todayKey(), 'rest-reward', { points: gain, note: r.typeName + '好好休息奖励：积分+' + gain + '分' + (distracted ? '（休息中消耗，扣' + cutPct + '%）' : '') });
       }
       day.rests = day.rests || []; day.rests.push(r); day.activeRest = null;
+      resumeAfterRest();                    // 🧊 v106：休息结束 → 恢复刚才是它在跑的计时
       S().save();
       if (App.app && App.app.refreshStats) App.app.refreshStats();
       App.tasks.renderToday();
@@ -5798,9 +6014,9 @@
       });
     });
     // 手机锁屏/切后台会释放防息屏锁，回前台且有计时时重新拿一次
-    window.addEventListener('pagehide', function () { wakeFree(); });
+    window.addEventListener('pagehide', function () { wakeFree(); saveTimerSnap(); });   // 🛟 v107：走之前记一笔
     document.addEventListener('visibilitychange', function () {
-      if (document.hidden) return;
+      if (document.hidden) { saveTimerSnap(); return; }                                   // 🛟 v107：切后台/关标签也记一笔
       if (!timer && !cdTimer) return;
       wakeKeep();
       showTimerBar();   // 兜一次：万一悬浮窗被小窗带走或丢了，这里会把它补回页面
@@ -5808,6 +6024,8 @@
     window.addEventListener('focus', function () {
       if ((timer || cdTimer) && floatRoot() && floatRoot().classList.contains('hidden')) showTimerBar();
     });
+    // 🛟 v107：启动最后一步 —— 看看上一次是不是有没结束的计时，能接就接、接不了就让用户定
+    try { restoreTimerSnap(); } catch (e) { /* 恢复失败绝不能影响打开 */ }
   }
 
   App.tasks = {
@@ -5842,9 +6060,13 @@
     srFindTask: srFindTask, srShortModal: srShortModal, srOpenReview: srOpenReview,
     srRenderKps: srRenderKps, srSaveKps: srSaveKps, srPaintKps: srPaintKps,
     getTimer: function () { return timer; },
+    // 🛟 v107：快照读写（测试与排查都用得上）
+    saveTimerSnap: saveTimerSnap, restoreTimerSnap: restoreTimerSnap, readTimerSnap: readTimerSnap,
+    clearTimerSnap: clearTimerSnap,
     srShortModal: function (q) { srShortModal(q); },
     getCdTimer: function () { return cdTimer; },
     startSmallRest: startSmallRest, endSmallRest: endSmallRest,
+    pauseForRest: pauseForRest, resumeAfterRest: resumeAfterRest,   // 🧊 v106
     isRunning: isRunning, elapsedMs: elapsedMs,
     toggleCdPause: toggleCdPause, cdFinish: cdFinish,
     startCdTimer: startCdTimer,

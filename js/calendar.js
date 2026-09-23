@@ -492,8 +492,8 @@
     if (key <= todayK()) html += pieHTML(key);
     html += '<div class="cal-cols" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
     COLS.forEach(function (c) {
-      // 📌 v99：基础任务点 ▶ 生成的副本跟今天别的任务一样（带标签），日历里也看得见
-      const list = (day.tasks[c.k] || []);
+      // 🧲 v105：基础任务点 ▶ 的副本跟队列副本一样，不在日历里另起一行（它住队列页，就地就能做）
+      const list = (day.tasks[c.k] || []).filter(function (t) { return !t.fromDaily; });
       // 这一栏里有没有「和 t 同名的另一条」（有才给它配 🔗）
       const dupOf = function (t) {
         const mine = String(t.text || '').replace(/\s+/g, '');

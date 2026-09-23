@@ -107,6 +107,10 @@ input, select, textarea { font-family: inherit; }
 .tf-head { font-weight: 700; font-size: 14px; margin-bottom: 8px; color: var(--brand); cursor: move; user-select: none; }
 .tf-drag-hint { font-size: 11px; font-weight: 400; color: #a3aab4; }
 .tf-line { font-size: 12.5px; color: #6b7280; margin-bottom: 4px; word-break: break-word; }
+/* 🧊 v106：悬浮窗状态条 —— 谁在跑、谁停了，一眼看清（深色/紫色主题也跟着走） */
+#tf-state { margin: 0 0 8px; padding: 5px 8px; border-radius: 8px; font-size: 12px; line-height: 1.5;
+  background: rgba(59,130,246,.14); border-left: 3px solid var(--brand); color: var(--ink); }
+#tf-state.warn { background: rgba(226,84,93,.14); border-left-color: var(--req); }
 .tf-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .tf-track { height: 8px; background: #eef1f5; border-radius: 4px; overflow: hidden; margin: 10px 0; }
 .timer-progress {
@@ -1245,6 +1249,25 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
 .ck-dot.on { background: #22a06b; border-color: #22a06b; }
 .ck-dot.half { background: rgba(34, 160, 107, .35); border-color: rgba(34, 160, 107, .5); }
 .ck-acts { display: flex; gap: 6px; align-items: center; }
+/* ✅ v108：打卡的长期统计（今年多少天 + 连击） */
+.ck-year { margin-left: 7px; font-size: 11.5px; color: var(--muted); }
+/* 🌙 v109：从昨天挪来的基础任务 */
+.d-moved { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
+  background: #fdf3d8; color: #b45309; font-size: 11.5px; font-weight: 600; }
+body[data-theme="dark"] .d-moved, body[data-theme="purple"] .d-moved { background: #3a2f16; color: #f0c274; }
+.ck-yhead { float: right; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.ck-ystats { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 2px; font-size: 13px; }
+.ck-ystats b { font-size: 15px; color: var(--primary); font-variant-numeric: tabular-nums; }
+.ck-yrow { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.ck-ymon { flex: none; width: 30px; text-align: right; font-size: 11px; color: var(--muted); }
+.ck-ycells { display: flex; gap: 3px; flex-wrap: wrap; }
+.ck-ymsum { flex: none; width: 42px; font-size: 11px; color: var(--muted); }
+.ck-cell { width: 12px; height: 12px; border-radius: 3px; display: inline-block; background: rgba(127,127,127,.15); }
+.ck-cell.lv1 { background: rgba(34,160,107,.35); }
+.ck-cell.lv2 { background: rgba(34,160,107,.65); }
+.ck-cell.lv3 { background: #22a06b; }
+.ck-cell.future { background: transparent; border: 1px dashed rgba(127,127,127,.3); }
+.ck-cell.today { outline: 2px solid rgba(34,160,107,.6); outline-offset: 1px; }
 /* —— 📌 v100：每日必做的明细展开 / 收起 + 前几天没做完的提示条 —— */
 .q-sub-brief { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .q-sub-brieftxt { color: var(--muted); }

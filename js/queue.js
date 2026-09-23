@@ -309,11 +309,9 @@
       const arr = day.tasks[k] || [];
       for (let i = arr.length - 1; i >= 0; i--) {
         const c = arr[i];
-        // 📌 v99：基础任务点 ▶ 之后它是一条真任务 → 没做完的照常顺延，不再直接收走
-        //        （只有"还没开始计时、也没动过"的才顺手清掉，省得留空壳）
-        if (c.fromDaily && c.done !== true && !c.timerStarted && !(c.subs || []).length && !(c.groups || []).length) {
-          arr.splice(i, 1); n++; continue;
-        }
+        // 🧲 v105：基础任务的副本住队列页（跟队列当前条一个待遇）→ 结算时把没做完的那份收走。
+        //        它对应的「今天的基础任务」只对今天有效，明天本来就重挑，不顺延、不扣分、也不丢记录。
+        if (c.fromDaily && c.done !== true) { arr.splice(i, 1); n++; continue; }
         if (c.fromQueue && c.done !== true) { syncBack(c); arr.splice(i, 1); n++; }
       }
     });
@@ -850,8 +848,9 @@
       '<div><label class="q-lab">内容</label>' +
       '<input id="q-ed-text" class="q-input" type="text" value="' + esc(it.text) + '" /></div>' +
       // 🧩 v89：每日必做里已经挂着小任务/任务组的（多是从队列搬过来的），也要能改/能清
-      (isDaily && !(it.subs && it.subs.length) && !(it.groups && it.groups.length) ? '' :
-       isDaily && (it.subs && it.subs.length || it.groups && it.groups.length) ?
+      // 🧲 v105：基础任务也要能"拆解" —— 以前只有本来就带明细的条目才给这个编辑框，
+      //          新建的条目永远加不了小任务/任务组（只能等点 ▶ 之后去任务页补）。现在一律给。
+      (isDaily ?
         '<div style="margin-top:10px"><label class="q-lab">📝 小任务（每行一个；要限时就写「题名|分钟」。<b>改了会重置进度</b>）</label>' +
         '<textarea id="q-ed-subs" class="q-input" rows="3" style="width:100%;resize:vertical">' + esc(serializeSubLines(it.subs)) + '</textarea></div>' +
         '<div style="margin-top:8px"><label class="q-lab">🧩 任务组</label>' +
@@ -1126,6 +1125,7 @@
     if (timingId()) { App.ui.toast('已经在计时了 —— 先在计时窗里结束或暂停那一条', 3600); return; }
     const copy = dailyCopyOf(id) || makeDailyCopy(it);
     syncDailyCopy(it, copy);
+    delete openDaily[id];      // 🧲 v105：开始做了 → 收起"只读明细"，下面原地长出能干活的那一行
     S().save();
     try { App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
     render();
@@ -1286,6 +1286,16 @@
     return h;
   }
 
+  /** 昨天的日期键（挪标记用） */
+  function shiftDayBack2(key) {
+    const p = String(key || '').split('-');
+    if (p.length < 3) return '';
+    const d = new Date(+p[0], (+p[1]) - 1, +p[2]);
+    d.setDate(d.getDate() - 1);
+    const z = function (x) { return (x < 10 ? '0' : '') + x; };
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+  }
+
   const openDaily = {};      // 📌 v100：哪几条的明细是展开的
 
   /** 📌 v100：每日必做的明细 —— 收起时只给一行摘要，展开后逐题列出（能单独勾）
@@ -1376,7 +1386,9 @@
     h += '<h2>📌 今天的基础任务</h2>';
     h += '<p class="hint" style="margin-top:-2px">把<b>今天最底线要做的几件</b>放这儿（复习、听力、单词那类）。打勾就行 —— ' +
       '<b>不算在完成率里</b>。<br>⚠️ <b>只对今天有效</b>：明天要做什么，明天再挑一次（在日历里点 📌、用「📥 从以往提取」，或直接加）。' +
-      '想固定在某一天做，点它右边的 <b>📅</b>。<br>💡 挂着小任务/任务组的，点行里的 <b>⇣ 展开</b> 能逐条看、逐条勾。</p>';
+      '今天没做完的：行尾点 <b>🌙</b>（或下面一整条）就能<b>挪到明天</b> —— 明天它照样出现在这儿，进度跟着走。<br>' +
+      '想固定在某一天做，点它右边的 <b>📅</b>。<br>💡 挂着小任务/任务组的，点行里的 <b>⇣ 展开</b> 能逐条看、逐条勾。' +
+      '<br>🧲 点 <b>▶</b> 做这条 —— 它会在<b>原地</b>变成一条<b>完整任务</b>（🎧 听课、加小任务、建任务组、逐题计时都在那儿）。</p>';
 
     // ↩ v100：前几天没做完的，留着让你搬（以前会被自动删掉）
     const stale = staleDaily();
@@ -1408,23 +1420,96 @@
         h += '<div class="q-row' + (done ? ' q-row-done' : '') + '" data-id="' + it.id + '">' +
           '<button class="task-check' + (done ? ' checked' : '') + '" data-act="d-toggle" data-id="' + it.id + '">' +
           (done ? '✓' : '') + '</button>' +
-          '<span class="q-text">' + esc(it.text) + mtag(it, 'daily') + dailySubHTML(it, !!openDaily[it.id]) + '</span>' +
+          '<span class="q-text">' + esc(it.text) + mtag(it, 'daily') +
+            (it.movedFrom === shiftDayBack2(k) ? '<span class="d-moved">↩ 昨天挪来的</span>' : '') +
+            dailySubHTML(it, !!openDaily[it.id]) + '</span>' +
           '<span class="q-meta">' + meta + '</span>' +
           '<span class="q-acts">' +
           '<button class="q-ib d-start' + (running ? ' running' : '') + '" data-act="d-start" data-id="' + it.id +
             '" title="' + (running ? '正在计时 —— 点计时窗可暂停/结束' : '现在做这条（开始计时）') + '">' + (running ? '⏱' : '▶') + '</button>' +
           '<button class="q-ib" data-act="d-toqueue" data-id="' + it.id + '" title="转入队列（按顺序做）">📋</button>' +
           '<button class="q-ib" data-act="d-sched" data-id="' + it.id + '" title="安排到某一天做">📅</button>' +
+          '<button class="q-ib" data-act="d-tomorrow" data-id="' + it.id + '" title="今天不做了，挪到明天（明天它还在「今天的基础任务」里）">🌙</button>' +
           '<button class="q-ib" data-act="d-edit" data-id="' + it.id + '" title="改">✏️</button>' +
           '<button class="q-ib" data-act="d-del" data-id="' + it.id + '" title="删掉">🗑</button>' +
           '</span></div>';
+        // 🧲 v105：点过 ▶ 的这条 —— 在**原地**长出完整任务行（跟队列页「现在做这条」一模一样）：
+        //   🎧 听课三步 / 📝 加小任务 / 🧩 建任务组 / 逐题 ▶ 计时 全在这一行上，不用跑去任务页找。
+        if (copy) {
+          h += '<div class="task-col q-now-area q-daily-area" data-col="required" id="q-daily-area-' + it.id + '">' +
+            (App.tasks && App.tasks.taskRowHTML ? App.tasks.taskRowHTML('required', copy) : '') + '</div>';
+        }
       });
     }
+    const undoneN = list.filter(function (x) { return !dDone(x, k); }).length;
     h += '<div class="q-head"><span></span><span>' +
+      (undoneN ? '<button class="btn btn-small" data-act="d-tomorrow-all" title="今天没做完的，一次全挪到明天">🌙 没做完的 ' + undoneN + ' 条挪到明天</button> ' : '') +
       '<button class="btn btn-small" data-act="dp-open" title="以前没做完的任务，提一条进来当今天要做的">📥 从以往提取</button> ' +
       '<button class="btn btn-small" data-act="d-add">+ 加到今天</button></span></div>';
     h += '</div>';
     return h;
+  }
+
+  /* ---------- 🌙 v109：今天没做完的基础任务，挪到明天 ----------
+     用户（23:00 发的）：「我今天的任务还没做，然后你给我移到明天啊。拜托了，拜托了，拜托了。」
+     做法：把条目的 pinnedDay 改成明天 —— 今天它从列表里消失，明天它就是「今天的基础任务」里的一条。
+     ⚠️ 两个坑：① 点过 ▶ 的副本还在今天的 day.tasks 里，直接挪会留一条**看不见的孤儿任务** →
+        先把副本里做过的进度（勾了的小题 / 评语 / 🧭拆解记录）拉回源条目，再 dropDailyCopy 收掉；
+        正在计时的那条不动（不然计时会找不到任务）。② 只挪没打勾的，打勾的留着当今天的记录。 */
+  function pullCopyProgress(it) {
+    let copy = null;
+    try { copy = dailyCopyOf(it.id, true); } catch (e) { copy = null; }
+    if (!copy || !it) return;
+    const merge = function (dstArr, srcArr) {
+      (dstArr || []).forEach(function (d) {
+        const s = (srcArr || []).filter(function (x) { return x.id === d.id; })[0];
+        if (!s) return;
+        if (s.done) { d.done = s.done; if (s.doneAt) d.doneAt = s.doneAt; }
+        if (s.summary) d.summary = s.summary;
+        if (s.splitlog) d.splitlog = s.splitlog;
+      });
+    };
+    merge(it.subs, copy.subs);
+    (it.groups || []).forEach(function (g) {
+      const cg = (copy.groups || []).filter(function (x) { return x.id === g.id; })[0];
+      if (cg) merge(g.subs, cg.subs);
+    });
+  }
+
+  /** 把一条挪到明天（quiet=true 时不出单条 toast，给批量用） */
+  function moveDailyToTomorrow(id, quiet) {
+    const it = findIn(DY(), id);
+    if (!it) return false;
+    const k = pinToday();
+    if (dDone(it, k)) {
+      if (!quiet) App.ui.toast('这条今天已经打勾了 —— 不用挪');
+      return false;
+    }
+    let copy = null;
+    try { copy = dailyCopyOf(it.id, true); } catch (e) { copy = null; }
+    if (copy && timingId() === copy.id) {
+      if (!quiet) App.ui.toast('⏱ 这条正在计时 —— 先在计时窗里结束它，再挪到明天', 4200);
+      return false;
+    }
+    if (copy) { pullCopyProgress(it); dropDailyCopy(it.id); }
+    it.movedFrom = k;                    // 记一笔来源，第二天那行会标「↩ 昨天挪来的」
+    it.pinnedDay = addDays(k, 1);        // ← 关键：只改这一处，今天消失、明天出现
+    S().save();
+    try { App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+    return true;
+  }
+
+  /** 🌙 一次性把今天没做完的全挪到明天 */
+  function moveAllDailyToTomorrow() {
+    const k = pinToday();
+    const list = todayDaily().filter(function (x) { return !dDone(x, k); });
+    if (!list.length) { App.ui.toast('今天的基础任务都打勾了，没有要挪的 🎉'); return; }
+    let n = 0;
+    list.forEach(function (x) { if (moveDailyToTomorrow(x.id, true)) n++; });
+    render();
+    App.ui.toast(n === list.length
+      ? ('🌙 ' + n + ' 条挪到明天了 —— 明天它们还会出现在「今天的基础任务」里')
+      : ('🌙 挪了 ' + n + ' 条；剩下 ' + (list.length - n) + ' 条正在计时，先在计时窗里结束它再挪'), 4800);
   }
 
   /** 📥 v87：每日必做的「从以往提取」—— 列出以前没做完的任务，提一条进来当每日小事 */
@@ -1498,6 +1583,12 @@
     // 🧲 v85：嵌入的当前条 = 完整任务行 → 接上同一套事件委托，听课三步也要接
     const area = document.getElementById('q-now-area');
     if (area && App.tasks && App.tasks.bindTaskAreaEvents) App.tasks.bindTaskAreaEvents(area);
+    // 🧲 v105：「今天的基础任务」里就地做的那几条，接的也是同一套事件（拆解 / 听课 / 逐题计时）
+    if (root) {
+      root.querySelectorAll('.q-daily-area').forEach(function (a) {
+        if (App.tasks && App.tasks.bindTaskAreaEvents) App.tasks.bindTaskAreaEvents(a);
+      });
+    }
     if (App.lecture && App.lecture.bindInline) App.lecture.bindInline();
     refreshBar();
   }
@@ -1597,6 +1688,15 @@
       return;
     }
     if (act === 'd-start') { startDaily(id); return; }
+    if (act === 'd-tomorrow') {
+      const it0 = findIn(DY(), id);
+      if (moveDailyToTomorrow(id)) {
+        render();
+        App.ui.toast('🌙 「' + (it0 ? it0.text.slice(0, 14) : '') + '」挪到明天了 —— 明天它还在「今天的基础任务」里', 4200);
+      }
+      return;
+    }
+    if (act === 'd-tomorrow-all') { moveAllDailyToTomorrow(); return; }
 
     if (act === 'q-del') {
       const it = findIn(Q(), id); if (!it) return;
@@ -1685,6 +1785,7 @@
     shiftDayBack: shiftDayBack,
     onDailyDone: onDailyDone,
     dailyCopyOf: dailyCopyOf,
+    moveDailyToTomorrow: moveDailyToTomorrow, moveAllDailyToTomorrow: moveAllDailyToTomorrow,   // 🌙 v109
     dropDailyCopy: dropDailyCopy,
     pushConfigFromCopy: pushConfigFromCopy
   };

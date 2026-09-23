@@ -93,6 +93,8 @@
           startKey: S().todayKey(), startMin: S().minOfDay(startVal),
           planned: planned, startedAt: Date.now()
         };
+        // 🧊 v106：开始休息/杂事/娱乐 —— 正在跑的计时先冻上，不然这一整段会被算成学习时间
+        try { if (App.tasks && App.tasks.pauseForRest) App.tasks.pauseForRest(); } catch (e) { /* 忽略 */ }
         App.ui.closeModal();
         render();
         App.ui.toast('开始' + t.verb + '了，结束后点「🔙 我回来了」');
@@ -147,6 +149,7 @@
         'rest-off': function () { restState = 'off'; App.ui.closeModal(); reopen(); },
         'link-skip': function () {
           pause = null;
+          try { if (App.tasks && App.tasks.resumeAfterRest) App.tasks.resumeAfterRest(); } catch (e) { /* 忽略 */ }
           render();
           App.ui.closeModal();
           App.ui.toast('⏭ 已跳过这段，直接接着学');
@@ -189,6 +192,7 @@
       }
     }
     pause = null;
+    try { if (App.tasks && App.tasks.resumeAfterRest) App.tasks.resumeAfterRest(); } catch (e) { /* 忽略 */ }
     render();
     S().save();
     if (typeof App.tasks !== 'undefined' && App.tasks.renderAll) App.tasks.renderAll();

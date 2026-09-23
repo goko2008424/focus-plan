@@ -61,7 +61,7 @@
       el.innerHTML = '<span class="tl-rec-time">' + S().hhmmOf(r.start) + '–' + S().hhmmOf(r.end) +
         ' · ' + S().fmtDur(r.minutes) +
         // ✅ v64：听课暂停/小休的时间不算学习，但把跨度和暂停都写出来，免得看着像少算了
-        (r.pausedMin > 0 ? ' <span class="tl-paused" style="color:#c07d13">（含暂停 ' + S().fmtDur(r.pausedMin) + ' 不计）</span>' : '') +
+        (r.pausedMin > 0 ? ' <span class="tl-paused" style="color:#c07d13">（已扣掉暂停 ' + S().fmtDur(r.pausedMin) + '）</span>' : '') +
         '</span><br/>' + (r.auto ? '⏱ ' : '') + S().esc(r.content);
       el.title = r.content + (r.hourPlanId ? '　👆 点一下看这一段具体做了什么' : '（' + App.ui.CATS[r.category].label + '）');
       grid.appendChild(el);

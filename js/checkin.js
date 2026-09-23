@@ -57,6 +57,135 @@
   }
   function save() { S().save(); try { App.app.refreshStats && App.app.refreshStats(); } catch (e) { /* 忽略 */ } }
 
+  /* ---------- 🔥 v108：长期打卡的连击奖励 ----------
+     用户：「你长期打卡的话，实际上是有一些奖励…比如说，你连续打7天的话，最后一天那个奖励翻倍，
+            然后每周都是这个样子。然后，你如果持续一个月的话，那么就是翻4倍，像是这个样子。」
+
+     口径（跟用户对齐过的那种"越坚持越值钱"）：
+       · **连击按"全局连续打卡天数"算** —— 那天只要打过任意一项，就算这一天打了卡（跟"一年打卡多少天"同一套口径）
+       · 倍率分档：连续 7 天起 ×2、30 天起 ×4、60 天起 ×6、90 天起 ×8（一档一档往上涨，断一天就回 ×1）
+       · **只有"每天第一次打卡"吃倍率** —— 连击奖励是奖励"你今天来了"，不是奖励多刷几次
+     ⚠️ 想改档位只动 multOf() 这一张表就行。 */
+  const MULT_TABLE = [[7, 2], [30, 4], [60, 6], [90, 8]];   // [连续满多少天, 倍率]
+  function multOf(cs) {
+    let m = 1;
+    for (let i = 0; i < MULT_TABLE.length; i++) if (cs >= MULT_TABLE[i][0]) m = MULT_TABLE[i][1];
+    return m;
+  }
+  /** 全局"哪天打过卡"：{ '2026-09-22': 当天总次数 } */
+  function dayMap() {
+    const s = {};
+    D().forEach(function (it) {
+      Object.keys(it.days || {}).forEach(function (k) {
+        const n = it.days[k] || 0;
+        if (n > 0) s[k] = (s[k] || 0) + n;
+      });
+    });
+    return s;
+  }
+  /** 全局连续打卡天数（今天还没打就从昨天数起，不然一早显示 0 很打击人） */
+  function streakAll() {
+    const s = dayMap();
+    let k = today(), n = 0;
+    if (!s[k]) k = shiftKey(k, -1);
+    while (s[k]) { n++; k = shiftKey(k, -1); }
+    return n;
+  }
+  /** 算上今天之后的连续天数（今天打了就接上，没打就算"打了会变成几天"） */
+  function streakWithToday() {
+    const s = dayMap();
+    return s[today()] ? streakAll() : streakAll() + 1;
+  }
+  function timesTodayAll() { let n = 0; D().forEach(function (it) { n += timesToday(it); }); return n; }
+  /** 下一次打卡能拿到的倍率（今天已经打过就只剩 ×1） */
+  function nextMult() { return timesTodayAll() > 0 ? 1 : multOf(streakWithToday()); }
+  /** 倍率说明（给界面用）：下一档还差几天 */
+  function nextTierHint() {
+    const cs = streakWithToday();
+    for (let i = 0; i < MULT_TABLE.length; i++) {
+      if (cs < MULT_TABLE[i][0]) return { need: MULT_TABLE[i][0] - cs, mult: MULT_TABLE[i][1] };
+    }
+    return null;
+  }
+
+  /* ---------- 📊 v108：年度统计（一年打卡多少天） ---------- */
+  const pad2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  function yearOf(k) { return +String(k).slice(0, 4); }
+  function yearsWithData() {
+    const ys = {};
+    const s = dayMap();
+    Object.keys(s).forEach(function (k) { if (s[k] > 0) ys[yearOf(k)] = true; });
+    const arr = Object.keys(ys).map(Number).sort(function (a, b) { return b - a; });
+    return arr;
+  }
+  function yearStats(y) {
+    const s = dayMap();
+    const keys = Object.keys(s).filter(function (k) { return yearOf(k) === y && s[k] > 0; }).sort();
+    const months = [];
+    for (let m = 0; m < 12; m++) months.push({ days: 0, times: 0 });
+    let times = 0, maxStreak = 0, run = 0, prev = '';
+    keys.forEach(function (k) {
+      const n = s[k];
+      times += n;
+      const m = (+String(k).slice(5, 7)) - 1;
+      if (months[m]) { months[m].days++; months[m].times += n; }
+      if (prev && shiftKey(prev, 1) === k) run++; else run = 1;
+      if (run > maxStreak) maxStreak = run;
+      prev = k;
+    });
+    return { year: y, days: keys.length, times: times, maxStreak: maxStreak, months: months, map: s };
+  }
+  let yearSel = null;   // 📊 年度卡看的是哪一年（默认今年，可左右翻）
+  function yearCardHTML() {
+    const ys = yearsWithData();
+    const thisYear = new Date().getFullYear();
+    // 📅 v108：允许往前翻最近 5 年（空年份也要能看 —— "去年几乎没打"本身就是有用的信息），但不给看未来
+    const minY = thisYear - 4;
+    if (yearSel == null) yearSel = thisYear;
+    if (yearSel > thisYear) yearSel = thisYear;
+    if (yearSel < minY) yearSel = minY;
+    const st = yearStats(yearSel);
+    const kToday = today();
+    let rows = '';
+    for (let m = 0; m < 12; m++) {
+      const daysIn = new Date(yearSel, m + 1, 0).getDate();
+      let cells = '';
+      for (let d = 1; d <= daysIn; d++) {
+        const k = yearSel + '-' + pad2(m + 1) + '-' + pad2(d);
+        const n = st.map[k] || 0;
+        const future = k > kToday;
+        const lv = n <= 0 ? 0 : (n >= 3 ? 3 : (n >= 2 ? 2 : 1));
+        cells += '<span class="ck-cell lv' + lv + (future ? ' future' : '') + (k === kToday ? ' today' : '') +
+          '" title="' + k + (future ? '（还没到）' : '：' + (n ? n + ' 次' : '没打卡')) + '"></span>';
+      }
+      const mm = st.months[m];
+      rows += '<div class="ck-yrow"><span class="ck-ymon">' + (m + 1) + '月</span>' +
+        '<span class="ck-ycells">' + cells + '</span>' +
+        '<span class="ck-ymsum">' + (mm.days ? mm.days + ' 天' : '—') + '</span></div>';
+    }
+    const hint = nextTierHint();
+    return '<div class="card">' +
+      '<h2>📊 打卡统计' +
+      '<span class="ck-yhead">' +
+      '<button class="q-ib" data-act="ck-y-prev" title="上一年"' + (yearSel <= thisYear - 4 ? ' disabled style="opacity:.35"' : '') + '>‹</button>' +
+      '<b>' + yearSel + '</b>' +
+      '<button class="q-ib" data-act="ck-y-next" title="下一年"' + (yearSel >= thisYear ? ' disabled style="opacity:.35"' : '') + '>›</button>' +
+      '</span></h2>' +
+      '<div class="ck-ystats">' +
+      '<span>这一年打卡 <b>' + st.days + '</b> 天</span>' +
+      '<span>共 <b>' + st.times + '</b> 次</span>' +
+      '<span>最长连续 <b>' + st.maxStreak + '</b> 天</span>' +
+      '<span>当前连续 <b>' + streakAll() + '</b> 天</span>' +
+      '</div>' +
+      '<p class="hint" style="margin-top:-2px">所有打卡项合起来算：<b>那天只要打过任意一项，就算一天</b>。' +
+      '格子颜色越深 = 那天打得越多（超过 2 次就到顶）。<b>以后的日子留白</b>，还没到不算。' +
+      (hint ? '<br>🔥 连击：再连续 <b>' + hint.need + '</b> 天，每天第一次打卡就是 <b>×' + hint.mult + '</b>。' :
+        '<br>🔥 连击已经到顶（×' + multOf(streakWithToday()) + '）—— 保持住！') +
+      '</p>' +
+      rows +
+      '</div>';
+  }
+
   /* ---------- 打卡 / 取消 ---------- */
   function punch(id) {
     const it = find(id); if (!it) return;
@@ -65,15 +194,23 @@
     const n = (it.days[k] || 0) + 1;
     const tg = targetOf(it);
     if (n > tg) { App.ui.toast('今天已经打满 ' + tg + ' 次啦'); return; }
+    // 🔥 v108：今天第一次打卡 → 吃连击倍率（多刷的不加，免得刷分）
+    const mult = timesTodayAll() === 0 ? multOf(streakWithToday()) : 1;
     it.days[k] = n;
-    const pts = Math.max(0, +it.points || 0);
+    const base = Math.max(0, +it.points || 0);
+    const pts = base * mult;
     if (pts > 0) {
-      S().addLedger(k, 'earn-checkin', { points: pts, note: '✅ 打卡：' + it.text, taskId: it.id });
+      S().addLedger(k, 'earn-checkin', {
+        points: pts, taskId: it.id,
+        note: '✅ 打卡：' + it.text + (mult > 1 ? '（连击 ×' + mult + '）' : '')
+      });
     }
     save(); render();
+    const stAll = streakAll();
     App.ui.toast('✅ ' + it.text.slice(0, 12) + ' +' + pts + ' 分' +
+      (mult > 1 ? '（🔥 连击 ×' + mult + '）' : '') +
       (tg > 1 ? '（今天 ' + n + '/' + tg + '）' : '') +
-      (streakOf(it) > 1 ? ' · 连续 ' + streakOf(it) + ' 天 🔥' : ''), 3600);
+      (stAll > 1 ? ' · 连续打卡 ' + stAll + ' 天' : ''), 4200);
   }
   function unpunch(id) {
     const it = find(id); if (!it) return;
@@ -142,6 +279,10 @@
   /* ---------- 渲染 ---------- */
   function rowHTML(it) {
     const n = timesToday(it), tg = targetOf(it), done = doneToday(it), st = streakOf(it);
+    // 🔥 v108：这是今天第一次打卡时，按钮上直接写明"连击后到手多少分"
+    const firstToday = timesTodayAll() === 0;
+    const mult = firstToday ? multOf(streakWithToday()) : 1;
+    const gain = Math.max(0, +it.points || 0) * mult;
     const wk = weekOf(it).map(function (w) {
       const on = w.times > 0;
       const full = w.times >= tg;
@@ -152,7 +293,8 @@
       '<div class="ck-main">' +
       '<div class="ck-name">' + esc(it.text) +
       (tg > 1 ? ' <span class="ck-cnt">' + n + '/' + tg + '</span>' : '') +
-      (st > 1 ? '<span class="ck-streak">🔥 连续 ' + st + ' 天</span>' : '') + '</div>' +
+      (st > 1 ? '<span class="ck-streak">🔥 这项连续 ' + st + ' 天</span>' : '') +
+      (yearDaysOf(it) > 0 ? '<span class="ck-year">今年 ' + yearDaysOf(it) + ' 天</span>' : '') + '</div>' +
       (it.note ? '<div class="ck-note">' + esc(it.note) + '</div>' : '') +
       '<div class="ck-week">' + wk + '</div>' +
       '</div>' +
@@ -160,10 +302,18 @@
       (done
         ? '<button class="btn btn-small" data-act="ck-undo" data-id="' + it.id + '" title="撤销今天一次">↩ 撤销</button>'
         : '<button class="btn btn-small btn-primary" data-act="ck-punch" data-id="' + it.id + '">✅ 打卡' +
-          (it.points ? ' +' + it.points : '') + '</button>') +
+          (it.points ? ' +' + gain : '') + (mult > 1 ? '（×' + mult + '）' : '') + '</button>') +
       '<button class="q-ib" data-act="ck-edit" data-id="' + it.id + '" title="改">✏️</button>' +
       '<button class="q-ib" data-act="ck-del" data-id="' + it.id + '" title="删掉">🗑</button>' +
       '</span></div>';
+  }
+
+  /** 这一项在今年打了多少天（行里显示用） */
+  function yearDaysOf(it) {
+    const y = String(new Date().getFullYear());
+    let n = 0;
+    Object.keys(it.days || {}).forEach(function (k) { if (k.indexOf(y + '-') === 0 && it.days[k] > 0) n++; });
+    return n;
   }
 
   function pageHTML() {
@@ -182,7 +332,12 @@
       '<p class="hint" style="margin-top:-2px">想养成的小习惯放这儿 —— <b>喝水、保健品、运动、几点休息</b>都行。' +
       '打一次卡得一次分，下面那 7 个小点是最近一周（今天在最右），还能看连续了多少天。<br>' +
       '⚠️ 它<b>不算进「必须 x/x」的完成率</b>，也不占队列 —— 就是给自己的一个正反馈。' +
-      (list.length ? '<br>今天：<b>' + doneN + '/' + list.length + '</b>' + (ptsToday ? ' · 打卡已得 <b>' + ptsToday + '</b> 分' : '') : '') +
+      '<br>🔥 <b>长期打卡有奖励</b>：连续 7 天起、每天第一次打卡 <b>×2</b>；满 30 天 <b>×4</b>；满 60 天 <b>×6</b>；满 90 天 <b>×8</b>（断一天回 ×1）。' +
+      (list.length
+        ? '<br>今天：<b>' + doneN + '/' + list.length + '</b>' +
+          (streakAll() > 0 ? ' · 连续打卡 <b>' + streakAll() + '</b> 天' + (multOf(streakAll()) > 1 ? '（今天第一次打卡 <b>×' + multOf(streakAll()) + '</b>）' : '') : '') +
+          (ptsToday ? ' · 打卡已得 <b>' + ptsToday + '</b> 分' : '')
+        : '') +
       '</p>' +
       '<div class="mc-acts" style="margin-bottom:10px">' +
       '<button class="btn btn-small" data-act="ck-add">＋ 加一个打卡项</button>' +
@@ -194,6 +349,7 @@
       h += list.map(rowHTML).join('');
     }
     h += '</div>';
+    h += yearCardHTML();      // 📊 v108：年度统计（一年打卡多少天）
     return h;
   }
 
@@ -207,6 +363,8 @@
     if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
     if (act === 'ck-add') { editModal(null); return; }
+    if (act === 'ck-y-prev') { yearSel = (yearSel || new Date().getFullYear()) - 1; render(); return; }
+    if (act === 'ck-y-next') { yearSel = (yearSel || new Date().getFullYear()) + 1; render(); return; }
     if (act === 'ck-edit') { editModal(id); return; }
     if (act === 'ck-punch') { punch(id); return; }
     if (act === 'ck-undo') { unpunch(id); return; }
@@ -237,6 +395,9 @@
     unpunch: unpunch,
     streakOf: streakOf,
     doneToday: doneToday,
+    // 🔥 v108：连击与年度统计（也给测试/别处用）
+    multOf: multOf, streakAll: streakAll, streakWithToday: streakWithToday,
+    nextMult: nextMult, dayMap: dayMap, yearStats: yearStats, yearsWithData: yearsWithData,
     countDone: function () { return D().filter(doneToday).length; },
     countAll: function () { return D().length; }
   };
