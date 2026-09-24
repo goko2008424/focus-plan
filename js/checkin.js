@@ -9,6 +9,9 @@
  *   data.checkins = [ { id, text, points, target, note, createdAt,
  *                       days: { '2026-09-22': 1 } } ]     // days[日期] = 那天打了几次
  * 积分走账本（type = 'earn-checkin'），取消打卡会把那一笔撤掉。
+ * 🔁 v119：补打卡 —— 最近一周没打满的小圆点直接点就能补（或 ✏️ 编辑里勾选）。
+ *    积分照发、记在补的那天，算「那天打了」（连续天数自动接上）；
+ *    但补卡永远 ×1，不触发连击倍率（防「想起来一起补 7 天刷倍率」）。未来日期不能补。
  * ============================================================ */
 (function () {
   'use strict';
@@ -233,11 +236,65 @@
     App.ui.toast('↩ 撤销了今天一次：' + it.text.slice(0, 12));
   }
 
+  /* ---------- 🔁 v119：补打卡 ----------
+     用户：「可不可以加一个补打卡？」—— 忘了打的卡要能补。
+     口径（AGENTS.md 待办里对齐过的）：
+       · 入口两个：① 最近 7 天的小圆点直接点（过去且没打满的 = 补那天）
+                   ② ✏️ 编辑弹窗里列最近 6 天勾选（今天的卡用页面上那个按钮打）
+       · 补卡走同一账本 earn-checkin，积分照发（记在补的那天，不扣）
+       · 补卡算「那天打了」（days[日期] 落了就是打了 → 连续天数自动接上）
+       · 🔴 但补卡永远 ×1 —— 倍率只给「真实打卡那次」，防「想起来一起补 7 天刷倍率」
+       · 未来日期不能补（还没到的日子不存在「忘了打」） */
+  function makeupCore(it, k) {
+    const t = today();
+    if (!k || k >= t) return '未来的日子不能补 —— 还没到的不存在「忘了打」';
+    if (k < shiftKey(t, -6)) return '只能补最近一周的卡，更早的就翻篇啦';
+    if (!it.days) it.days = {};
+    const tg = targetOf(it);
+    const cur = it.days[k] || 0;
+    if (cur >= tg) return '那天已经打满 ' + tg + ' 次啦';
+    it.days[k] = cur + 1;
+    const base = Math.max(0, +it.points || 0);
+    if (base > 0) {
+      S().addLedger(k, 'earn-checkin', {
+        points: base, taskId: it.id,
+        note: '✅ 补卡：' + it.text + '（补 ' + k.slice(5).replace('-', '/') + ' 的卡）'
+      });
+    }
+    return null;
+  }
+  function makeupPunch(id, k) {
+    const it = find(id); if (!it) return;
+    const err = makeupCore(it, k);
+    if (err) { App.ui.toast('⚠️ ' + err); return; }
+    save(); render();
+    App.ui.toast('✅ 补了 ' + k.slice(5).replace('-', '/') + ' 的卡：' + it.text.slice(0, 12) +
+      ' +' + Math.max(0, +it.points || 0) + ' 分（记在那天 · 不吃连击倍率）', 4200);
+  }
+
   /* ---------- 弹窗：加 / 改 ---------- */
   function editModal(id) {
     const it = id ? find(id) : null;
     const isNew = !it;
     const v = it || { text: '', points: 5, target: 1, note: '' };
+    // 🔁 v119：编辑已有项时，列最近 6 天补卡勾选（今天除外 —— 今天的卡用页面按钮打）
+    let mkHTML = '';
+    if (!isNew) {
+      const tg0 = targetOf(it);
+      let rows = '';
+      for (let i = 6; i >= 1; i--) {
+        const k = shiftKey(today(), -i);
+        const n = (it.days && it.days[k]) || 0;
+        const full = n >= tg0;
+        rows += '<label class="ck-mk-row' + (full ? ' full' : '') + '">' +
+          '<input type="checkbox" class="ck-mk" data-day="' + k + '"' + (full ? ' disabled' : '') + ' />' +
+          '<span class="ck-mk-day">' + k.slice(5).replace('-', '/') + '</span>' +
+          '<span class="ck-mk-st">' + (full ? '✅ 已打满' : (n ? '打过 ' + n + '/' + tg0 + '，还能补' : '没打')) + '</span>' +
+          '</label>';
+      }
+      mkHTML = '<div class="field"><label>🔁 漏打了？勾上就补那张卡（积分照发记在那天 · 不触发连击倍率）</label>' +
+        '<div class="ck-mk-list">' + rows + '</div></div>';
+    }
     const modal = App.ui.openModal(isNew ? '✅ 加一个打卡项' : '✏️ 改打卡项',
       '<p class="hint" style="margin-top:0">每天要养成的小习惯 —— 喝水、保健品、运动、几点休息都行。' +
       '打一次卡得一次分，也能看连续了多少天。</p>' +
@@ -250,7 +307,7 @@
       '<input id="ck-target" type="number" min="1" value="' + (v.target || 1) + '" /></div>' +
       '</div>' +
       '<div class="field"><label>备注（选填，写给自己）</label>' +
-      '<input id="ck-note" type="text" value="' + esc(v.note || '') + '" placeholder="比如：分 4 次喝，每次 500ml" /></div>',
+      '<input id="ck-note" type="text" value="' + esc(v.note || '') + '" placeholder="比如：分 4 次喝，每次 500ml" /></div>' + mkHTML,
       '<button class="btn btn-primary" data-act="ok">' + (isNew ? '加好' : '保存') + '</button>' +
       '<button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
@@ -268,9 +325,18 @@
         } else {
           it.text = t; it.points = pts; it.target = tg; it.note = nt;
         }
+        // 🔁 v119：勾了的补卡一起落账（积分照发记在那天 · 永远 ×1）
+        const mks = [];
+        modal.querySelectorAll('.ck-mk:checked:not(:disabled)').forEach(function (c) {
+          mks.push(c.dataset.day);
+        });
+        const mkBad = [];
+        mks.forEach(function (k) { const e = makeupCore(it, k); if (e) mkBad.push(k + '：' + e); });
         save(); render();
         App.ui.closeModal();
-        App.ui.toast(isNew ? '✅ 加好了：' + t.slice(0, 14) : '改好了');
+        App.ui.toast((isNew ? '✅ 加好了：' + t.slice(0, 14) : '改好了') +
+          (mks.length ? ' · 补卡 ' + (mks.length - mkBad.length) + '/' + mks.length + ' 张' +
+          (mkBad.length ? '（' + mkBad[0] + '）' : '') : ''), 4200);
       },
       cancel: function () { App.ui.closeModal(); }
     });
@@ -283,9 +349,16 @@
     const firstToday = timesTodayAll() === 0;
     const mult = firstToday ? multOf(streakWithToday()) : 1;
     const gain = Math.max(0, +it.points || 0) * mult;
+    const kToday = today();
     const wk = weekOf(it).map(function (w) {
       const on = w.times > 0;
       const full = w.times >= tg;
+      // 🔁 v119：过去且没打满的圆点 → 直接点就是补卡（今天/未来不在其列）
+      if (w.k < kToday && !full) {
+        return '<span class="ck-dot makeup" data-act="ck-makeup" data-id="' + it.id + '" data-day="' + w.k +
+          '" title="' + w.k + '：' + (w.times ? w.times + ' 次，点一下再补一次' : '没打，点一下补这张卡') +
+          '（积分照发 · 不触发连击倍率）"></span>';
+      }
       return '<span class="ck-dot' + (full ? ' on' : (on ? ' half' : '')) + '" title="' + w.k + '：' +
         (w.times ? w.times + ' 次' : '没打') + '"></span>';
     }).join('');
@@ -331,6 +404,8 @@
       '<h2>✅ 每天打卡</h2>' +
       '<p class="hint" style="margin-top:-2px">想养成的小习惯放这儿 —— <b>喝水、保健品、运动、几点休息</b>都行。' +
       '打一次卡得一次分，下面那 7 个小点是最近一周（今天在最右），还能看连续了多少天。<br>' +
+      '🔁 <b>漏打了能补（v119）</b>：最近一周里<b>没打满的小圆点直接点一下就是补卡</b>（积分照发、记在那天，' +
+      '不触发连击倍率），或在 ✏️ 编辑里勾选补卡；<b>未来的日子不能补</b>。<br>' +
       '⚠️ 它<b>不算进「必须 x/x」的完成率</b>，也不占队列 —— 就是给自己的一个正反馈。' +
       '<br>🔥 <b>长期打卡有奖励</b>：连续 7 天起、每天第一次打卡 <b>×2</b>；满 30 天 <b>×4</b>；满 60 天 <b>×6</b>；满 90 天 <b>×8</b>（断一天回 ×1）。' +
       (list.length
@@ -367,6 +442,7 @@
     if (act === 'ck-y-next') { yearSel = (yearSel || new Date().getFullYear()) + 1; render(); return; }
     if (act === 'ck-edit') { editModal(id); return; }
     if (act === 'ck-punch') { punch(id); return; }
+    if (act === 'ck-makeup') { makeupPunch(id, b.dataset.day); return; }
     if (act === 'ck-undo') { unpunch(id); return; }
     if (act === 'ck-del') {
       const it = find(id); if (!it) return;
@@ -395,6 +471,8 @@
     unpunch: unpunch,
     streakOf: streakOf,
     doneToday: doneToday,
+    // 🔁 v119：补打卡（也给测试用）
+    makeupPunch: makeupPunch, makeupCore: makeupCore, timesTodayAll: timesTodayAll,
     // 🔥 v108：连击与年度统计（也给测试/别处用）
     multOf: multOf, streakAll: streakAll, streakWithToday: streakWithToday,
     nextMult: nextMult, dayMap: dayMap, yearStats: yearStats, yearsWithData: yearsWithData,

@@ -93,8 +93,10 @@
       hourDistractCut: 100, // ⏱ 小时计划：中途消耗自查——出现一次扣这段奖励积分的百分比（默认100=扣光）
       // 🌱 v70 主动回忆 + 间隔重复
       srEnabled: true,          // 🌱 总开关
-      srDeadline: '22:00',      // 🌱 当天复习的截止时刻（用来倒推「最晚几点结束学习任务」）
-      srGaps: [30, 120, 360],   // 🌱 三轮复习相对「任务完成时刻」的分钟数
+      srDeadline: '',           // 🌱 v115：留空 = 不限时刻（按间隔从「做完那一刻」往后推，不挤在当天）
+      srGaps: [30, 120, 360],   // （旧 v70）三轮复习的分钟数 —— v115 起改用 srPlanGaps，留着只为兼容老数据
+      srPlanGaps: [1440, 4320, 10080], // 🌱 v115：三轮复习的间隔（分钟）。默认 1天 / 3天 / 7天，用户可自己写
+      srPerDay: 1,              // 🌱 v115：同一个知识点一天里过几遍（每轮要过够才算出这一轮完成）
       srPoints: 5,              // 🌱 每完成一轮复习的积分
       srKpPoints: 2,            // 🌱 每设一条知识点的积分
       srFinishBonus: 5,         // 🌱 当天所有轮次全做完的额外奖励
@@ -319,20 +321,34 @@
     });
     download('focus-plan-ledger-' + todayKey() + '.csv', '\ufeff' + rows2.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n'));
   }
-  function importJSON(text) {
+  /** 💾 v113：用一份备份/导出的 JSON **把本地数据整个换掉**。
+   *  ⚠️ 老的 importJSON 只搬了 settings / days / ledger ——
+   *     队列、已完成、今天的基础任务、设问卡、打卡、回收站、学科这些**会悄悄丢**，
+   *     于是"恢复备份"反而变成丢数据。这里改成：以 defaultData() 打底，逐键覆盖。 */
+  function restoreFrom(obj) {
+    if (!obj || typeof obj !== 'object' || !obj.version) return false;
     try {
-      const d = JSON.parse(text);
-      if (!d || !d.version) return false;
       const merged = defaultData();
-      merged.settings = Object.assign(defaultSettings(), d.settings || {});
-      merged.days = d.days || {};
-      merged.ledger = d.ledger || [];
-      merged.createdAt = d.createdAt || nowIso();
+      merged.createdAt = obj.createdAt || nowIso();
+      merged.settings = Object.assign(defaultSettings(), obj.settings || {});
+      const keys = {};
+      Object.keys(merged).forEach(function (k) { keys[k] = 1; });
+      Object.keys(obj).forEach(function (k) { keys[k] = 1; });
+      Object.keys(keys).forEach(function (k) {
+        if (k === 'version' || k === 'settings' || k === 'createdAt') return;
+        const v = obj[k];
+        if (v === undefined || v === null) return;
+        merged[k] = JSON.parse(JSON.stringify(v));
+      });
       data = merged;
       ensureDay(todayKey());
       save();
       return true;
     } catch (e) { return false; }
+  }
+
+  function importJSON(text) {
+    try { return restoreFrom(JSON.parse(text)); } catch (e) { return false; }
   }
   function reset() {
     data = defaultData();
@@ -348,6 +364,7 @@
     pointsTotal: pointsTotal, leisureTotal: leisureTotal,
     rolloverTasks: rolloverTasks,
     exportJSON: exportJSON, exportCSV: exportCSV, importJSON: importJSON,
+    restoreFrom: restoreFrom,     // 💾 v113：全量替换（自动备份恢复 / 导入都走它）
     reset: reset,
     uid: uid, esc: esc, pad2: pad,
     dateKey: dateKey, todayKey: todayKey, tomorrowKey: tomorrowKey,

@@ -32,8 +32,8 @@
     const slSame = slA === slB;
     const slRest = slSame ? '<br><b>起止时间填成一样了</b> → 不区分时段，全天都算复习时间。' : '';
     // 📐 实时对照：新知识时间结束 + 最后一轮复习间隔 ↔ 复习截止时刻（用户最关心的那个等式）
-    const slDl = s.srDeadline || '22:00';
-    const slGaps = (s.srGaps && s.srGaps.length) ? s.srGaps : [30, 120, 360];
+    const slDl = s.srDeadline || '';
+    const slGaps = (s.srPlanGaps && s.srPlanGaps.length) ? s.srPlanGaps : (s.srGaps || [1440]);
     const slLastGap = Math.max(1, +slGaps[slGaps.length - 1] || 360);
     const slToMin = function (t) {
       const p = String(t || '').split(':');
@@ -48,6 +48,10 @@
     let slTie;
     if (slSame) {
       slTie = '';
+    } else if (!s.srDeadline) {
+      // 🌱 v115：截止时刻留空 = 不限时刻 —— 复习按"做完那一刻 + 间隔"往后推，不存在"跑不完"
+      slTie = '<br>📐 复习截止时刻<b>留空（不限时刻）</b>：三轮复习按你填的间隔，从「做完那一刻」往后推 —— ' +
+        '跨天也正常，不用管几点。';
     } else if (slTieMin === slDlMin) {
       slTie = '<br>📐 按你现在填的：<b>' + slB + '</b> 学完 + 最后一轮 <b>' + slGapTxt +
         '</b> = <b>' + slFmt(slTieMin) + '</b>，正好压在「复习截止 ' + slDl + '」上 ✅ 一轮不多、一轮不少。';
@@ -92,23 +96,23 @@
       '</div>' +
       '<div class="set-group"><h4>🌱 主动回忆 + 间隔重复</h4>' +
       switchRow('set-sr-on', '开启（任务可标「📘 新知识」，完成后按遗忘曲线排当天复习）', s.srEnabled !== false) +
-      '<div class="set-row"><span class="set-label">当天复习的截止时刻</span>' +
-      '<input type="time" id="set-sr-deadline" class="set-input" value="' + (s.srDeadline || '22:00') + '" /></div>' +
-      '<div class="set-row"><label>三轮复习的间隔（分钟，逗号隔开）</label>' +
-      '<input type="text" id="set-sr-gaps" class="set-input" style="width:120px" value="' +
-      ((s.srGaps && s.srGaps.length ? s.srGaps : [30, 120, 360]).join(',')) + '" /></div>' +
+      '<div class="set-row"><label>三轮复习的间隔（<b>你自己写</b>：1天 / 3小时 / 1周，逗号隔开）</label>' +
+      '<input type="text" id="set-sr-gaps" class="set-input" style="width:220px" value="' +
+      ((s.srPlanGaps && s.srPlanGaps.length ? s.srPlanGaps : [1440, 4320, 10080])
+        .map(function (m) { return (App.tasks && App.tasks.fmtGap) ? App.tasks.fmtGap(m) : (m + '分钟'); }).join(', ')) + '" /></div>' +
+      numRow('set-sr-perday', '同一天里过几遍（每轮过够几遍才算完成）', s.srPerDay == null ? 1 : s.srPerDay, '遍') +
+      '<div class="set-row"><span class="set-label">当天的截止时刻（<b>留空 = 不限时刻</b>）</span>' +
+      '<input type="time" id="set-sr-deadline" class="set-input" value="' + (s.srDeadline || '') + '" /></div>' +
       numRow('set-sr-points', '每完成一轮复习，得积分', s.srPoints == null ? 5 : s.srPoints, '分') +
       numRow('set-sr-kp-points', '每设一条知识点（自己出题），得积分', s.srKpPoints == null ? 2 : s.srKpPoints, '分') +
       numRow('set-sr-bonus', '当天这一课的几轮全做完，额外奖励', s.srFinishBonus == null ? 5 : s.srFinishBonus, '分') +
       '<p class="hint">' +
-      '在「添加任务 / 编辑任务」里把一条任务标成 <b>📘 新知识</b>，它完成后会：<br>' +
-      '① 引导你<b>自己出几个小问题</b>（这就是主动回忆 —— 试着复述一遍，比单纯再看一遍书管用）；<br>' +
-      '② 按上面的<b>三个间隔</b>，从「完成时刻」往后排当天的复习轮次，到点会在首页顶部提醒你。<br>' +
-      '默认 <b>30 / 120 / 360 分钟</b>（最后一次放在睡前效果最好，睡眠会帮你巩固）。<br>' +
-      '按默认值算，想在 <b>' + (s.srDeadline || '22:00') + '</b> 前跑完三轮，最晚要在 <b>' +
-      '16:00</b> 左右把学习任务做完 —— 首页会告诉你具体几点前。<br>' +
-      '<b>只安排当天</b>：第二天以后要不要再复习，你自己用日历的 🔁 安排（间隔拉长反而更好）。' +
-      '当天没做完的轮次<b>不扣分</b>，只作记录。</p>' +
+      '<b>现在三个间隔由你自己定</b>（上面那格），而且<b>任何任务都能排</b> —— 不只是新知识：<br>' +
+      '① 点任务行上的 <b>🌱</b> → 填三个间隔 + 每天过几遍 + 从哪一刻起算 → 立刻排好（旧知识也照样能用）；<br>' +
+      '② 标了 <b>📘 新知识</b> 的任务，完成时会自动按上面那三个间隔排（引导你先自己出几个小问题 —— 这就是主动回忆）；<br>' +
+      '③ 第 2 轮 = <b>第 1 轮真做完那一刻</b> + 间隔②，第 3 轮同理 → 所以它天然跨天，不再挤在当天，也不用管几点。<br>' +
+      '默认 <b>1天 / 3天 / 7天</b>；「每天几遍」= 同一个知识点一天里要过几遍才算这一轮完成（想一天过 2 遍就填 2）。<br>' +
+      '到点了首页和队列页顶上都会提醒；没做完的轮次<b>不扣分</b>，排在后面的轮次结算时也不会被吞掉。</p>' +
       '</div>' +
       '<div class="set-group"><h4>⏰ 学习时段（新知识时间 / 复习时间）</h4>' +
       switchRow('set-slot-on', '开启（首页顶部会显示「现在是新知识时间还是复习时间」）', s.slotOn !== false) +
@@ -211,13 +215,23 @@
     }
     // 🌱 v70 主动回忆 + 间隔重复
     bind('set-sr-on', function () { s.srEnabled = this.checked; S().save(); App.tasks.renderAll(); });
-    bind('set-sr-deadline', function () { s.srDeadline = this.value || '22:00'; S().save(); });
+    bind('set-sr-deadline', function () { s.srDeadline = this.value || ''; S().save(); });
     bind('set-sr-gaps', function () {
-      const g = String(this.value || '').split(/[,，\s]+/)
-        .map(function (x) { return parseInt(x, 10); })
-        .filter(function (n) { return isFinite(n) && n > 0; });
-      s.srGaps = g.length ? g : [30, 120, 360];
-      this.value = s.srGaps.join(',');
+      // 🌱 v115：接受「1天 / 3小时 / 1周 / 30分」这种写法（内部统一存成分钟）
+      const P = (App.tasks && App.tasks.parseGap) ? App.tasks.parseGap : function (x) { const n = parseInt(x, 10); return isFinite(n) && n > 0 ? n : null; };
+      const F = (App.tasks && App.tasks.fmtGap) ? App.tasks.fmtGap : function (m) { return m + '分钟'; };
+      const g = String(this.value || '').split(/[,，、\s]+/)
+        .filter(function (x) { return x; })
+        .map(function (x) { return P(x); })
+        .filter(function (n) { return n && n > 0; });
+      s.srPlanGaps = g.length ? g : [1440, 4320, 10080];
+      this.value = s.srPlanGaps.map(F).join(', ');
+      S().save();
+      App.tasks.renderAll();
+    });
+    bind('set-sr-perday', function () {
+      s.srPerDay = Math.max(1, Math.min(20, parseInt(this.value, 10) || 1));
+      this.value = s.srPerDay;
       S().save();
     });
     bind('set-sr-points', function () { s.srPoints = Math.max(0, +this.value || 0); S().save(); });

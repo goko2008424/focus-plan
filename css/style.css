@@ -1248,9 +1248,87 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
 .ck-dot { width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--line); background: transparent; }
 .ck-dot.on { background: #22a06b; border-color: #22a06b; }
 .ck-dot.half { background: rgba(34, 160, 107, .35); border-color: rgba(34, 160, 107, .5); }
+/* 🔁 v119：补打卡 —— 过去没打满的小圆点可点（虚线绿框）；编辑弹窗里的补卡清单 */
+.ck-dot.makeup { cursor: pointer; border-style: dashed; border-color: rgba(34, 160, 107, .55); }
+.ck-dot.makeup:hover { background: rgba(34, 160, 107, .22); }
+.ck-mk-list { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.ck-mk-row { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+.ck-mk-row:hover { background: rgba(127, 127, 127, .1); }
+.ck-mk-row.full { opacity: .55; cursor: default; }
+.ck-mk-day { min-width: 44px; font-weight: 600; }
+.ck-mk-st { color: var(--muted); font-size: 12px; }
 .ck-acts { display: flex; gap: 6px; align-items: center; }
 /* ✅ v108：打卡的长期统计（今年多少天 + 连击） */
 .ck-year { margin-left: 7px; font-size: 11.5px; color: var(--muted); }
+/* 🗑 v117：任务行的删除按钮 + 🃏 不可用时的灰态 */
+.task-del-btn { color: #b91c1c; }
+.task-del-btn:hover { background: #fdecec; border-color: #e0a0a0; }
+body[data-theme="dark"] .task-del-btn, body[data-theme="purple"] .task-del-btn { color: #ff9c93; }
+.task-timer-btn.mc-off, .q-ib.mc-off { opacity: .38; cursor: not-allowed; }
+.task-timer-btn.mc-off:hover, .q-ib.mc-off:hover { background: transparent; }
+/* 🌱 v116：任务行上的"已排日期" + 卡片合集行上的已排日期 */
+.rev-next { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
+  background: #e8f6ee; color: #14804a; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.rev-next.late { background: #fdecec; color: #c0392b; }
+.rev-next.done { background: #eef1f5; color: #6b7280; }
+body[data-theme="dark"] .rev-next, body[data-theme="purple"] .rev-next { background: #123024; color: #7fd6a6; }
+body[data-theme="dark"] .rev-next.late, body[data-theme="purple"] .rev-next.late { background: #3a1c1c; color: #ff9c93; }
+body[data-theme="dark"] .rev-next.done, body[data-theme="purple"] .rev-next.done { background: #23262b; color: #9aa3ad; }
+.mc-schedline { margin-top: 5px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.mc-schedlab { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.mc-chip { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11.5px; font-weight: 600;
+  background: #e8f6ee; color: #14804a; }
+.mc-chip.late { background: #fdecec; color: #c0392b; }
+.mc-chip.done { background: #eef1f5; color: #6b7280; }
+body[data-theme="dark"] .mc-chip, body[data-theme="purple"] .mc-chip { background: #123024; color: #7fd6a6; }
+body[data-theme="dark"] .mc-chip.late, body[data-theme="purple"] .mc-chip.late { background: #3a1c1c; color: #ff9c93; }
+body[data-theme="dark"] .mc-chip.done, body[data-theme="purple"] .mc-chip.done { background: #23262b; color: #9aa3ad; }
+/* 🌱 v118：基础任务卡里的「今天的复习」小节 */
+.q-revsec { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.q-revsec-h { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.q-rev-row .q-text { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.mc-dupwarn { margin: 4px 0 0; font-size: 12.5px; color: #c0392b; line-height: 1.6; }
+.mc-dupwarn:empty { display: none; }
+/* 🌱 v115：任务行上的「复习计划」按钮 —— 排过就实心 */
+.task-sr-btn { opacity: .55; }
+.task-sr-btn.on { opacity: 1; background: rgba(34, 160, 107, .16); }
+/* 🧩 v110：基础任务明细里每条小题的「▶ 做这题 / 🎧 开课」 */
+.q-sub-wrap { display: flex; align-items: center; gap: 4px; }
+.q-sub-wrap > .q-sub-line { flex: 1 1 auto; min-width: 0; }
+.q-sub-go {
+  flex: none; border: 1px solid var(--line); background: transparent; color: var(--primary);
+  border-radius: 7px; padding: 1px 7px; font-size: 12px; cursor: pointer; font-family: inherit; line-height: 1.5;
+}
+.q-sub-go:hover { background: rgba(127, 127, 127, .12); }
+.q-sub-add { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px 4px; }
+/* 💾 v113：自动备份卡片 */
+.bk-top { font-size: 14px; margin-bottom: 8px; }
+.bk-on { color: #1c6b45; }
+.bk-off { color: #b45309; }
+.bk-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 13.5px; }
+.bk-lab { display: flex; align-items: center; gap: 5px; }
+.bk-lab input[type="checkbox"] { width: 16px; height: 16px; }
+.bk-list { border-top: 1px dashed var(--line); margin-top: 4px; }
+.bk-list-all { max-height: 46vh; overflow: auto; }
+.bk-item { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+.bk-when { font-weight: 700; min-width: 92px; }
+.bk-size { color: var(--muted); font-size: 12.5px; min-width: 60px; }
+.bk-ago { color: var(--muted); font-size: 12.5px; min-width: 68px; }
+.bk-acts { margin-left: auto; display: flex; gap: 5px; }
+.bk-kind { font-size: 11.5px; padding: 1px 7px; border-radius: 9px; font-weight: 600; }
+.bk-k-daily { background: #e7f4ec; color: #1c6b45; }
+.bk-k-auto { background: #eef2fb; color: #3557b7; }
+.bk-k-man { background: #fdf3d8; color: #b45309; }
+body[data-theme="dark"] .bk-k-daily, body[data-theme="purple"] .bk-k-daily { background: #1b2c22; color: #8fe0b3; }
+body[data-theme="dark"] .bk-k-auto, body[data-theme="purple"] .bk-k-auto { background: #1e2436; color: #93b0ff; }
+body[data-theme="dark"] .bk-k-man, body[data-theme="purple"] .bk-k-man { background: #3a2f16; color: #f0c274; }
+/* 🌱 v112：队列页的"待复习"提醒 */
+.q-rev { margin: 8px 0 2px; padding: 8px 11px; border-radius: 9px; font-size: 13.5px;
+  background: #eef7f1; border: 1px solid #bfe3cd; color: #1c6b45;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.q-rev-acts { margin-left: auto; }
+body[data-theme="dark"] .q-rev, body[data-theme="purple"] .q-rev { background: #1b2c22; border-color: #2f5541; color: #8fe0b3; }
 /* 🌙 v109：从昨天挪来的基础任务 */
 .d-moved { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
   background: #fdf3d8; color: #b45309; font-size: 11.5px; font-weight: 600; }

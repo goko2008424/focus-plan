@@ -91,6 +91,52 @@
 
   /** 📅 v101：把「整个合集」或「某一张卡」排到日历某一天 —— 那天出现一条 🔄 复习 任务，
    *  点它右边的 🃏 直接翻卡。用户：「我添加进去的每个知识卡都要支持添加到日历」。 */
+  /** 📅 v116：这个合集被排到过哪几天（从带 mcRef 的任务里找）
+   *  用户：「单独查看时无法知道每个内容被安排到了哪一天」→ 把日期直接长在合集上 */
+  function schedDaysOf(colId) {
+    const out = [];
+    const days = (S().data() || {}).days || {};
+    const today = S().todayKey();
+    Object.keys(days).forEach(function (k) {
+      const d = days[k];
+      if (!d || !d.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        (d.tasks[c] || []).forEach(function (t) {
+          if (!t.mcRef || t.mcRef.colId !== colId) return;
+          out.push({ key: k, text: t.text, done: t.done === true, late: k < today && t.done !== true });
+        });
+      });
+    });
+    out.sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });
+    return out;
+  }
+
+  /** 📅 v116：合集行上那串小日期（✓已完成 / !已过期 / 📅待做） */
+  function schedBadgeHTML(colId) {
+    const list = schedDaysOf(colId);
+    if (!list.length) return '';
+    const chips = list.map(function (x) {
+      const p = x.key.split('-');
+      const st = x.done ? '已完成' : (x.late ? '已过期（那天没做）' : '还没到点');
+      return '<span class="mc-chip' + (x.done ? ' done' : (x.late ? ' late' : '')) +
+        '" title="' + x.key + ' · ' + st + ' · 那天的任务：' + esc(x.text) + '">' +
+        (x.done ? '✓' : (x.late ? '⚠' : '📅')) + (+p[1]) + '/' + (+p[2]) + '</span>';
+    }).join('');
+    return '<div class="mc-schedline" title="这个合集已经排过复习的日期（别重复排同一天）">' +
+      '<span class="mc-schedlab">📅 已排</span>' + chips + '</div>';
+  }
+
+  /** 📅 v116：某一天里，这个合集已经排过的（用来提示"这天排过了"） */
+  function dupOnDay(colId, key) {
+    const out = [];
+    const d = (S().data().days || {})[key];
+    if (!d || !d.tasks) return out;
+    ['required', 'ideal', 'extra'].forEach(function (c) {
+      (d.tasks[c] || []).forEach(function (t) { if (t.mcRef && t.mcRef.colId === colId) out.push(t); });
+    });
+    return out;
+  }
+
   function schedCardModal(col, cards) {
     const isOne = !!(cards && cards.length === 1);
     const nmDefault = isOne
@@ -104,11 +150,23 @@
       '<div class="field"><label>哪一天</label>' +
       '<input type="date" id="mc-sch-date" value="' + pickKey + '" style="width:180px" /></div>' +
       '<div class="field"><label>那天它叫什么（可以改，比如「复习 化学平衡」）</label>' +
-      '<input type="text" id="mc-sch-name" value="' + esc(nmDefault) + '" style="width:100%" /></div>',
+      '<input type="text" id="mc-sch-name" value="' + esc(nmDefault) + '" style="width:100%" /></div>' +
+      '<p class="mc-dupwarn" id="mc-sch-warn"></p>',
       '<button class="btn btn-primary" data-act="mc-sch-ok">✔ 就排这天</button>' +
       '<button class="btn" data-act="mc-sch-cancel">取消</button>');
     const dt = mm.querySelector('#mc-sch-date');
-    if (dt) dt.onchange = function () { pickKey = dt.value || pickKey; };
+    // 📅 v116：这天已经排过这一套了 → 就地提醒，别重复安排
+    const warnEl = mm.querySelector('#mc-sch-warn');
+    const updWarn = function (key) {
+      if (!warnEl) return;
+      const hits = dupOnDay(col.id, key);
+      warnEl.innerHTML = hits.length
+        ? ('⚠️ <b>这天已经排过这套卡了</b>（「' + esc(hits[0].text) + '」' + (hits[0].done === true ? ' · 已完成' : ' · 还没做') +
+           '）—— 再排一次就是**再来一份**，别重复安排。')
+        : '';
+    };
+    if (dt) dt.onchange = function () { pickKey = dt.value || pickKey; updWarn(pickKey); };
+    updWarn(pickKey);
     App.ui.bindActions({
       'mc-sch-ok': function () {
         // ⚠️ 别只依赖 onchange —— 直接改 input.value 是不触发 change 的（2026-09-22 被测试抓出来）
@@ -680,6 +738,7 @@
   function paint() {
     const box = cur.querySelector('.mc-body');
     if (!box) return;
+    captureDraftText();          // 📝 v111：重建之前先把加卡区写着的文字收好（不然换标签一按就没了）
     const col = state.col;
     const n = (col.cards || []).length;
 
@@ -787,15 +846,18 @@
       '<div class="mc-siderow"><span class="mc-sidetag">正面</span>' +
       '<button class="btn btn-small" data-act="mc-pick" data-side="front">📷 贴图</button>' +
       '<span class="hint" style="margin:0">截图可以直接 <b>Ctrl+V</b> 粘进框里</span></div>' +
-      '<textarea class="mc-ta" data-f="front" rows="2" placeholder="正面：如 平衡常数 K 只与什么有关？（只有图也行）"></textarea>' +
+      '<textarea class="mc-ta" data-f="front" rows="2" placeholder="正面：如 平衡常数 K 只与什么有关？（只有图也行）">' +
+      esc(state.draftText.front) + '</textarea>' +
       '<div class="mc-thumbs" data-thumbs="front"></div>' +
       '<div class="mc-siderow"><span class="mc-sidetag">反面</span>' +
       '<button class="btn btn-small" data-act="mc-pick" data-side="back">📷 贴图</button></div>' +
-      '<textarea class="mc-ta" data-f="back" rows="3" placeholder="反面：如 只与温度有关。浓度压强变了 K 不变、Q 变。"></textarea>' +
+      '<textarea class="mc-ta" data-f="back" rows="3" placeholder="反面：如 只与温度有关。浓度压强变了 K 不变、Q 变。">' +
+      esc(state.draftText.back) + '</textarea>' +
       '<div class="mc-thumbs" data-thumbs="back"></div>' +
       '<div class="mc-prev"><span class="mc-prevlab">反面预览</span><div class="mc-prevbody" data-prev></div></div>' +
       '<div class="mc-row"><button class="btn btn-primary" data-act="mc-add">＋ 加这张</button>' +
-      '<span class="hint" style="margin:0">支持 Markdown、$x^2$、$\\ce{H2SO4}$（化学式）</span></div></div>' +
+      '<span class="hint" style="margin:0">支持 Markdown、$x^2$、$\\ce{H2SO4}$（化学式）</span></div>' +
+      '<div class="hint" style="margin:6px 0 0 2px">✍️ 写到一半去换标签 / 改名字 / 批量导入都没关系 —— 回来你写的内容还在（只有点「＋ 加这张」才会清空）。</div></div>' +
       '<input type="file" class="mc-file" accept="image/*" multiple />' +
       (n ? '<div class="mc-list">' + list + '</div>'
          : '<p class="hint">还没有卡片。想到什么就问自己一句，写完点「＋ 加这张」——一节课攒 5~10 张就够。</p>');
@@ -901,8 +963,10 @@
     if (!cur || !col) return false;
     const f = cur.querySelector('[data-f="front"]');
     const bk = cur.querySelector('[data-f="back"]');
-    const fv = f ? (f.value || '').trim() : '';
-    const bv = bk ? (bk.value || '').trim() : '';
+    // 📝 v111：加卡区不在视图里（如"换标签"页）时，退回用 state 收着的那份
+    const dt = state.draftText || {};
+    const fv = f ? (f.value || '').trim() : String(dt.front || '').trim();
+    const bv = bk ? (bk.value || '').trim() : String(dt.back || '').trim();
     const fi = (state.draft.front || []).slice();
     const bi = (state.draft.back || []).slice();
     if (!fv && !fi.length) { App.ui.toast('正面写一句，或者贴张图 📷'); return false; }
@@ -914,6 +978,7 @@
     if (f) f.value = '';
     if (bk) bk.value = '';
     state.draft.front = []; state.draft.back = [];
+    state.draftText.front = ''; state.draftText.back = '';   // 📝 v111：这才是"加进卡里"该有的清空
     state.closeWarned = false;
     state.focusAdd = true;
     paint();
@@ -929,8 +994,29 @@
     const df = ((state.draft.front || []).length + (state.draft.back || []).length);
     const fEl = cur && cur.querySelector('[data-f="front"]');
     const bEl = cur && cur.querySelector('[data-f="back"]');
-    const hasText = !!((fEl && fEl.value.trim()) || (bEl && bEl.value.trim()));
+    const dt = state.draftText || {};
+    // 📝 v111：加卡区不在视图里时（换标签/导入/复习中）也得认得出"手上有草稿"
+    const hasText = !!((fEl && fEl.value.trim()) || (bEl && bEl.value.trim()) ||
+      String(dt.front || '').trim() || String(dt.back || '').trim());
     return { imgs: df, text: hasText, any: (df > 0 || hasText) };
+  }
+
+  /** 📝 v111：把加卡区**眼下写着的文字**收进 state（paint 会重建 innerHTML，不先收就没了） */
+  function captureDraftText() {
+    if (!cur || !state || !state.draftText) return false;
+    const f = cur.querySelector('[data-f="front"]');
+    const b = cur.querySelector('[data-f="back"]');
+    if (!f && !b) return false;                 // 视图里没有加卡区（换标签/导入/复习中）
+    if (f) state.draftText.front = f.value || '';
+    if (b) state.draftText.back = b.value || '';
+    return true;
+  }
+
+  /** 📝 v111：离开加卡区时给个回执 —— 让他知道「刚写的没丢」 */
+  function draftKeptToast(where) {
+    const d = (state && state.draftText) || {};
+    if (!String(d.front || '').trim() && !String(d.back || '').trim()) return;
+    App.ui.toast('✍️ 你先写着的内容给你留着了 —— 回到加卡区还在' + (where ? '（' + where + '）' : ''), 3400);
   }
 
   function tryClose() {
@@ -968,7 +1054,7 @@
 
     if (act === 'mc-close') { tryClose(); return; }
     if (act === 'mc-backbox') { state.mode = 'box'; state.flipped = false; state.editId = null; paint(); return; }
-    if (act === 'mc-rename') { state.mode = 'rename'; paint(); return; }
+    if (act === 'mc-rename') { state.mode = 'rename'; paint(); draftKeptToast('改名字'); return; }
     if (act === 'mc-dorename') {
       const inp = cur.querySelector('[data-f="name"]');
       const v = inp ? (inp.value || '').trim() : '';
@@ -977,7 +1063,7 @@
       state.mode = 'box'; paint(); App.ui.toast('✏️ 改好了：' + col.name);
       return;
     }
-    if (act === 'mc-import') { state.mode = 'import'; paint(); return; }
+    if (act === 'mc-import') { state.mode = 'import'; paint(); draftKeptToast('批量导入'); return; }
     if (act === 'mc-doimport') {
       const ta = cur.querySelector('.mc-imp');
       const arr = parseBulk(ta ? ta.value : '');
@@ -1006,7 +1092,7 @@
       state.order = use.map(function (c) { return c.id; });
       paint(); return;
     }
-    if (act === 'mc-subject') { state.mode = 'subject'; paint(); return; }
+    if (act === 'mc-subject') { state.mode = 'subject'; paint(); draftKeptToast('换标签'); return; }
     if (act === 'mc-dosubject') {
       const v = b.dataset.v || '';
       col.subject = v; touch(col);
@@ -1119,6 +1205,10 @@
   function onInput(e) {
     const t = e.target;
     if (!t || !t.dataset) return;
+    // 📝 v111：加卡区一边写一边存进 state —— 这样任何重画都不会把内容弄丢
+    if (state && state.draftText && (t.dataset.f === 'front' || t.dataset.f === 'back')) {
+      state.draftText[t.dataset.f] = t.value || '';
+    }
     if (t.dataset.f === 'back') paintPrev();
   }
   function onKey(e) {
@@ -1145,6 +1235,10 @@
       focusAdd: !!(opts && opts.focusAdd),
       only: (opts && opts.only) || null,          // 📅 从"排到某天的复习任务"进来时，只复习这几张
       draft: { front: [], back: [], ef: [], eb: [] },   // 📷 还没加进卡里的图
+      // 📝 v111：加卡区**已经写进去的文字**（正面/反面）。
+      //   ⚠️ 以前这俩只有 DOM 里那一份 —— `paint()` 一重建 innerHTML 就全没了：
+      //   用户「我原先在正面写了一大段，点了一下上面的换标签，它就把我正在写的给搞没了」。
+      draftText: { front: '', back: '' },
       pickSide: 'front'
     };
     const foot = '<button class="btn" data-act="mc-close">关闭</button>';
@@ -1277,6 +1371,7 @@
               ? ' · 第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
                 (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
               : '') + '</div>' +
+            schedBadgeHTML(c.id) +
             '</div>' +
             '<span class="mc-acts">' +
             '<button class="btn btn-small btn-primary" data-act="card-open" data-id="' + c.id + '">🃏 打开 / 复习</button>' +
@@ -1380,6 +1475,7 @@
     pageHTML: pageHTML,
     openRef: openRef,
     schedCardModal: schedCardModal,
+    schedDaysOf: schedDaysOf, schedBadgeHTML: schedBadgeHTML, dupOnDay: dupOnDay,   // 📅 v116
     subjects: subjects,
     addSubject: addSubject,
     subjectOf: subjectOf,

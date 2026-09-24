@@ -511,7 +511,13 @@
           '<button class="task-timer-btn" data-act="tick" data-col="' + c.k + '" data-id="' + t.id + '" title="切换完成状态（实际做完了在这里补勾划掉）">☑</button>' +
           '<button class="task-timer-btn" data-act="rep" data-col="' + c.k + '" data-id="' + t.id + '" title="重做安排 / 改期">🔁</button>' +
           (t.fromQueue ? '' : '<button class="task-timer-btn" data-act="q-enqueue" data-col="' + c.k + '" data-id="' + t.id + '" title="把这条整任务排进队列末尾（按顺序做）">📥</button>') +
-          '<button class="task-timer-btn" data-act="cal-mc" data-k="' + key + '" data-col="' + c.k + '" data-id="' + t.id + '" title="给这条补写设问卡（课已经上完了也能补）">🃏</button>' +
+          (function () {
+            // 🃏 v117：复习类任务不提供"补写设问卡"（灰掉 + 说明原因）
+            const w = (App.tasks && App.tasks.mcWritable) ? App.tasks.mcWritable(t) : { ok: true, why: '' };
+            return '<button class="task-timer-btn' + (w.ok ? '' : ' mc-off') + '" data-act="cal-mc" data-k="' + key +
+              '" data-col="' + c.k + '" data-id="' + t.id + '" title="' +
+              (w.ok ? (w.openRef ? w.why : '给这条补写设问卡（课已经上完了也能补）') : w.why) + '">🃏</button>';
+          })() +
           '<button class="task-timer-btn" data-act="cal-daily" data-col="' + c.k + '" data-id="' + t.id + '" title="把这条加进「每日必做」（每天打勾的小事）">📌</button>' +
           (dupOf(t) ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" data-col="' + c.k + '" data-id="' + t.id + '" title="这一栏有两条同名的「' + esc(t.text) + '」，点这里合并成一条">🔗</button>' : '') +
           '<button class="task-timer-btn" data-act="edit" data-col="' + c.k + '" data-id="' + t.id + '" title="编辑">✎</button>' +
@@ -605,6 +611,11 @@
         }
         else if (b.dataset.act === 'cal-mc') {
           // 🃏 v99：日历里翻到过去某天，给那天的任务补写设问卡（卡落在那天）
+          // 🃏 v117：复习类任务挡住 + 说明原因
+          const wMc = (App.tasks && App.tasks.mcWritable) ? App.tasks.mcWritable(task) : { ok: true, why: '' };
+          if (!wMc.ok) { App.ui.toast(wMc.why, 6600); return; }
+          // 🃏 v117：有现成合集 → 打开它翻卡
+          if (wMc.openRef && task && task.mcRef && App.memcards.openRef && App.memcards.openRef(task.mcRef)) return;
           if (App.memcards && App.memcards.openForTask) {
             App.memcards.openForTask({ id: id, text: (task && task.text) || '设问卡' }, { dayKey: b.dataset.k });
           }

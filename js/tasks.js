@@ -1029,6 +1029,30 @@
       '</div>';
   }
 
+  /** 🃏 v117：这条任务能不能"补写设问卡"
+   *  用户：「调整补写知识卡功能，使其仅在符合条件的任务类型（如听课任务）下可用；
+   *  对于复习任务等不符合条件的任务，应明确提示不可用或说明原因，避免困惑」 */
+  function mcWritable(task) {
+    if (!task) return { ok: false, why: '这条任务找不到了，刷新一下' };
+    // ⚠️ 两种「复习任务」要分开处理，别一刀切：
+    //   · 有 mcRef = 卡**已经存在**于某套合集 → 点 🃏 应该是「打开那套卡翻一翻」，不是新建一套
+    //     （一刀切地挡住，用户就没法复习了 —— 这不是他要的）
+    //   · mode==='review' = 只标了个"复习"、并没有卡 → 这才是该挡的：在这儿补卡会挂错地方
+    if (task.mcRef) {
+      return { ok: true, openRef: true,
+        why: '🃏 这条是「从设问卡排过来的复习」—— 点这里是**打开那套卡翻卡自测**；要加卡/改卡去「🃏 卡片」页。' };
+    }
+    if (task.mode === 'review') {
+      // ⚠️ 但它**已经有自己的卡**时别挡 —— 那会连"翻卡自测"一起挡掉（用户是要复习的）。
+      //    挡的只是"给一条复习任务从零新建一套卡"（那套卡会挂错地方：以后翻卡找不到课）。
+      const n0 = (App.memcards && App.memcards.countForTask) ? App.memcards.countForTask(task.id) : 0;
+      if (n0 > 0) return { ok: true, why: '打开这套卡翻卡自测（它有 ' + n0 + ' 张）' };
+      return { ok: false,
+        why: '🃏 这条标的是「🔄 复习」—— 复习任务不新建卡。新卡要挂在当初学它的那条（📘 新知识 / 🎧 听课任务）下面，否则以后翻卡时找不到课。' };
+    }
+    return { ok: true, why: '' };
+  }
+
   function addSubModal(taskKey, taskId, editId, dayKey, groupId) {
     const day = S().getDay(dayKey || S().todayKey());
     const task = day.tasks[taskKey].find(function (t) { return t.id === taskId; });
@@ -2739,7 +2763,9 @@
     //    （第一天的多轮复习是红利、不是义务；拖到第二天问题也不大）
     ['required', 'ideal', 'extra'].forEach(function (k) {
       (day.tasks[k] || []).forEach(function (t) {
-        srPlan(t).forEach(function (r) { if (r.done === null) r.done = false; });
+        // 🌱 v115：只把**已经到点**的没做轮次记成「未做」；排在后面的跨天轮次保持"待做"，
+        //   不然第二天结算一过它就没了（复习计划本来就是跨天的）
+        srPlan(t).forEach(function (r) { if (r.done === null && r.due <= Date.now()) r.done = false; });
       });
     });
 
@@ -2828,6 +2854,8 @@
 
     day.ended = true;
     S().save();
+    // 💾 v113：一天结束（手动结算 / 到点自动结算都走这里）→ 立刻存一份当天的备份
+    try { if (App.backup && App.backup.snap) App.backup.snap('daily', dayKey); } catch (e) { /* 忽略 */ }
     return out;
   }
 
@@ -3401,6 +3429,13 @@
     const dupBtn = findDupTask(S().todayKey(), listKey, task)
       ? '<button class="task-timer-btn task-merge-btn" data-act="dup-merge" title="这一栏有两条同名的「' + S().esc(task.text) + '」，点这里合并成一条">🔗</button>'
       : '';
+    // 🌱 v115：复习计划 —— 新知识/旧知识/普通任务都能自己排（排过了按钮变实心）
+    const srBtn = '<button class="task-timer-btn task-sr-btn' + (srPlan(task).length ? ' on' : '') +
+      '" data-act="sr-plan" title="🌱 复习计划：自己定三轮各隔多久、一天过几遍' +
+      (srPlan(task).length ? '（这条已经排了）' : '') + '">🌱</button>';
+    // 🗑 v117：今天这三栏以前**没有删除入口**（只能点文字进编辑窗里删）——
+    //   用户：「为已添加的任务提供删除选项，让用户能够直接移除任意已添加的任务」
+    const delBtn = '<button class="task-timer-btn task-del-btn" data-act="del" title="删掉这条（先进回收站，能恢复）">🗑</button>';
     const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(task) : '';
     return '<div class="task-row' + (task.done ? ' done' : '') + (lecPanel ? ' lec-running' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
@@ -3410,9 +3445,11 @@
       lecTagHTML(task) +
       ptsInput +
       lecBtn +
+      srBtn +
       mcBtn +
       dupBtn +
       btn +
+      delBtn +
       '</div>' +
       lecPanel +
       statLine +      subBlockHTML(task) +
@@ -3429,7 +3466,8 @@
       '<button class="btn btn-small" data-act="paste">📋 从往日粘贴任务</button>' +
       '<button class="btn btn-small" data-act="trash">🗑 回收站（误删恢复）</button>' +
       '<button class="btn btn-small" data-act="export-img" title="把今天的任务清单导出成一张长图，可以直接发给别人看">🖼 导出长图</button>' +
-      '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务 / 导出长图发人看</span></div>' +
+      '<span class="day-toolbar-hint">粘贴往日任务 / 找回误删的任务 / 导出长图发人看<br>' +
+      '这三栏是<b>今天要做的事</b>，<b>不排队</b>（哪条都能随时开）；想<b>按顺序做</b>就把任务送进 <b>📋 队列</b>。</span></div>' +
       pendingBarHTML() +                     // ★ v56：待办衔接（某题没标结果 / 接着做还是休息）
       COLS.map(function (col) {
       // 🧲 v85：队列实体化的副本不在三栏里渲染 —— 它住在队列页（那边有全套按钮）
@@ -4203,11 +4241,37 @@
       }
       const listKey = row.dataset.list, taskId = row.dataset.id;
       const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
+      // 🗑 v117：今天三栏任意一条都能直接删（先进回收站，可恢复；正在计时的不让删）
+      if (act === 'del') {
+        const dToday = S().getDay(S().todayKey());
+        const listDel = (dToday.tasks[listKey] || []);
+        const iDel = listDel.findIndex(function (t) { return t.id === taskId; });
+        const tkDel = iDel >= 0 ? listDel[iDel] : null;
+        if (!tkDel) { App.ui.toast('这条找不到了，刷新一下'); return; }
+        if ((timer && timer.taskId === taskId) || (cdTimer && cdTimer.taskId === taskId)) {
+          App.ui.toast('这条正在计时 —— 先在计时窗里结束它再删', 4400); return;
+        }
+        App.ui.confirm('删掉「' + S().esc(tkDel.text) + '」？<br>' +
+          '<span class="hint">会先进任务页的 <b>🗑 回收站（误删恢复）</b>，删错了能找回来。</span>', '删除', function () {
+          trashPush({ kind: 'task', dayKey: S().todayKey(), col: listKey, payload: JSON.parse(JSON.stringify(tkDel)) });
+          listDel.splice(iDel, 1);
+          S().save();
+          App.ui.toast('🗑 删掉了 —— 想找回就去任务页的「🗑 回收站」');
+          App.tasks.renderAll();
+          try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+          dropLectureIfDeleted(taskId, listKey, S().todayKey());
+        });
+        return;
+      }
+      if (act === 'sr-plan') { srPlanModal(srFindTask(taskId), listKey); return; }   // 🌱 v115
       if (act === 'lecture') { lecturePickModal(listKey, taskId, false); return; }
       if (act === 'memcards') {
         // 📅 v101：如果这条任务是"从卡片排过来的"，直接开那个合集（只翻那几张）
         const tk = ((S().getDay(S().todayKey()).tasks[listKey] || []).filter(function (t) { return t.id === taskId; })[0]) || null;
         if (tk && tk.mcRef && App.memcards.openRef && App.memcards.openRef(tk.mcRef)) return;
+        // 🃏 v117：跟队列页/日历页同一个判断（别只是"不弹窗"了事 —— 要说清为什么）
+        const w = mcWritable(tk);
+        if (!w.ok) { App.ui.toast(w.why, 6600); return; }
         const el = row.querySelector('.task-text');
         App.memcards.openForTask({ id: taskId, text: el ? el.textContent.trim() : '设问卡' });
         return;
@@ -4299,10 +4363,17 @@
       if (act === 'sub-add' && listKey) { addSubModal(listKey, actBtn.dataset.task, null, S().tomorrowKey()); return; }
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
+      if (act === 'sr-plan' && listKey && row) {
+        const tkSr = ((S().getDay(S().tomorrowKey()).tasks[listKey] || []).filter(function (t) { return t.id === row.dataset.id; })[0]) || null;
+        if (tkSr) srPlanModal(tkSr, listKey);
+        return;
+      }
       if (act === 'lecture' && listKey && row) { lecturePickModal(listKey, row.dataset.id, true); return; }
       if (act === 'memcards' && row) {
         const tk2 = ((S().getDay(S().tomorrowKey()).tasks[listKey] || []).filter(function (t) { return t.id === row.dataset.id; })[0]) || null;
         if (tk2 && tk2.mcRef && App.memcards.openRef && App.memcards.openRef(tk2.mcRef)) return;
+        const w2 = mcWritable(tk2);
+        if (!w2.ok) { App.ui.toast(w2.why, 6600); return; }
         const el = row.querySelector('.task-text');
         App.memcards.openForTask({ id: row.dataset.id, text: el ? el.textContent.trim() : '设问卡' });
         return;
@@ -4869,7 +4940,8 @@
     function render() {
       box.innerHTML = trash.length
         ? trash.slice().reverse().map(function (entry) {
-            const kind = entry.kind === 'task' ? '任务' : entry.kind === 'group' ? '任务组' : '小题';
+            const kind = entry.kind === 'dailytask' ? '📌 基础任务'
+              : (entry.kind === 'task' ? '任务' : entry.kind === 'group' ? '任务组' : '小题');
             const text = entry.payload && entry.payload.text ? S().esc(entry.payload.text) : (entry.payload && entry.payload.name ? S().esc(entry.payload.name) : '');
             const when = new Date(entry.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #eceff3;font-size:13px">' +
@@ -4884,6 +4956,42 @@
       const i = trash.findIndex(function (x) { return x.id === id; });
       if (i < 0) return;
       const entry = trash[i];
+      // 🌙 v110：三种"非当日任务"的恢复（不然删了真找不回来）
+      if (entry.src === 'daily') {
+        const list = S().data().daily = S().data().daily || [];
+        const p = JSON.parse(JSON.stringify(entry.payload));
+        if (entry.kind === 'dailytask') {
+          if (!p.pinnedDay) p.pinnedDay = entry.dayKey;
+          list.push(p);
+        } else {
+          const target = list.filter(function (x) { return x.id === entry.ownerId; })[0];
+          if (!target) { App.ui.toast('这条原来是挂在「' + (entry.ownerText || '某个基础任务') + '」下的，那条已经不在了 —— 先把它加回来再恢复', 5200); return; }
+          if (entry.groupId) {
+            const g = (target.groups || []).filter(function (x) { return x.id === entry.groupId; })[0];
+            if (!g) { App.ui.toast('它原来那个任务组不在了，先把任务组建回来', 4600); return; }
+            g.subs = g.subs || []; g.subs.push(p);
+          } else { target.subs = target.subs || []; target.subs.push(p); }
+        }
+        trash.splice(i, 1);
+        S().save();
+        try { App.queue.render(); App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+        render();
+        App.ui.toast('♻ 已经恢复了：' + (p.text || p.name || ''));
+        return;
+      }
+      if (entry.src === 'queue') {
+        const q = S().data().queue = S().data().queue || [];
+        const p = JSON.parse(JSON.stringify(entry.payload));
+        const target = q.filter(function (x) { return x.id === entry.ownerId; })[0];
+        if (!target) { App.ui.toast('这条原来是队列里「' + (entry.ownerText || '某条') + '」的明细，那一条已经不在了', 5200); return; }
+        target.subs = target.subs || []; target.subs.push(p);
+        trash.splice(i, 1);
+        S().save();
+        try { App.queue.render(); } catch (e) { /* 忽略 */ }
+        render();
+        App.ui.toast('♻ 已经恢复了：' + (p.text || p.name || ''));
+        return;
+      }
       const day = S().getDay(entry.dayKey);
       day.tasks[entry.col] = day.tasks[entry.col] || [];
       if (entry.kind === 'task') {
@@ -5237,6 +5345,78 @@
    *   · 每轮复习独立计时、进时间轴、发积分
    * ============================================================ */
   const SR_GAPS_DEF = [30, 120, 360];
+  /* ---------- 🌱 v115：复习计划（用户自定义） ----------
+     用户：「支持用户为任意任务（新知识 / 旧知识）自行指定复习内容与时间节点，而不是由系统固定」
+     · 三个间隔由用户填（1天 / 3小时 / 1周…），单位统一在内部换算成**分钟**
+     · 第 2 轮 = 第 1 轮**真做完那一刻** + 间隔②，第 3 轮同理 → 自然跨天
+     · 每天可重复 N 遍（perDay）：这一轮过够 N 遍才算完成
+     · 截止时刻可以留空（= 不限时刻），留空就永远不会"今天排不满" */
+  const SR_PLAN_DEF = { gaps: [1440, 4320, 10080], perDay: 1, dl: '' };   // 1天 / 3天 / 7天
+  const SR_UNITS = [['星期', 10080], ['周', 10080], ['w', 10080],
+                    ['天', 1440], ['日', 1440], ['d', 1440],
+                    ['小时', 60], ['时', 60], ['h', 60],
+                    ['分钟', 1], ['分', 1], ['m', 1]];
+
+  /** 「1天」/「3小时」/「30分」/「1周」→ 分钟；纯数字=天（用户举例就是"一天/三天/一周"）；解析不了返回 null */
+  function parseGap(str) {
+    const s = String(str == null ? '' : str).trim().toLowerCase();
+    if (!s) return null;
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*(星期|周|天|日|小时|时|分钟|分|w|d|h|m)?$/);
+    if (!m) return null;
+    const num = parseFloat(m[1]);
+    if (!isFinite(num) || num <= 0) return null;
+    const u = m[2] || '天';
+    for (let i = 0; i < SR_UNITS.length; i++) if (SR_UNITS[i][0] === u) return Math.round(num * SR_UNITS[i][1]);
+    return null;
+  }
+  function fmtGap(min) {
+    const m = Math.max(1, Math.round(+min || 0));
+    if (m % 10080 === 0) return (m / 10080) + '周';
+    if (m % 1440 === 0) return (m / 1440) + '天';
+    if (m % 60 === 0) return (m / 60) + '小时';
+    return m + '分钟';
+  }
+  /** 这条任务的复习配置：任务自己的 srCfg → 设置里的模板 → 内置默认 */
+  function srCfgOf(task) {
+    const s = S().settings() || {};
+    const tplGaps = (s.srPlanGaps && s.srPlanGaps.length) ? s.srPlanGaps : SR_PLAN_DEF.gaps;
+    const tpl = {
+      gaps: tplGaps.map(function (g) { return (typeof g === 'number') ? g : (parseGap(g) || 1440); }),
+      perDay: Math.max(1, (s.srPerDay == null ? SR_PLAN_DEF.perDay : +s.srPerDay) || 1),
+      dl: (s.srDeadline === undefined ? SR_PLAN_DEF.dl : s.srDeadline)
+    };
+    const t = (task && task.srCfg) ? task.srCfg : null;
+    if (!t) return { gaps: tpl.gaps.slice(), perDay: tpl.perDay, dl: tpl.dl };
+    const g = (t.gaps || []).map(function (x) { return (typeof x === 'number') ? x : parseGap(x); })
+      .filter(function (x) { return x && x > 0; });
+    return {
+      gaps: g.length ? g : tpl.gaps.slice(),
+      perDay: Math.max(1, +(t.perDay || 1)),
+      dl: (t.dl === undefined ? tpl.dl : t.dl)
+    };
+  }
+  /** 按配置生成 3 个轮次（链式：due(n+1) = due(n) + gap(n+1)；先给预估值，做完一轮会按实际时刻重排） */
+  function srBuildPlan(cfg, fromMs, dayKey) {
+    const gaps = (cfg && cfg.gaps && cfg.gaps.length) ? cfg.gaps : SR_PLAN_DEF.gaps;
+    const perDay = Math.max(1, (cfg && cfg.perDay) || 1);
+    let base = +fromMs || Date.now();
+    const rounds = gaps.map(function (g, i) {
+      base = base + g * 60000;
+      return { n: i + 1, gap: g, due: base, done: null, at: null, need: perDay, hits: [] };
+    });
+    const dl = (cfg && cfg.dl) ? srClockMs(dayKey || S().todayKey(), cfg.dl) : 0;
+    return { rounds: rounds, dl: dl };
+  }
+  /** 到点显示：今天 → 08:00；明天 → 明天 08:00；更远 → 9/26 08:00 */
+  function srWhen(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    const key = S().dateKey(d);
+    const t = srHHMM(ms);
+    if (key === S().todayKey()) return t;
+    if (key === S().tomorrowKey()) return '明天 ' + t;
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + t;
+  }
   const SR_MODE_NEW = 'new', SR_MODE_REV = 'review';
   let srPendKp = null;       // 待弹「设知识点」
   let srPendShort = null;    // 待弹「今天排不满」
@@ -5368,20 +5548,72 @@
     return srPlan(task).filter(function (r) { return r.done === null; });
   }
 
-  /** 算出这节课该在哪些时刻复习（相对完成时刻 + 三个间隔） */
-  function planSpaced(dayKey, fromMs) {
-    const gaps = srGaps();
-    const dl = srClockMs(dayKey, srDeadlineHM());
-    const all = gaps.map(function (g, i) {
-      return { n: i + 1, gap: g, due: fromMs + g * 60000, done: null, at: null };
+  /** 🌱 v112：**复习计划可能挂在三种对象上** —— 这是本轮修的真 bug。
+   *  以前「待复习条 / 找任务 / 开始复习」都只翻**今天任务页**那几条（day.tasks），
+   *  可是队列完成一条任务时，`onTaskDone` 会把任务页那份**副本收走**（dropCopy），
+   *  而 `syncBack` 早把 `sp`（3 轮复习计划）同步到**队列项**上了 →
+   *  计划跟着「已完成」里那条躺着，复习系统却永远看不见它：
+   *  用户原话「它（toast）有显示，但是为什么我去看的时候又没有？」。
+   *  所以统一从三个地方收集：今天任务页的 + 队列里 / 已完成里带计划的。
+   *  （只看"今天相关"的：已完成里只认今天做完的，别把上个月的旧计划翻出来。） */
+  function srCarriers() {
+    const out = [];
+    const seen = {};
+    const dayKey = S().todayKey();
+    const push = function (t, listKey, src) {
+      if (!t || seen[t.id]) return;
+      if (!srPlan(t).length) return;      // 没排过复习的不管
+      seen[t.id] = 1;
+      out.push({ t: t, listKey: listKey, src: src });
+    };
+    // 🌱 v115：复习计划会**跨天** —— 轮次挂在"当初那条任务"上，所以得往前翻几天找它
+    const days = (S().data() || {}).days || {};
+    const fromD = new Date(); fromD.setDate(fromD.getDate() - 30);
+    const fromKey = S().dateKey(fromD);
+    Object.keys(days).sort().forEach(function (k) {
+      if (k < fromKey || k > dayKey) return;
+      const day = days[k];
+      if (!day || !day.tasks) return;
+      COLS.forEach(function (c) {
+        (day.tasks[c.key] || []).forEach(function (t) { push(t, c.key, 'day'); });
+      });
     });
-    return { all: all, fit: all.filter(function (r) { return r.due <= dl; }), dl: dl };
+    const d = S().data() || {};
+    const take = function (list, src) {
+      (list || []).forEach(function (it) {
+        if (src === 'qd' && it.doneDay && it.doneDay !== dayKey) return;   // 已完成只看今天的
+        push(it, null, src);
+      });
+    };
+    take(d.queueDone, 'qd');
+    take(d.queue, 'queue');
+    return out;
+  }
+
+  /** 算出这节课该在哪些时刻复习（相对完成时刻 + 三个间隔） */
+  function planSpaced(dayKey, fromMs, task) {
+    // 🌱 v115：间隔来自「用户给这条任务设的 / 设置里的模板」，不再是写死的 30/120/360
+    const cfg = srCfgOf(task);
+    const built = srBuildPlan(cfg, fromMs, dayKey);
+    const dl = built.dl;
+    // 截止时刻只约束**落在当天**的轮次 —— 跨天的轮次本来就不归今天的几点管
+    const fit = built.rounds.filter(function (r) {
+      if (!dl) return true;
+      if (S().dateKey(new Date(r.due)) !== dayKey) return true;
+      return r.due <= dl;
+    });
+    return { all: built.rounds, fit: fit, dl: dl, cfg: cfg };
   }
 
   function srFindTask(id) {
-    const day = S().getDay(S().todayKey());
+    // 🌱 v112：也去队列 / 已完成里找（不然"设知识点"弹窗对着 {} 干活，存哪都存不对）
+    const hit = srCarriers().filter(function (x) { return x.t.id === id; })[0];
+    if (hit) return hit.t;
+    if (!id) return null;
+    // 兜底：今天任务页里找一遍（哪怕这条还没有复习计划）
+    const day = S().peekDay ? S().peekDay(S().todayKey()) : null;
     let found = null;
-    COLS.forEach(function (c) {
+    if (day && day.tasks) COLS.forEach(function (c) {
       const t = (day.tasks[c.key] || []).find(function (x) { return x.id === id; });
       if (t) found = t;
     });
@@ -5389,20 +5621,160 @@
   }
 
   /** 任务行上的知识类型徽标 + 复习进度圆点 ●●○ */
-  function modeTagHTML(t) {
-    if (!t || !t.mode) return '';
+  /** 🔁 v116：一轮复习做完之后问「还要再来一轮吗」
+   *  用户：「请在每一轮复习结束时增加一个选项，让我选择是否进行再次复习」——
+   *  不点就是结束，**系统不替他决定**。 */
+  function srAskAgain(task) {
+    if (!task || !srOn()) return;
+    const plan = srPlan(task);
+    if (!plan.length) return;
+    const doneN = plan.filter(function (r) { return r.done === true; }).length;
+    const cfg = (task.sp && task.sp.cfg) || srCfgOf(task);
+    const lastGap = cfg.gaps[cfg.gaps.length - 1] || 1440;
+    const z = function (n) { return (n < 10 ? '0' : '') + n; };
+    const dateVal = function (ms) { const d = new Date(ms); return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()); };
+    const m = App.ui.openModal('🔁 这轮做完了，还要再来一轮吗？',
+      '<p class="rev-hint">「' + S().esc(task.text) + '」的复习计划已经走到 <b>第 ' + doneN + '/' + plan.length + ' 轮</b>。<br>' +
+      '想继续就点下面的按钮 —— <b>不点就等于到这儿结束</b>（不会自己替你加轮次）。</p>' +
+      '<div class="field"><label>隔多久</label>' +
+      '<input type="text" id="sra-gap" class="set-input" style="width:130px" value="' + fmtGap(lastGap) + '" /></div>' +
+      '<div class="field"><label>排到哪天（默认 = 今天 + 上面那个间隔）</label>' +
+      '<input type="date" id="sra-date" style="width:180px" value="' + dateVal(Date.now() + lastGap * 60000) + '" /></div>',
+      '<button class="btn btn-primary" data-act="again">🔁 再排一轮</button>' +
+      '<button class="btn" data-act="stop">🆗 就到这儿</button>');
+    const gEl = m.querySelector('#sra-gap'), dEl = m.querySelector('#sra-date');
+    // 🔁 v116：改了「隔多久」→ 日期跟着重算（默认日期本来就是按间隔算的，两个字段别打架）
+    const syncDate = function () {
+      if (!dEl) return;
+      const g = parseGap(gEl ? gEl.value : '') || lastGap;
+      dEl.value = dateVal(Date.now() + g * 60000);
+    };
+    if (gEl) { gEl.onchange = syncDate; gEl.oninput = syncDate; }
+    App.ui.bindActions({
+      again: function () {
+        const gap = parseGap(gEl ? gEl.value : '') || lastGap;
+        let due = Date.now() + gap * 60000;
+        if (dEl && dEl.value) {
+          const now0 = new Date();
+          const p = dEl.value.split('-');
+          const d2 = new Date(+p[0], (+p[1]) - 1, +p[2], now0.getHours(), now0.getMinutes());
+          if (d2.getTime() > Date.now() - 60000) due = d2.getTime();
+        }
+        const need = Math.max(1, cfg.perDay || 1);
+        plan.push({ n: plan.length + 1, gap: gap, due: due, done: null, at: null, need: need, hits: [] });
+        if (task.sp) task.sp.cfg = { gaps: cfg.gaps.slice(), perDay: need, dl: cfg.dl };
+        S().save();
+        App.ui.closeModal();
+        App.tasks.renderAll();
+        try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+        App.ui.toast('🔁 已经加到 <b>第 ' + plan.length + ' 轮</b>：' + srWhen(due) + ' —— 到点会提醒你', 5600);
+      },
+      stop: function () {
+        App.ui.closeModal();
+        App.ui.toast('🆗 这条的复习就到这儿 —— 想再排随时点任务行的 🌱');
+      }
+    });
+  }
+
+  /** 🌱 v115：给**任意一条任务**设复习计划（自己填三个间隔 + 每天几遍 + 从哪一刻起算）
+   *  用户：「支持用户为任意任务（既包括新知识，也包括旧知识）自行指定复习内容与时间节点」 */
+  function srPlanModal(task, listKey) {
+    if (!task) { App.ui.toast('这条任务找不到了，刷新一下'); return; }
+    const cfg = srCfgOf(task);
+    const has = srPlan(task).length > 0;
+    const z = function (n) { return (n < 10 ? '0' : '') + n; };
+    const dtVal = function (ms) {
+      const d = new Date(ms);
+      return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes());
+    };
+    const gv = function (i) { return fmtGap(cfg.gaps[i] != null ? cfg.gaps[i] : SR_PLAN_DEF.gaps[i]); };
+    const body =
+      '<p class="rev-hint">给这条定复习节奏：<b>三个阶段各隔多久，你自己填</b>（写 <b>1天</b> / <b>3小时</b> / <b>1周</b> 都行）。<br>' +
+      '第 1 轮 = 起算时刻 + ①；第 2 轮 = <b>第 1 轮真做完的那一刻</b> + ②；第 3 轮同理 —— 所以它自然会跨到后面几天，' +
+      '不用再挤在当天、也不用管"几点"。' + (has ? '<br>⚠️ 这条已经排过复习了，重排会覆盖原来的时间（做过的记录不删）。' : '') + '</p>' +
+      '<div class="field"><label>① 第一次复习：隔多久</label>' +
+      '<input type="text" id="srp-g1" class="set-input" style="width:130px" value="' + gv(0) + '" /></div>' +
+      '<div class="field"><label>② 第二次复习：距第一次</label>' +
+      '<input type="text" id="srp-g2" class="set-input" style="width:130px" value="' + gv(1) + '" /></div>' +
+      '<div class="field"><label>③ 第三次复习：距第二次</label>' +
+      '<input type="text" id="srp-g3" class="set-input" style="width:130px" value="' + gv(2) + '" /></div>' +
+      '<div class="field"><label>同一天里过几遍（这一轮要过够几遍才算完成）</label>' +
+      '<input type="number" id="srp-per" min="1" max="20" style="width:90px" value="' + cfg.perDay + '" /></div>' +
+      '<div class="field"><label>从哪一刻起算（第一次复习 = 这一刻 + ①）</label>' +
+      '<input type="datetime-local" id="srp-from" value="' + dtVal(Date.now()) + '" /></div>' +
+      '<p class="hint">旧知识也照样能排：把「从哪一刻起算」改成你想要的起点就行。</p>';
+    const m = App.ui.openModal('🌱 复习计划（' + S().esc(String(task.text || '').slice(0, 14)) + '）',
+      body,
+      '<button class="btn btn-primary" data-act="ok">🌱 排复习</button>' +
+      (has ? '<button class="btn" data-act="clear">🗑 取消这条的复习计划</button>' : '') +
+      '<button class="btn" data-act="cancel">取消</button>');
+    const val = function (id) { const el = m.querySelector('#' + id); return el ? el.value : ''; };
+    App.ui.bindActions({
+      ok: function () {
+        const g1 = parseGap(val('srp-g1')), g2 = parseGap(val('srp-g2')), g3 = parseGap(val('srp-g3'));
+        if (!g1 || !g2 || !g3) { App.ui.toast('间隔要写成像「1天」「3小时」「1周」这样', 4200); return; }
+        const perDay = Math.max(1, Math.min(20, parseInt(val('srp-per'), 10) || 1));
+        const fv = val('srp-from');
+        const fromMs = fv ? new Date(fv).getTime() : Date.now();
+        if (!(fromMs > 0)) { App.ui.toast('起算时间不对'); return; }
+        const cfg2 = { gaps: [g1, g2, g3], perDay: perDay, dl: cfg.dl };
+        const built = srBuildPlan(cfg2, fromMs, S().todayKey());
+        task.srCfg = cfg2;
+        task.sp = { planned: built.rounds, dl: built.dl, at: Date.now(), bonus: false, cfg: cfg2 };
+        S().save();
+        App.ui.closeModal();
+        App.tasks.renderAll();
+        try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+        App.ui.toast('🌱 排好了：' + built.rounds.map(function (r) { return '第' + r.n + '轮 ' + srWhen(r.due); }).join(' · ') +
+          (perDay > 1 ? '（每轮过 ' + perDay + ' 遍）' : ''), 7200);
+      },
+      clear: function () {
+        delete task.srCfg; delete task.sp;
+        S().save();
+        App.ui.closeModal();
+        App.tasks.renderAll();
+        try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+        App.ui.toast('🗑 这条的复习计划取消了');
+      },
+      cancel: function () { App.ui.closeModal(); }
+    });
+  }
+
+  /** 🌱 v112：复习进度圆点 ●●○ —— 抽出来给「已完成」行也用（不然排了复习在那儿看不见） */
+  function revDotsHTML(t) {
     const plan = srPlan(t);
-    let dots = '';
-    if (plan.length) {
-      const now = Date.now();
-      const doneN = plan.filter(function (r) { return r.done === true; }).length;
-      dots = '<span class="rev-dots" title="今天的间隔复习：' + doneN + '/' + plan.length + ' 轮已完成">' +
-        plan.map(function (r) {
-          const late = r.done === null && r.due <= now;
-          const cls = r.done === true ? 'on' : (r.done === false ? 'miss' : (late ? 'late' : ''));
-          return '<i class="' + cls + '"></i>';
-        }).join('') + doneN + '/' + plan.length + '</span>';
-    }
+    if (!plan.length) return '';
+    const now = Date.now();
+    const doneN = plan.filter(function (r) { return r.done === true; }).length;
+    const pend = plan.filter(function (r) { return r.done === null; });
+    const next = pend[0] || null;
+    const late = !!next && next.due <= now;
+    // 🌱 v116：鼠标放上去能看全 —— 每一轮在哪天、什么状态（已完成 / 待做 / 已过期）
+    const allTxt = '复习计划 ' + doneN + '/' + plan.length + ' 轮已完成 ｜ ' +
+      plan.map(function (r) {
+        const st = r.done === true ? '✓已完成' : (r.done === false ? '✗那天没做' : (r.due <= now ? '⚠️已过期还没做' : '待做'));
+        return '第' + r.n + '轮 ' + srWhen(r.due) + '(' + st + ')';
+      }).join(' ｜ ');
+    // 🌱 v116：日期直接写在行上（最多列 3 个），不用点开也不用悬停
+    const dates = pend.slice(0, 3).map(function (r) { return srWhen(r.due); }).join(' · ') +
+      (pend.length > 3 ? ' 等 ' + pend.length + ' 轮' : '');
+    return '<span class="rev-dots" title="' + allTxt + '">' +
+      plan.map(function (r) {
+        const isLate = r.done === null && r.due <= now;
+        const cls = r.done === true ? 'on' : (r.done === false ? 'miss' : (isLate ? 'late' : ''));
+        return '<i class="' + cls + '"></i>';
+      }).join('') + doneN + '/' + plan.length + '</span>' +
+      (next
+        ? '<span class="rev-next' + (late ? ' late' : '') + '" title="' + allTxt + '">🌱 ' + dates +
+          (late ? ' · 已过期' : '') + '</span>'
+        : '<span class="rev-next done" title="' + allTxt + '">🌱 全做完</span>');
+  }
+
+  function modeTagHTML(t) {
+    if (!t) return '';
+    const dots = revDotsHTML(t);
+    // 🌱 v116：没标知识类型、但自己排过复习计划 → 圆点和日期照样要显示
+    if (!t.mode) return dots;
     if (t.mode === SR_MODE_NEW) {
       // ⏰ v71：已经过了新知识时间还没做 → 徽标变淡，鼠标放上去解释一句（不拦人）
       const out = !t.done && slotOn() && !slotState().inNew;
@@ -5411,13 +5783,19 @@
         : '新知识：完成时会引导你设知识点，并按遗忘曲线排当天 3 轮复习';
       return '<span class="mode-tag mode-new' + (out ? ' mode-out' : '') + '" title="' + tip + '">📘 新知识</span>' + dots;
     }
-    return '<span class="mode-tag mode-rev" title="复习知识：只是标记（不排间隔复习），方便统计今天复习了多少">🔄 复习</span>';
+    return '<span class="mode-tag mode-rev" title="复习知识：只是标记（不排间隔复习），方便统计今天复习了多少">🔄 复习</span>' + dots;
   }
 
   /* ---------- ① 新知识任务完成后的处理 ---------- */
+  /** 🌱 v115：这条要不要在完成时自动排复习 —— ① 用户自己给它设过计划 ② 标了「📘 新知识」（走模板） */
+  function srWanted(task) {
+    if (!task) return false;
+    return !!task.srCfg || task.mode === SR_MODE_NEW;
+  }
+
   function srAfterTaskDone(task, listKey, dayKey) {
-    if (!srOn() || task.mode !== SR_MODE_NEW || task.sp) return;
-    const r = planSpaced(dayKey, Date.now());
+    if (!srOn() || !srWanted(task) || task.sp) return;
+    const r = planSpaced(dayKey, Date.now(), task);
     if (!r.all.length) return;
     if (!r.fit.length) {
       App.ui.toast('🌱 这个点开始排今天的复习会跨到深夜，今天先不排了', 5200);
@@ -5425,14 +5803,16 @@
       return;
     }
     if (r.fit.length === r.all.length) {
-      task.sp = { planned: r.all, dl: r.dl, at: Date.now(), bonus: false };
+      task.sp = { planned: r.all, dl: r.dl, at: Date.now(), bonus: false, cfg: r.cfg };
       S().save();
-      App.ui.toast('🌱 已排好今天的 ' + r.all.length + ' 轮复习：' +
-        r.all.map(function (x) { return srHHMM(x.due); }).join(' / '), 5800);
+      App.ui.toast('🌱 已排好 ' + r.all.length + ' 轮复习：' +
+        r.all.map(function (x) { return '第' + x.n + '轮 ' + srWhen(x.due); }).join(' · ') +
+        (r.cfg.perDay > 1 ? '（每轮过 ' + r.cfg.perDay + ' 遍）' : '') +
+        ' —— 到点在「今天」页顶上提醒你（「已完成」里也能看到 ●●○ 进度）', 6800);
       srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };
       return;
     }
-    srPendShort = { id: task.id, listKey: listKey, dayKey: dayKey, all: r.all, fit: r.fit, dl: r.dl };
+    srPendShort = { id: task.id, listKey: listKey, dayKey: dayKey, all: r.all, fit: r.fit, dl: r.dl, cfg: r.cfg };
   }
 
   /** 等任务总结弹窗关掉之后再弹（免得两个弹窗打架） */
@@ -5476,7 +5856,7 @@
       '<button class="btn btn-small" data-act="none">今天不排了</button>' +
       '</div>');
     const setSp = function (plan, msg) {
-      task.sp = { planned: plan, dl: q.dl, at: Date.now(), bonus: false };
+      task.sp = { planned: plan, dl: q.dl, at: Date.now(), bonus: false, cfg: q.cfg || (task.sp && task.sp.cfg) };
       S().save(); App.ui.closeModal(); App.tasks.renderAll();
       App.ui.toast(msg, 5200);
       srPendKp = { id: q.id, listKey: q.listKey, dayKey: q.dayKey };
@@ -5658,14 +6038,9 @@
 
   /* ---------- ④ 今日「待复习」提醒条 ---------- */
   function srPendingList() {
-    const dayKey = S().todayKey();
-    const day = S().peekDay ? S().peekDay(dayKey) : S().data().days[dayKey];
-    if (!day || !day.tasks) return [];
     const out = [];
-    COLS.forEach(function (c) {
-      (day.tasks[c.key] || []).forEach(function (t) {
-        srPendingOf(t).forEach(function (r) { out.push({ t: t, listKey: c.key, r: r }); });
-      });
+    srCarriers().forEach(function (x) {
+      srPendingOf(x.t).forEach(function (r) { out.push({ t: x.t, listKey: x.listKey, r: r }); });
     });
     out.sort(function (a, b) { return a.r.due - b.r.due; });
     return out;
@@ -5678,12 +6053,9 @@
     const list = srPendingList();
     if (!list.length) {
       let total = 0, doneN = 0;
-      const day = S().peekDay ? S().peekDay(S().todayKey()) : null;
-      if (day && day.tasks) COLS.forEach(function (c) {
-        (day.tasks[c.key] || []).forEach(function (t) {
-          total += srPlan(t).length;
-          doneN += srPlan(t).filter(function (r) { return r.done === true; }).length;
-        });
+      srCarriers().forEach(function (x) {           // 🌱 v112：队列/已完成里的那些也算进来
+        total += srPlan(x.t).length;
+        doneN += srPlan(x.t).filter(function (r) { return r.done === true; }).length;
       });
       bar.innerHTML = (total > 0 && doneN >= total)
         ? '<div class="card rev-banner rev-all-done">🌱 今天的 ' + total + ' 轮间隔复习全部做完了 —— 遗忘曲线今天就吃满了 🎉</div>'
@@ -5703,13 +6075,14 @@
       const g = groups[k];
       return '<div class="rev-row"><span class="rev-name">' + S().esc(g.t.text) + '</span>' +
         '<span class="rev-when">' + g.rs.map(function (r) {
-          return '<i class="' + (r.due <= now ? 'late' : '') + '">' + srHHMM(r.due) + '</i>';
+          return '<i class="' + (r.due <= now ? 'late' : '') + '">' + srWhen(r.due) +
+            ((r.need || 1) > 1 ? ' ×' + r.need : '') + '</i>';
         }).join('') + '</span></div>';
     }).join('');
     bar.innerHTML = '<div class="card rev-banner' + (due ? ' rev-due' : '') + '">' +
       '<div class="rev-head">' +
       (due ? '⏰ <b>该复习了</b>' : '🌱 <b>待复习 ' + list.length + ' 轮</b>') +
-      ' · 最近一轮 <b>' + srHHMM(list[0].r.due) + '</b>' +
+      ' · 最近一轮 <b>' + srWhen(list[0].r.due) + '</b>' +
       (due ? '（已到点）' : '（' + (left <= 0 ? '就现在' : left + ' 分钟后') + '）') +
       '<button class="btn btn-small btn-primary" data-act="rev-go" style="margin-left:auto">▶ 开始复习</button>' +
       '</div>' + rows + '</div>';
@@ -5752,10 +6125,8 @@
     let task = null;
     if (taskId) { task = srFindTask(taskId); }
     else {
-      const all = [];
-      COLS.forEach(function (c) {
-        (day.tasks[c.key] || []).forEach(function (t) { srPendingOf(t).forEach(function (r) { all.push({ t: t, r: r }); }); });
-      });
+      // 🌱 v112：队列 / 已完成的那些也要能被"▶ 开始复习"抓到
+      const all = srPendingList();
       all.sort(function (a, b) { return a.r.due - b.r.due; });
       if (!all.length) { App.ui.toast('今天没有待复习的内容'); return; }
       task = all[0].t;
@@ -5828,16 +6199,41 @@
     });
   }
 
+  /** 🌱 v115：以这一轮**实际完成那一刻**为起点，重排后面几轮
+   *  （用户：「第一次复习之后，间隔多久进行第二次复习」→ 就是接着上次真做完的时间往后推） */
+  function srReschedule(task, round) {
+    const plan = srPlan(task);
+    const cfg = (task.sp && task.sp.cfg) || srCfgOf(task);
+    const gaps = (cfg && cfg.gaps && cfg.gaps.length) ? cfg.gaps : SR_PLAN_DEF.gaps;
+    let base = (round && round.at) || Date.now();
+    let after = false;
+    plan.forEach(function (r) {
+      if (round && r.n === round.n) { after = true; return; }
+      if (!after) return;
+      const gap = (gaps[r.n - 1] != null) ? gaps[r.n - 1] : (r.gap || 1440);
+      base = base + gap * 60000;
+      r.gap = gap;
+      r.due = base;
+      r.need = Math.max(1, cfg.perDay || 1);
+    });
+    return plan;
+  }
+
   function srFinishRound(task, round) {
     if (!round || round.done === true) { App.ui.closeModal(); return; }   // 防重复触发重复发分
     const dayKey = S().todayKey();
     const plan = srPlan(task);
-    round.done = true;
-    round.at = Date.now();
+    // 🌱 v115：一天多遍 —— 这一轮要过够 need 遍才算完成（每遍都记一次，分数照给）
+    const need = Math.max(1, +(round.need || 1));
+    if (!round.hits) round.hits = [];
+    round.hits.push(Date.now());
+    const got = round.hits.length;
+    const enough = got >= need;
+    if (enough) { round.done = true; round.at = Date.now(); }
     const p = srPoints();
     if (p > 0) {
       S().addLedger(dayKey, 'earn-review',
-        { points: p, note: '🌱 第 ' + round.n + ' 轮复习：' + task.text, taskId: task.id });
+        { points: p, note: '🌱 第 ' + round.n + ' 轮复习' + (need > 1 ? '（第 ' + got + '/' + need + ' 遍）' : '') + '：' + task.text, taskId: task.id });
       App.ui.floatAt(document.getElementById('stat-points'), '+' + p + '分');
     }
     let bonusMsg = '';
@@ -5850,17 +6246,23 @@
         bonusMsg = ' · 全轮完成再 +' + b + ' 分 🎉';
       }
     }
+    // 🌱 v115：这轮真过了 → 后面几轮按"刚才做完的时刻"重排
+    if (enough) srReschedule(task, round);
     S().save();
     if (srRev) srLogWork('🌱 第 ' + round.n + ' 轮复习：' + task.text, srRev.startAt, Date.now(), task.id);
     srRev = null;
     App.ui.closeModal();
     App.tasks.renderAll();
+    // 🌱 v112：队列页上也有复习提醒和 ●●○ 了，做完一轮得跟着刷新
+    try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
     const left = srPendingOf(task).length;
-    App.ui.toast('✅ 第 ' + round.n + ' 轮完成 · +' + p + ' 分' + bonusMsg +
-      (left ? ' · 还剩 ' + left + ' 轮（下一次 ' + srHHMM(srPendingOf(task)[0].due) + '）' : ''), 5600);
-    if (!left) setTimeout(function () {
-      App.ui.toast('🌱 「' + task.text + '」今天这几轮跑完了 —— 明天/后天可以用日历的 🔁 再安排一次，间隔拉长效果更好', 8200);
-    }, 2400);
+    App.ui.toast(enough
+      ? ('✅ 第 ' + round.n + ' 轮完成 · +' + p + ' 分' + bonusMsg +
+        (left ? ' · 还剩 ' + left + ' 轮（下一次 ' + srWhen(srPendingOf(task)[0].due) + '）' : ''))
+      : ('🔁 第 ' + round.n + ' 轮第 ' + got + '/' + need + ' 遍 ✅ · +' + p + ' 分 —— 这一天再过 ' +
+        (need - got) + ' 遍就算这轮过了'), 5600);
+    // 🔁 v116：这轮真做完了 → 问一句要不要再排一轮（想结束就不点）
+    if (enough) setTimeout(function () { srAskAgain(task); }, 500);
   }
 
 
@@ -6036,15 +6438,24 @@
     init: init, renderAll: renderAll, renderToday: renderToday,
     carryTagHTML: carryTagHTML, settleDayCore: settleDayCore,
     taskRowHTML: taskRowHTML, bindTaskAreaEvents: bindTaskAreaEvents,
+    // 🌱 v115：复习计划（用户自定义）
+    parseGap: parseGap, fmtGap: fmtGap, srCfgOf: srCfgOf, srBuildPlan: srBuildPlan,
+    srReschedule: srReschedule, srPlanModal: srPlanModal, srWhen: srWhen, srWanted: srWanted,
+    srAskAgain: srAskAgain,     // 🔁 v116
+    mcWritable: mcWritable,     // 🃏 v117
     autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,
     addTaskModal: addTaskModal, editTaskModal: editTaskModal,
+    // 🧩 v110：基础任务明细里要复用任务页那套"小题按钮"，所以把这些也导出去
+    addSubModal: addSubModal, delSub: delSub, addGroupModal: addGroupModal, delGroupSub: delGroupSub,
+    openSplit: openSplit, editSubSummary: editSubSummary, trashPush: trashPush,
     // 🌱 v70 主动回忆 + 间隔重复
     srOn: srOn, srGaps: srGaps, srDeadlineHM: srDeadlineHM, srPoints: srPoints,
     srKpPoints: srKpPoints, srFinishBonus: srFinishBonus,
     planSpaced: planSpaced, srPlan: srPlan, srPendingOf: srPendingOf,
     srPendingList: srPendingList, renderReviewBanner: renderReviewBanner,
+    srCarriers: srCarriers, revDotsHTML: revDotsHTML,     // 🌱 v112
     srStartRound: srStartRound, srFinishRound: srFinishRound, srAskKps: srAskKps,
     srHHMM: srHHMM, srClockMs: srClockMs, srClockMsOf: srClockMs,
     // ⏰ v71 学习时段
