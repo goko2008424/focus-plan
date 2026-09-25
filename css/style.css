@@ -1248,6 +1248,35 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
 .ck-dot { width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--line); background: transparent; }
 .ck-dot.on { background: #22a06b; border-color: #22a06b; }
 .ck-dot.half { background: rgba(34, 160, 107, .35); border-color: rgba(34, 160, 107, .5); }
+/* 📅 v120：复习记录列表（任务级）+ 已排日期上的 ✕ / 汇总（合集级） */
+.sr-hist { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; margin: 0 0 10px; max-height: 190px; overflow: auto; }
+.sr-hist-t { font-size: 12.5px; font-weight: 700; opacity: .85; margin-bottom: 4px; }
+.sr-hist-r { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 2px 0; }
+.sr-hist-n { min-width: 46px; font-weight: 600; color: var(--muted); }
+.sr-hist-d { min-width: 96px; }
+.sr-hist-s { margin-left: auto; color: var(--muted); }
+.sr-hist-s.ok { color: #22a06b; }
+.sr-hist-s.late { color: #b0262e; }
+.sr-hist-end { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+
+/* 🎯 v123：复习结果（这次写出来了吗）—— 结果决定下次隔多久 */
+.sr-res-pick { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 6px; }
+.sr-res-pick .btn { padding: 5px 12px; font-size: 13px; }
+.sr-res-pick .btn.on { border-color: var(--primary); color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary); font-weight: 600; }
+.sr-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: -2px 0 10px; }
+.sr-chips .btn { padding: 3px 10px; font-size: 12px; }
+.sr-why { font-size: 12.5px; color: var(--muted); margin: 0 0 8px; line-height: 1.7; }
+.sr-res-tag { margin-left: 6px; font-size: 12px; padding: 0 6px; border-radius: 8px; white-space: nowrap; }
+.sr-res-tag.ok { color: #22a06b; background: rgba(34, 160, 107, .14); }
+.sr-res-tag.no { color: #b0262e; background: rgba(176, 38, 46, .12); }
+.mc-schedsum { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+/* ⚠️ 必须带 .mc-schedline 前缀：原 .mc-chip 规则在本文件靠后（约 1293 行）且用了 padding 简写，
+   同优先级会被它盖掉 —— 那样 ✕ 会压在日期文字上 */
+.mc-schedline .mc-chip { position: relative; padding-right: 15px; }
+.mc-chip-x { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); font-style: normal;
+  font-size: 10px; line-height: 1; opacity: .55; cursor: pointer; padding: 1px 2px; }
+.mc-chip-x:hover { opacity: 1; color: #b0262e; }
 /* 🔁 v119：补打卡 —— 过去没打满的小圆点可点（虚线绿框）；编辑弹窗里的补卡清单 */
 .ck-dot.makeup { cursor: pointer; border-style: dashed; border-color: rgba(34, 160, 107, .55); }
 .ck-dot.makeup:hover { background: rgba(34, 160, 107, .22); }
@@ -1424,4 +1453,183 @@ body[data-theme="dark"] .d-moved, body[data-theme="purple"] .d-moved { backgroun
 @keyframes mcPulse {
   0%, 100% { box-shadow: 0 0 0 3px rgba(226, 84, 93, .16); }
   50% { box-shadow: 0 0 0 8px rgba(226, 84, 93, .05); }
+}
+
+/* ============ v124 复盘看板 ============ */
+.rv-range { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.rv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.rv-tile { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.rv-tile .rv-cap { font-size: 12px; color: var(--muted); }
+.rv-tile .rv-num { font-size: 20px; font-weight: 800; margin-top: 2px; }
+.rv-tile .rv-cmp { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.rv-sec { margin-top: 16px; }
+.rv-sec h4 { font-size: 13.5px; margin-bottom: 6px; }
+.rv-bar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.rv-bar-label { width: 56px; flex: none; font-size: 12.5px; text-align: right; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rv-bar-track { flex: 1; height: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.rv-bar-fill { display: block; height: 100%; border-radius: 7px; }
+.rv-bar-val { width: 76px; flex: none; font-size: 11.5px; color: var(--muted); }
+.rv-hours { display: flex; align-items: flex-end; gap: 3px; height: 64px; margin-top: 8px; }
+.rv-hour-col { flex: 1; min-height: 2px; background: var(--primary); opacity: .3; border-radius: 3px 3px 0 0; }
+.rv-hour-col.hot { opacity: 1; }
+.rv-hour-x { display: flex; gap: 3px; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.rv-hour-x span { flex: 1; text-align: center; }
+.rv-btns { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 640px) { .rv-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ============ v125 手机端适配（≤700px：底部导航 + 触控优化） ============ */
+#mobile-nav { display: none; }
+@media (max-width: 700px) {
+  body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  #main-nav { display: none !important; }
+  .header-top { padding: 10px 14px 8px; }
+  .brand h1 { font-size: 17px; }
+  #stat-bar { padding: 6px 14px 8px; gap: 10px; font-size: 12px; }
+  main { padding: 0 10px; }
+  .card { padding: 14px 13px; }
+  /* 弹窗贴边 + 输入 16px（防 iOS 聚焦缩放） */
+  .modal { max-width: 94vw; padding: 16px 14px; max-height: 86vh; }
+  .modal input, .modal select, .modal textarea { font-size: 16px; }
+  .modal-actions .btn { flex: 1; min-width: 96px; padding: 10px 12px; }
+  /* 按钮触控目标 */
+  .btn { padding: 9px 14px; }
+  .btn-small { padding: 7px 10px; }
+  /* 浮动计时窗：抬到底栏上面、左右贴边 */
+  #timer-float { left: 10px; right: 10px; bottom: calc(78px + env(safe-area-inset-bottom)); width: auto; }
+  html.pip #timer-float.in-pip { left: auto; right: 10px; bottom: 10px; width: 240px; }
+  /* 日历月格紧一点、好点 */
+  .cal-grid { gap: 3px; }
+  .cal-day { min-height: 44px; font-size: 11.5px; }
+  /* ===== 底部导航栏 ===== */
+  #mobile-nav {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 95;
+    background: var(--brand);
+    justify-content: space-around;
+    padding: 5px 4px calc(6px + env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 12px rgba(0,0,0,.22);
+  }
+  #mobile-nav .mn-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    background: none;
+    border: none;
+    padding: 4px 0 3px;
+    margin: 0;
+    border-radius: 9px;
+    color: rgba(255,255,255,.72);
+    font-size: 10.5px;
+    line-height: 1.2;
+  }
+  #mobile-nav .mn-btn .mn-ico { font-size: 20px; line-height: 1.15; font-style: normal; }
+  #mobile-nav .mn-btn.active { color: #fff; background: rgba(255,255,255,.15); }
+  /* =====「更多」抽屉 ===== */
+  #mn-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 96;
+    background: rgba(12,17,23,.5);
+  }
+  #mn-sheet .mn-card {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: var(--card);
+    border-radius: 16px 16px 0 0;
+    padding: 12px 12px calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 30px rgba(0,0,0,.3);
+    animation: fadeIn .16s ease;
+  }
+  #mn-sheet .mn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  #mn-sheet .mn-head b { font-size: 14px; }
+  #mn-sheet .mn-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  #mn-sheet .mn-grid .nav-btn, #mn-sheet .mn-sbtn {
+    padding: 12px 4px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: var(--ink);
+    text-align: center;
+  }
+  #mn-sheet .mn-grid .nav-btn.active { border-color: var(--primary); color: var(--primary); font-weight: 700; }
+}
+@media (max-width: 360px) {
+  #mn-sheet .mn-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* v125 补充：小时计划卡窄屏换行（flex 行被按钮挤扁） */
+@media (max-width: 700px) {
+  .hour-card.idle { flex-wrap: wrap; }
+  .hour-card.idle > div:first-child { flex: 1 1 100%; }
+}
+
+/* ============ v126 ⚡ 快速添加 ============ */
+.qa-preview { margin: 10px 0 4px; min-height: 30px; }
+.qa-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.qa-chips span { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; }
+.qa-title { margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+.qa-title b { color: var(--ink); font-size: 14.5px; }
+.qa-targets { display: flex; flex-wrap: wrap; gap: 6px; }
+.qa-targets .qa-t.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* ============ v127 全站 UI 精装修 ============ */
+/* 触屏点按不出蓝色高亮块 */
+* { -webkit-tap-highlight-color: transparent; }
+/* 交互元素统一过渡手感 */
+.btn, .tab-btn, .nav-btn, .task-row, .qa-t, .mn-sbtn, .mn-btn, input, select, textarea, .modal {
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .18s ease, transform .08s ease, filter .15s ease;
+}
+/* 按钮按压手感 */
+.btn:active, .tab-btn:active, .qa-t:active, .mn-sbtn:active { transform: translateY(1px) scale(.985); }
+.btn-primary:hover { filter: brightness(1.07); }
+#mobile-nav .mn-btn:active { transform: scale(.93); }
+/* 键盘导航的焦点环（鼠标点击不出现） */
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* 输入聚焦跟随主题色 */
+.modal input:focus, .modal select:focus, .modal textarea:focus,
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary);
+}
+@supports (color: color-mix(in srgb, red 10%, blue)) {
+  .modal input:focus, .modal select:focus, .modal textarea:focus,
+  input:focus, select:focus, textarea:focus {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+  }
+  ::selection { background: color-mix(in srgb, var(--primary) 24%, transparent); }
+}
+/* 卡片更柔和的景深 */
+.card { box-shadow: 0 1px 3px rgba(15,23,42,.05), 0 8px 22px rgba(15,23,42,.045); }
+body[data-theme="dark"] .card, body[data-theme="purple"] .card { box-shadow: 0 1px 3px rgba(0,0,0,.35), 0 8px 22px rgba(0,0,0,.28); }
+/* 弹窗更聚焦 */
+.modal { border-radius: 16px; box-shadow: 0 24px 64px rgba(10,15,26,.30); }
+/* 任务行悬停 */
+.task-row:hover { background: var(--bg); border-radius: 8px; }
+body[data-theme="dark"] .task-row:hover, body[data-theme="purple"] .task-row:hover { background: rgba(255,255,255,.04); }
+/* 滚动条（WebKit）跟主题走 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(138,145,156,.42); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(138,145,156,.68); border: 2px solid transparent; background-clip: padding-box; }
+body[data-theme="dark"] ::-webkit-scrollbar-thumb, body[data-theme="purple"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border: 2px solid transparent; background-clip: padding-box; }
+body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover, body[data-theme="purple"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.38); border: 2px solid transparent; background-clip: padding-box; }
+/* 尊重系统的「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* v127 补充：小时计划卡的浅色渐变在暗色主题下改成主题色淡渐变（否则字看不清） */
+body[data-theme="dark"] .hour-card.idle, body[data-theme="purple"] .hour-card.idle,
+body[data-theme="dark"] .hour-card.active, body[data-theme="purple"] .hour-card.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 12%, transparent), color-mix(in srgb, var(--extra) 9%, transparent));
+  border-color: var(--line);
 }

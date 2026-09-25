@@ -17,8 +17,11 @@
  * 轮转（自动清理）：超过 bkKeepDays 天 → 删；总份数超过 bkMax → 删最老的。
  * **永远保留最近 bkMin(3) 份**，哪怕它已经很旧 —— 不能让轮转把备份清成 0。
  *
- * ⚠️ 图片本体不在这里：卡片里的图存在另一个 IDB（focus-plan-photos），备份只存卡片的
- *    文字与"图 id"。所以同一浏览器内恢复后图片照旧能用；但换设备/清站点数据时图片会一起没。
+ * 💾 v121：**图片本体现在也进备份了**。用户原话：「我做了那么多问答的图片，它肯定不可能只是 KB…
+ *    你肯定要把我问答的卡片存下来，拜托了」——以前备份只有文字 + "图 id"，导出的文件也不含图，
+ *    换设备/清站点数据时照片会一起没（这是真丢东西，不是吓唬人）。
+ *    做法：图片池**只存一份**（`body` 里 id = '__photos__' 那条），快照只记"当时引用了哪些图"，
+ *    恢复时从池子里取回写进图片库 —— 这样备份份数翻倍也不会把图片存 N 遍。
  * ============================================================ */
 (function () {
   'use strict';
@@ -33,6 +36,7 @@
   const ST_BODY = 'body';
   const DEF = { on: true, everyH: 3, keepDays: 7, max: 60, min: 3 };
   const LAST_KEY = 'focusPlan.lastBackupAt';   // 只是给"最后一次"文案用的冗余记录（真值以 meta 为准）
+  const PHOTO_KEY = '__photos__';              // 💾 v121：图片池（存在 body 里，不进 meta 列表）
 
   /* ---------- IndexedDB ---------- */
   let dbp = null;
@@ -153,6 +157,41 @@
     return '<span class="bk-kind ' + cls + '">' + (KIND_NAME[m.kind] || '备份') + '</span>';
   }
 
+  /* ---------- 💾 v121：图片池 ---------- */
+  /** 当前图片库快照（id → dataURL） */
+  function photoMap() {
+    try { return (App.memcards && App.memcards.allPhotos) ? App.memcards.allPhotos() : {}; } catch (e) { return {}; }
+  }
+  /** 池子的指纹：张数 + 总字符数（便宜，够判断变没变） */
+  function poolSigOf(map) {
+    const ids = Object.keys(map || {});
+    let len = 0;
+    ids.forEach(function (id) { len += String(map[id] || '').length; });
+    return ids.length + '#' + len;
+  }
+  function photoMBOf(map) {
+    let bytes = 0;
+    Object.keys(map || {}).forEach(function (id) { bytes += String(map[id] || '').length * 0.75; });
+    return Math.round(bytes / 1048576 * 10) / 10;
+  }
+  function poolGet() {
+    return bodyGet(PHOTO_KEY).then(function (r) { return (r && r.photos) ? r : null; });
+  }
+  /** 把图片池同步成"现在这份"（内容没变就不写，别每 3 小时重写几 MB） */
+  function syncPool() {
+    const map = photoMap();
+    const sigNow = poolSigOf(map);
+    const n = Object.keys(map).length;
+    return poolGet().then(function (old) {
+      const info = { n: n, mb: photoMBOf(map), sig: sigNow, changed: false };
+      if (old && old.sig === sigNow) return info;
+      return bodyPut({ id: PHOTO_KEY, photos: map, sig: sigNow, at: Date.now() }).then(function () {
+        info.changed = true;
+        return info;
+      });
+    });
+  }
+
   /* ---------- 备份 / 轮转 ---------- */
   let lastList = [];
   let busy = false;
@@ -163,7 +202,8 @@
     const c = cfg();
     if (!c.on && kind !== 'manual' && kind !== 'restore') return Promise.resolve(null);
     busy = true;
-    return idb().then(function () {
+    // 💾 v121：存快照之前，先把图片池同步成"现在这份"（池子只存一份，不随份数翻倍）
+    return idb().then(syncPool).catch(function () { return null; }).then(function (poolInfo) {
       const str = JSON.stringify(S().data());
       const s = sig(str);
       return metaAll().then(function (all) {
@@ -176,12 +216,14 @@
         if (kind === 'daily' && all.some(function (x) { return x.kind === 'daily' && x.dayKey === dk; })) {
           busy = false; return null;
         }
+        const pool = poolInfo || { n: 0, mb: 0, sig: '' };
         const rec = {
           id: String(Date.now()) + '-' + Math.random().toString(36).slice(2, 6),
-          at: Date.now(), kind: kind, dayKey: dk, bytes: str.length, sig: s
+          at: Date.now(), kind: kind, dayKey: dk, bytes: str.length, sig: s,
+          ph: { n: pool.n, mb: pool.mb }                       // 💾 v121：这份备份能带回来的图片张数/体积
         };
         return metaPut(rec)
-          .then(function () { return bodyPut({ id: rec.id, json: str }); })
+          .then(function () { return bodyPut({ id: rec.id, json: str, phSig: pool.sig }); })
           .then(function () { return prune(); })
           .then(function () {
             try { localStorage.setItem(LAST_KEY, String(rec.at)); } catch (e) { /* 忽略 */ }
@@ -226,9 +268,15 @@
       return snap('manual').then(function () {
         const ok = S().restoreFrom(obj);
         if (!ok) { App.ui.toast('恢复失败：文件结构不对'); return false; }
-        App.ui.toast('♻ 已恢复 —— 正在重新加载…', 4200);
-        setTimeout(function () { try { location.reload(); } catch (e) {} }, 900);
-        return true;
+        // 💾 v121：图片本体也从池子里写回去（不然卡片回来了、图是裂的）
+        return poolGet().then(function (pool) {
+          let n = 0;
+          try { n = (pool && App.memcards && App.memcards.restorePhotos) ? App.memcards.restorePhotos(pool.photos) : 0; }
+          catch (e) { n = 0; }
+          App.ui.toast(n ? ('♻ 已恢复 —— 连 ' + n + ' 张图片一起（正在重新加载…）') : '♻ 已恢复 —— 正在重新加载…', 4600);
+          setTimeout(function () { try { location.reload(); } catch (e) {} }, 900);
+          return true;
+        });
       });
     });
   }
@@ -244,15 +292,69 @@
       return true;
     } catch (e) { return false; }
   }
-  function exportOne(id) {
+  /** 💾 v121：导出文件的内容（抽出来是为了能被测试直接验，不用真去下载） */
+  function exportTextOf(id) {
     return bodyGet(id).then(function (b) {
-      if (!b || !b.json) { App.ui.toast('这份备份的内容找不到了'); return false; }
+      if (!b || !b.json) return null;
+      let obj = null;
+      try { obj = JSON.parse(b.json); } catch (e) { return null; }
+      const photos = photoMap();
+      return JSON.stringify({ __focusPlan: 2, exportedAt: Date.now(), data: obj, photos: photos });
+    });
+  }
+  function exportOne(id) {
+    return exportTextOf(id).then(function (text) {
+      if (!text) { App.ui.toast('这份备份的内容找不到了'); return false; }
       const m = (lastList || []).filter(function (x) { return x.id === id; })[0];
       const nm = 'focus-plan-备份-' + (m ? m.dayKey : S().todayKey()) + '-' + (m ? clockOf(m.at).replace(':', '') : '') + '.json';
-      const ok = download(nm, b.json);
-      App.ui.toast(ok ? ('⬇ 已存成文件：' + nm) : '这个浏览器不让下载，试试换成 Edge/Chrome', 4600);
+      const nPh = Object.keys(photoMap()).length;
+      const ok = download(nm, text);
+      App.ui.toast(ok
+        ? ('⬇ 已存成文件：' + nm + '（' + kb(text.length) + '，含 ' + nPh + ' 张图片）')
+        : '这个浏览器不让下载，试试换成 Edge/Chrome', 5600);
       return ok;
     });
+  }
+
+  /* ---------- 💾 v121：从文件导入（吃掉老格式=纯数据 / 新格式=带图片的包） ---------- */
+  function importFromText(text, fname) {
+    let obj = null;
+    try { obj = JSON.parse(String(text || '')); } catch (e) { obj = null; }
+    if (!obj || typeof obj !== 'object') { App.ui.toast('这个文件读不出来（不是备份 json？）', 4800); return false; }
+    const data = (obj.data && typeof obj.data === 'object') ? obj.data : obj;
+    const photos = (obj.photos && typeof obj.photos === 'object') ? obj.photos : null;
+    if (!data || data.version !== 1 || !data.days) { App.ui.toast('这不像专注计划的备份文件', 4800); return false; }
+    const nPh = photos ? Object.keys(photos).length : 0;
+    App.ui.confirm('用这个文件覆盖现在的数据？<br><span class="hint">' +
+      esc(fname || '（文件）') + '　·　含 <b>' + nPh + '</b> 张图片' +
+      (nPh ? '（会一起写回图片库）' : '（<b>这份文件里没有图片</b>，是老格式导出的）') +
+      '<br>⚠️ 现在的数据会被<b>整个替换</b>掉（动手前会自动先存一份"恢复前"的备份）。</span>',
+      '⬆ 导入', function () {
+        snap('manual').then(function () {
+          const ok = S().restoreFrom(data);
+          if (!ok) { App.ui.toast('导入失败：结构不对'); return; }
+          let n = 0;
+          try { n = (photos && App.memcards && App.memcards.restorePhotos) ? App.memcards.restorePhotos(photos) : 0; }
+          catch (e) { n = 0; }
+          App.ui.toast('⬆ 导入完成' + (n ? '（含 ' + n + ' 张图片）' : '') + ' —— 正在重新加载…', 4800);
+          setTimeout(function () { try { location.reload(); } catch (e) {} }, 900);
+        });
+      });
+    return true;
+  }
+  function importFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.json,application/json';
+    inp.onchange = function () {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const fr = new FileReader();
+      fr.onload = function () { importFromText(String(fr.result || ''), f.name); };
+      fr.onerror = function () { App.ui.toast('读文件失败'); };
+      fr.readAsText(f);
+    };
+    inp.click();
   }
 
   /* ---------- 界面 ---------- */
@@ -260,7 +362,7 @@
     return '<div class="bk-item" data-id="' + m.id + '">' +
       '<span class="bk-when">' + esc(when(m.at)) + '</span>' +
       kindTag(m) +
-      '<span class="bk-size">' + kb(m.bytes) + '</span>' +
+      '<span class="bk-size">' + kb(m.bytes) + (m.ph && m.ph.n ? ' + 图 ' + m.ph.n + ' 张' : '') + '</span>' +
       '<span class="bk-ago">' + esc(ago(m.at)) + '</span>' +
       '<span class="bk-acts">' +
       '<button class="btn btn-small" data-bk-act="restore" data-id="' + m.id + '" title="把数据换回这一份">♻ 恢复</button>' +
@@ -280,8 +382,9 @@
     const c = cfg();
     return '💡 备份存在<b>这个浏览器</b>里（每天一份 + 每 ' + c.everyH + ' 小时一份，' + c.keepDays +
       ' 天后自动清理，永远留最近 3 份）。<br>' +
-      '⚠️ 要防「整台电脑/浏览器出事」，还得偶尔点一下「⬇ 把最新一份存成文件」，把 json 放到网盘或 U 盘里；' +
-      '卡片里的<b>图片本体</b>不在备份内（在同一浏览器的图片库里），换设备不会跟着走。';
+      '✅ <b>图片本体也在备份里了</b>（v121）：导出的文件会把你的问答照片一起打包带走，' +
+      '换电脑/重装浏览器用「⬆ 从文件恢复」就能连图一起回来。<br>' +
+      '⚠️ 要防「整台电脑/浏览器出事」，还是得偶尔点一下「⬇ 把最新一份存成文件」，把文件放到网盘或 U 盘里。';
   }
   /** 只刷新状态行与说明（改设置项时用 —— 不整块重画，免得把用户正在操作的控件换掉） */
   function refreshStatus() {
@@ -314,6 +417,7 @@
         '<button class="btn btn-small btn-primary" data-bk-act="now">💾 现在备份一份</button>' +
         '<button class="btn btn-small" data-bk-act="file" data-id="' + (last ? last.id : '') + '"' + (last ? '' : ' disabled') + '>⬇ 把最新一份存成文件</button>' +
         '<button class="btn btn-small" data-bk-act="prune">🧹 清理过期的</button>' +
+        '<button class="btn btn-small" data-bk-act="import">⬆ 从文件恢复</button>' +
         '<button class="btn btn-small" data-bk-act="all">🗂 看全部（' + all.length + ' 份 · ' + kb(total) + '）</button>' +
         '</div>' +
         (all.length
@@ -355,6 +459,7 @@
         prune().then(function (n) { App.ui.toast(n ? ('🧹 清掉 ' + n + ' 份过期备份') : '🧹 没有过期的'); render(); });
         return;
       }
+      if (act === 'import') { importFile(); return; }
       if (act === 'all') { allModal(); return; }
       if (act === 'close') { App.ui.closeModal(); return; }
       if (act === 'restore') {
@@ -465,6 +570,9 @@
     refreshStatus: refreshStatus,
     _metaAll: metaAll,
     _bodyGet: bodyGet,
+    importFile: importFile, importFromText: importFromText,     // 💾 v121
+    exportTextOf: exportTextOf,
+    photos: function () { const m = photoMap(); return { n: Object.keys(m).length, mb: photoMBOf(m), map: m }; },
     when: when, kb: kb
   };
 })();

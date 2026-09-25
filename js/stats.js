@@ -73,6 +73,9 @@
   function render() {
     if (typeof App.app !== 'undefined' && App.app.currentView() !== 'stats') return;
 
+    // 🧭 v124 复盘看板（放在最上面的图表前）
+    renderReviewBoard();
+
     // 周柱状图
     const week = lastNDays(7);
     const weekData = week.map(function (x) {
@@ -417,5 +420,338 @@
       cancel: App.ui.closeModal
     });
   }
-  App.stats = { render: render, editReviewModal: editReviewModal, editHourPlanReview: editHourPlanReview, exportReview: exportReview, exportHourReviewToday: exportHourReviewToday };
+  /* ============================================================
+   * v124 复盘看板 —— 本周 vs 上周 · 学科分布 · 时段分布 · 一键长图
+   * 口径三条：
+   *  1)「学习时长」= 时间轴 study+extend；「计时专注」= sessions 净时长
+   *  2) 未来不统计（只算 k <= today）；「上周」= 完整的周一→周日
+   *  3) 复习轮按「完成时刻 at」落周；同一轮在多份载体（任务/队列）上只算一次
+   * ============================================================ */
+  function weekMonday(d) {
+    const x = new Date(d); x.setHours(0, 0, 0, 0);
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+    return x;
+  }
+  function weekKeys(offset) { // 0=本周（周一→周日） 1=上周
+    const mon = weekMonday(new Date());
+    mon.setDate(mon.getDate() - 7 * offset);
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mon); d.setDate(d.getDate() + i);
+      out.push(S().dateKey(d));
+    }
+    return out;
+  }
+  /** 从任务名里认学科：化学 · 平衡常数 / 背英语单词 / 数学卷子 都能认出来 */
+  function subjectOf(text) {
+    if (!text) return null;
+    const t = String(text).trim();
+    const subs = (App.memcards && App.memcards.subjects) ? App.memcards.subjects()
+      : ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
+    for (let i = 0; i < subs.length; i++) if (t.indexOf(subs[i]) === 0) return subs[i];
+    const head = t.slice(0, 5);
+    for (let i = 0; i < subs.length; i++) if (head.indexOf(subs[i]) >= 0) return subs[i];
+    const di = t.indexOf('·');
+    if (di > 0) {
+      const h = t.slice(0, di).trim();
+      if (subs.indexOf(h) >= 0) return h;
+    }
+    return null;
+  }
+  function weekStats(offset) {
+    const keys = weekKeys(offset), set = {};
+    keys.forEach(function (k) { set[k] = true; });
+    const tk = S().todayKey();
+    const st = {
+      keys: keys, study: 0, extend: 0, focus: 0, daysPassed: 0,
+      req: [0, 0], ideal: [0, 0], extra: [0, 0],
+      rev: { done: 0, ok: 0, no: 0, onTime: 0 },
+      ckDays: 0, earned: 0, spent: 0
+    };
+    const seen = {}, cked = {};
+    const countRounds = function (plan, text) {
+      (plan || []).forEach(function (r) {
+        if (r.done !== true || !r.at) return;
+        const rk = S().dateKey(new Date(r.at));
+        if (!set[rk]) return;
+        const kk = r.at + '|' + (r.n || 0) + '|' + (text || '');
+        if (seen[kk]) return;          // 任务页副本 + 队列载体是同一轮，只算一次
+        seen[kk] = true;
+        st.rev.done++;
+        if (r.result === 'ok') st.rev.ok++; else if (r.result === 'no') st.rev.no++;
+        if (r.due && S().dateKey(new Date(r.at)) <= S().dateKey(new Date(r.due))) st.rev.onTime++;
+      });
+    };
+    keys.forEach(function (k) {
+      if (k > tk) return;              // 🔒 还没到的日子绝不统计
+      st.daysPassed++;
+      const c = collectDay(k), day = c.day;
+      st.study += c.study; st.extend += c.extend;
+      (day.sessions || []).forEach(function (s) { st.focus += s.actualMinutes || 0; });
+      ['required', 'ideal', 'extra'].forEach(function (lk) {
+        const f = lk === 'required' ? 'req' : lk;   // st 里必须存 req，lk 是 required
+        (day.tasks[lk] || []).forEach(function (t) {
+          st[f][1]++;
+          if (t.done) st[f][0]++;
+          countRounds(t.sp && t.sp.planned, t.text);
+        });
+      });
+      (S().data().checkins || []).forEach(function (ci) {
+        if (ci.days && ci.days[k]) cked[k] = true;
+      });
+    });
+    ['queue', 'queueDone'].forEach(function (arr) {   // v112：复习计划也会住在队列载体上
+      (S().data()[arr] || []).forEach(function (q) { countRounds(q.sp && q.sp.planned, q.text); });
+    });
+    st.ckDays = Object.keys(cked).length;
+    S().ledger().forEach(function (e) {
+      if (!set[e.date]) return;
+      const p = e.points || 0;
+      if (p > 0) st.earned += p; else if (p < 0) st.spent += -p;
+    });
+    return st;
+  }
+  /** 最近 30 天计时专注按学科前缀分桶 */
+  function subjectDist() {
+    const buckets = {}; let total = 0;
+    lastNDays(30).forEach(function (c) {
+      (c.day.sessions || []).forEach(function (s) {
+        const m = s.actualMinutes || 0;
+        if (m <= 0) return;
+        const sub = subjectOf(s.taskText) || '未分类';
+        buckets[sub] = (buckets[sub] || 0) + m;
+        total += m;
+      });
+    });
+    const list = Object.keys(buckets).map(function (k) { return { name: k, min: buckets[k] }; });
+    list.sort(function (a, b) { return b.min - a.min; });
+    return { list: list, total: total };
+  }
+  /** 最近 14 天计时「开始时段」分布（24 格） */
+  function hourDist() {
+    const counts = [];
+    for (let i = 0; i < 24; i++) counts.push(0);
+    let total = 0;
+    lastNDays(14).forEach(function (c) {
+      (c.day.sessions || []).forEach(function (s) {
+        if (!s.startAt) return;
+        const d = new Date(s.startAt);
+        if (isNaN(d.getTime())) return;
+        counts[d.getHours()]++; total++;
+      });
+    });
+    return { counts: counts, total: total };
+  }
+  function rvCmp(nowV, prevV, fmt) {
+    if (!prevV) return nowV > 0 ? '上周还没开始' : '上周也是 0';
+    const diff = nowV - prevV;
+    if (!diff) return '与上周持平';
+    const pct = Math.round(Math.abs(diff) / prevV * 100);
+    return '上周 ' + fmt(prevV) + ' · ' + (diff > 0 ? '↑' : '↓') + pct + '%';
+  }
+  function rvTile(cap, num, cmp) {
+    return '<div class="rv-tile"><div class="rv-cap">' + cap + '</div>' +
+      '<div class="rv-num">' + num + '</div><div class="rv-cmp">' + cmp + '</div></div>';
+  }
+  function renderReviewBoard() {
+    const box = document.getElementById('review-board');
+    if (!box) return;
+    const cur = weekStats(0), prev = weekStats(1);
+    const kA = S().keyToDate(cur.keys[0]), kB = S().keyToDate(cur.keys[6]);
+    const rangeTxt = (kA.getMonth() + 1) + '/' + kA.getDate() + ' — ' + (kB.getMonth() + 1) + '/' + kB.getDate();
+    const curDone = cur.req[0] + cur.ideal[0] + cur.extra[0];
+    const curTotal = cur.req[1] + cur.ideal[1] + cur.extra[1];
+    const prevDone = prev.req[0] + prev.ideal[0] + prev.extra[0];
+    const net = cur.earned - cur.spent;
+    const onTimePct = cur.rev.done ? Math.round(cur.rev.onTime / cur.rev.done * 100) : 0;
+
+    const sd = subjectDist(), hd = hourDist();
+    const PALETTE = ['#3b82f6', '#22a06b', '#f59e0b', '#8b5cf6', '#0ea5e9', '#e2545d', '#14b8a6', '#94a3b8'];
+    let subHtml = '';
+    if (sd.list.length) {
+      const maxMin = sd.list[0].min;
+      subHtml = sd.list.slice(0, 8).map(function (x, i) {
+        const w = Math.max(3, Math.round(x.min / maxMin * 100));
+        const col = x.name === '未分类' ? '#94a3b8' : PALETTE[i % PALETTE.length];
+        return '<div class="rv-bar-row"><span class="rv-bar-label" title="' + S().esc(x.name) + '">' + S().esc(x.name) + '</span>' +
+          '<span class="rv-bar-track"><span class="rv-bar-fill" style="width:' + w + '%;background:' + col + '"></span></span>' +
+          '<span class="rv-bar-val">' + S().fmtDur(x.min) + '</span></div>';
+      }).join('');
+      subHtml = '<div class="rv-sec"><h4>🧪 最近 30 天计时专注 · 学科分布（共 ' + S().fmtDur(sd.total) + '）</h4>' + subHtml +
+        (sd.list.length > 8 ? '<p class="hint">还有 ' + (sd.list.length - 8) + ' 类没列出来</p>' : '') + '</div>';
+    } else {
+      subHtml = '<div class="rv-sec"><h4>🧪 学科分布</h4><p class="hint">最近 30 天还没有计时记录 —— 点任务右边的 ▶ 开始计时，这里就能看出时间花在哪科。</p></div>';
+    }
+
+    let hourHtml = '';
+    if (hd.total) {
+      const maxC = Math.max.apply(null, hd.counts);
+      const cols = hd.counts.map(function (c, h) {
+        const hp = maxC ? Math.max(4, Math.round(c / maxC * 100)) : 4;
+        return '<span class="rv-hour-col' + (c === maxC && c > 0 ? ' hot' : '') + '" style="height:' + hp + '%" title="' + h + ' 点开始 · ' + c + ' 次"></span>';
+      }).join('');
+      const xs = hd.counts.map(function (c, h) { return '<span>' + (h % 6 === 0 || h === 23 ? h : '') + '</span>'; }).join('');
+      let topH = 0; hd.counts.forEach(function (c, h) { if (c > hd.counts[topH]) topH = h; });
+      hourHtml = '<div class="rv-sec"><h4>⏰ 最近 14 天计时开始时段（共 ' + hd.total + ' 次）</h4>' +
+        '<div class="rv-hours">' + cols + '</div><div class="rv-hour-x">' + xs + '</div>' +
+        '<p class="hint">最常开始：' + topH + ' 点（' + hd.counts[topH] + ' 次）</p></div>';
+    } else {
+      hourHtml = '<div class="rv-sec"><h4>⏰ 时段分布</h4><p class="hint">最近 14 天还没有计时记录。</p></div>';
+    }
+
+    box.innerHTML =
+      '<div class="rv-range">🗓 <b>' + rangeTxt + '</b>（本周）· 已过 ' + cur.daysPassed + ' 天</div>' +
+      '<div class="rv-grid">' +
+      rvTile('📚 学习时长', S().fmtDur(cur.study + cur.extend), rvCmp(cur.study + cur.extend, prev.study + prev.extend, S().fmtDur)) +
+      rvTile('⏱ 计时专注', S().fmtDur(cur.focus), rvCmp(cur.focus, prev.focus, S().fmtDur)) +
+      rvTile('✅ 任务完成', curDone + '/' + curTotal, rvCmp(curDone, prevDone, function (v) { return v + ' 条'; })) +
+      rvTile('🌱 复习轮次', cur.rev.done + ' 次', cur.rev.done
+        ? ('按时 ' + onTimePct + '% · ✅ 写出来了 ' + cur.rev.ok + ' · ✗ 没写出来 ' + cur.rev.no)
+        : (prev.rev.done ? '上周 ' + prev.rev.done + ' 次' : '这周还没复习过')) +
+      rvTile('✅ 打卡', cur.ckDays + '/7 天', rvCmp(cur.ckDays, prev.ckDays, function (v) { return v + ' 天'; })) +
+      rvTile('💰 净积分', (net >= 0 ? '+' : '') + net, '得 +' + cur.earned + ' · 花扣 ' + cur.spent) +
+      '</div>' +
+      subHtml + hourHtml +
+      '<div class="rv-btns">' +
+      '<button class="btn btn-primary" id="rv-png">📤 存成长图</button>' +
+      '<button class="btn" id="rv-copy">📋 复制文字版</button></div>';
+
+    const bp = document.getElementById('rv-png');
+    if (bp) bp.onclick = function () { weekCardPNG(cur, sd, hd); };
+    const bc = document.getElementById('rv-copy');
+    if (bc) bc.onclick = function () { weekCardCopy(weekCardText(cur, rangeTxt, onTimePct)); };
+  }
+  /** 纯数据汇总（探针 / 导出共用） */
+  function weekStatsAll() {
+    return { cur: weekStats(0), prev: weekStats(1), subjects: subjectDist(), hours: hourDist() };
+  }
+  function weekCardText(cur, rangeTxt, onTimePct) {
+    if (!cur) { cur = weekStats(0); }
+    const sd = subjectDist(), hd = hourDist();
+    const net = cur.earned - cur.spent;
+    const L = [];
+    L.push('🧭 本周复盘（' + rangeTxt + ' · 已过 ' + cur.daysPassed + ' 天）');
+    L.push('📚 学习 ' + S().fmtDur(cur.study + cur.extend) + ' · ⏱ 计时专注 ' + S().fmtDur(cur.focus));
+    L.push('✅ 任务：必须 ' + cur.req[0] + '/' + cur.req[1] + ' · 理想 ' + cur.ideal[0] + '/' + cur.ideal[1] + ' · 拓展 ' + cur.extra[0] + '/' + cur.extra[1]);
+    L.push('🌱 复习 ' + cur.rev.done + ' 次' + (cur.rev.done ? '（按时 ' + onTimePct + '% · ✅ 写出来了 ' + cur.rev.ok + ' · ✗ 没写出来 ' + cur.rev.no + '）' : ''));
+    L.push('✅ 打卡 ' + cur.ckDays + '/7 天 · 💰 净积分 ' + (net >= 0 ? '+' : '') + net + '（得 +' + cur.earned + ' · 花扣 ' + cur.spent + '）');
+    if (sd.list.length) L.push('🧪 学科分布：' + sd.list.slice(0, 6).map(function (x) { return x.name + ' ' + S().fmtDur(x.min); }).join(' · '));
+    if (hd.total) {
+      let topH = 0; hd.counts.forEach(function (c, h) { if (c > hd.counts[topH]) topH = h; });
+      L.push('⏰ 最常开始时段：' + topH + ' 点（' + hd.counts[topH] + ' 次）');
+    }
+    return L.join('\n');
+  }
+  function weekCardCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    if (ok) App.ui.toast('📋 复盘文字版已复制，粘给 AI 或备忘录都行');
+    else showExportText(text, '📋 本周复盘（文字版）');
+  }
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  /** 📤 把本周复盘画成一张 PNG 长图 */
+  function weekCardPNG(cur, sd, hd) {
+    if (!cur) { cur = weekStats(0); sd = subjectDist(); hd = hourDist(); }
+    const W = 750, pad = 34, gap = 12;
+    const subN = Math.min(sd.list.length, 8);
+    const hasSub = sd.list.length > 0, hasHour = hd.total > 0;
+    const H = 136 + 2 * (92 + 12) + 8 + (hasSub ? 66 + subN * 30 : 0) + (hasHour ? 150 : 0) + 74;
+    const cv = document.createElement('canvas');
+    cv.width = W * 2; cv.height = H * 2;
+    const ctx = cv.getContext('2d');
+    if (!ctx) { App.ui.toast('这个浏览器画不了长图'); return; }
+    ctx.scale(2, 2);
+    ctx.fillStyle = '#f4f6f8'; ctx.fillRect(0, 0, W, H);
+    // 头
+    ctx.fillStyle = '#2d3a4a'; ctx.fillRect(0, 0, W, 118);
+    const kA = S().keyToDate(cur.keys[0]), kB = S().keyToDate(cur.keys[6]);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px "Microsoft YaHei", sans-serif';
+    ctx.fillText('🧭 本周复盘', pad, 48);
+    ctx.font = '15px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,.82)';
+    ctx.fillText((kA.getMonth() + 1) + '/' + kA.getDate() + ' — ' + (kB.getMonth() + 1) + '/' + kB.getDate() + ' · 已过 ' + cur.daysPassed + ' 天', pad, 76);
+    ctx.fillText('focus-plan · 数据来自你自己的账本', pad, 100);
+    // 六格
+    const curDone = cur.req[0] + cur.ideal[0] + cur.extra[0];
+    const curTotal = cur.req[1] + cur.ideal[1] + cur.extra[1];
+    const net = cur.earned - cur.spent;
+    const onTimePct = cur.rev.done ? Math.round(cur.rev.onTime / cur.rev.done * 100) : 0;
+    const tiles = [
+      ['📚 学习时长', S().fmtDur(cur.study + cur.extend)],
+      ['⏱ 计时专注', S().fmtDur(cur.focus)],
+      ['✅ 任务完成', curDone + '/' + curTotal],
+      ['🌱 复习轮次', cur.rev.done + ' 次' + (cur.rev.done ? '（按时 ' + onTimePct + '%）' : '')],
+      ['✅ 打卡', cur.ckDays + '/7 天'],
+      ['💰 净积分', (net >= 0 ? '+' : '') + net]
+    ];
+    const tw = (W - pad * 2 - gap * 2) / 3, th = 92;
+    tiles.forEach(function (t, i) {
+      const x = pad + (i % 3) * (tw + gap), y = 136 + Math.floor(i / 3) * (th + gap);
+      ctx.fillStyle = '#ffffff'; rr(ctx, x, y, tw, th, 10); ctx.fill();
+      ctx.fillStyle = '#8a919c'; ctx.font = '13px "Microsoft YaHei", sans-serif';
+      ctx.fillText(t[0], x + 14, y + 26);
+      ctx.fillStyle = '#1f2328'; ctx.font = 'bold 21px "Microsoft YaHei", sans-serif';
+      ctx.fillText(t[1], x + 14, y + 60);
+    });
+    let y = 136 + 2 * (th + gap) + 8;
+    // 学科分布
+    if (hasSub) {
+      ctx.fillStyle = '#1f2328'; ctx.font = 'bold 16px "Microsoft YaHei", sans-serif';
+      ctx.fillText('🧪 最近 30 天计时专注 · 学科分布（共 ' + S().fmtDur(sd.total) + '）', pad, y + 20);
+      const maxMin = sd.list[0].min, bw = W - pad * 2;
+      const PAL = ['#3b82f6', '#22a06b', '#f59e0b', '#8b5cf6', '#0ea5e9', '#e2545d', '#14b8a6', '#94a3b8'];
+      sd.list.slice(0, 8).forEach(function (sb, i) {
+        const yy = y + 36 + i * 30;
+        ctx.fillStyle = '#1f2328'; ctx.font = '13px "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'right'; ctx.fillText(sb.name, pad + 56, yy + 13); ctx.textAlign = 'left';
+        const w = Math.max(6, (bw - 150) * sb.min / maxMin);
+        ctx.fillStyle = sb.name === '未分类' ? '#94a3b8' : PAL[i % PAL.length];
+        rr(ctx, pad + 66, yy, w, 16, 8); ctx.fill();
+        ctx.fillStyle = '#8a919c'; ctx.fillText(S().fmtDur(sb.min), pad + 76 + w, yy + 13);
+      });
+      y += 66 + subN * 30;
+    }
+    // 时段分布
+    if (hasHour) {
+      ctx.fillStyle = '#1f2328'; ctx.font = 'bold 16px "Microsoft YaHei", sans-serif';
+      ctx.fillText('⏰ 最近 14 天计时开始时段（共 ' + hd.total + ' 次）', pad, y + 20);
+      const maxC = Math.max.apply(null, hd.counts);
+      const hw = W - pad * 2, hgt = 64, by = y + 34;
+      hd.counts.forEach(function (c, h) {
+        const bw2 = hw / 24 - 3;
+        const bh = maxC ? Math.max(3, hgt * c / maxC) : 3;
+        ctx.fillStyle = (c === maxC && c > 0) ? '#3b82f6' : 'rgba(59,130,246,.35)';
+        rr(ctx, pad + h * (hw / 24), by + hgt - bh, bw2, bh, 3); ctx.fill();
+        if (h % 6 === 0 || h === 23) {
+          ctx.fillStyle = '#8a919c'; ctx.font = '11px sans-serif';
+          ctx.fillText(String(h), pad + h * (hw / 24), by + hgt + 16);
+        }
+      });
+    }
+    // 尾
+    ctx.fillStyle = '#8a919c'; ctx.font = '12px "Microsoft YaHei", sans-serif';
+    ctx.fillText('系统是账本，你是会计', pad, H - 26);
+    const a = document.createElement('a');
+    a.href = cv.toDataURL('image/png');
+    a.download = '本周复盘-' + cur.keys[0] + '.png';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { a.remove(); }, 300);
+    App.ui.toast('📤 长图已生成：本周复盘-' + cur.keys[0] + '.png');
+  }
+
+  App.stats = { render: render, editReviewModal: editReviewModal, editHourPlanReview: editHourPlanReview, exportReview: exportReview, exportHourReviewToday: exportHourReviewToday,
+    weekStatsAll: weekStatsAll, subjectOf: subjectOf, renderReviewBoard: renderReviewBoard, weekCardPNG: weekCardPNG, weekCardText: weekCardText };
 })();

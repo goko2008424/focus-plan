@@ -44,6 +44,84 @@
   }
   function save() { S().save(); }
 
+  /* ---------- 🔗 v120：复习要用的就是你自己做的这些卡 ----------
+     用户原话：「我做了那么多知识卡片，就是在这个时候用上的…你给我推送的时候，
+     你说还没有具体的知识点，你到底有没有把这两个东西绑在一块？」
+     —— 以前确实没绑：复习只认 task.kps，卡片是 memcards，两个字段井水不犯河水。
+     这里给出唯一的解析入口：任务 → 该翻哪些卡。 */
+  /** 这条任务该翻哪些卡 → [{front, back, colId, colName, cardId}] */
+  function cardsForTask(task) {
+    const out = [];
+    const push = function (col, only) {
+      (col.cards || []).forEach(function (k) {
+        if (only && only.indexOf(k.id) < 0) return;
+        out.push({ front: k.front || '', back: k.back || '', colId: col.id,
+                   colName: col.name || '', cardId: k.id });
+      });
+    };
+    if (!task) return out;
+    // ① 从「📅 排到某天」建出来的复习任务：mcRef 直接指着那套卡
+    if (task.mcRef && task.mcRef.colId) {
+      const col = find(task.mcRef.colId);
+      if (col) push(col, task.mcRef.cardIds || null);
+      if (out.length) return out;
+    }
+    // ② 这条任务自己做的卡（做课时点 🃏 攒下来的）
+    forTask(task.id).forEach(function (col) { push(col, null); });
+    if (out.length) return out;
+    // ③ 兜底：合集名 / 课程名跟任务文字**一模一样**才算（别乱蹭别的课）
+    const txt = String(task.text || '')
+      .replace(/^\s*🃏\s*/, '').replace(/^\s*复习\s*[·:：]\s*/, '').trim();
+    if (txt) {
+      D().forEach(function (col) {
+        if (String(col.name || '').trim() === txt || String(col.course || '').trim() === txt) push(col, null);
+      });
+    }
+    return out;
+  }
+
+  /** 🧹 v120：清掉某个合集在日历里的全部复习安排（那串「📅 已排」） */
+  function clearSchedOf(colId) {
+    const days = (S().data() || {}).days || {};
+    let n = 0;
+    Object.keys(days).forEach(function (k) {
+      const d = days[k];
+      if (!d || !d.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        const list = d.tasks[c] || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+          if (list[i].mcRef && list[i].mcRef.colId === colId) { list.splice(i, 1); n++; }
+        }
+      });
+    });
+    return n;
+  }
+
+  /** 🧹 v120：清掉**所有**复习安排（卡片排期 + 任务上的复习轮次），给用户"后悔的机会" */
+  function clearAllSched() {
+    const d = S().data() || {};
+    const days = d.days || {};
+    let nSched = 0, nPlan = 0;
+    Object.keys(days).forEach(function (k) {
+      const day = days[k];
+      if (!day || !day.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        const list = day.tasks[c] || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+          if (list[i].mcRef) { list.splice(i, 1); nSched++; }
+        }
+        list.forEach(function (t) {
+          if (t.sp) { delete t.sp; nPlan++; }
+          if (t.srCfg) delete t.srCfg;
+        });
+      });
+    });
+    (d.queue || []).forEach(function (q) { if (q.sp) { delete q.sp; nPlan++; } if (q.srCfg) delete q.srCfg; });
+    (d.queueDone || []).forEach(function (q) { if (q.sp) { delete q.sp; nPlan++; } if (q.srCfg) delete q.srCfg; });
+    (d.daily || []).forEach(function (x) { if (x.sp) { delete x.sp; nPlan++; } if (x.srCfg) delete x.srCfg; });
+    return { sched: nSched, plan: nPlan };
+  }
+
   /** 找一个已有合集（同一节课：任务 + 小题 + 那天）；找不到就新建 */
   function ensureCollection(o) {
     o = o || {};
@@ -103,7 +181,8 @@
       ['required', 'ideal', 'extra'].forEach(function (c) {
         (d.tasks[c] || []).forEach(function (t) {
           if (!t.mcRef || t.mcRef.colId !== colId) return;
-          out.push({ key: k, text: t.text, done: t.done === true, late: k < today && t.done !== true });
+          out.push({ key: k, text: t.text, done: t.done === true, late: k < today && t.done !== true,
+                     at: t.doneAt || t.at || '' });
         });
       });
     });
@@ -111,19 +190,33 @@
     return out;
   }
 
-  /** 📅 v116：合集行上那串小日期（✓已完成 / !已过期 / 📅待做） */
+  /** 📅 v116→v120：合集行上那串小日期（✓已完成 / ⚠已过期 / 📅待做）
+   *  v120：① 每个日期带 ✕ 能单独取消那天 ② 末尾给「已完成 N 天 · 下一天 X」+ 🧹 清空
+   *  用户：「你要把历史它在哪些天设了，这个要清楚…每次他定的时间都要在这边有时间的显示」 */
   function schedBadgeHTML(colId) {
     const list = schedDaysOf(colId);
     if (!list.length) return '';
+    const doneN = list.filter(function (x) { return x.done; }).length;
+    const next = list.filter(function (x) { return !x.done; })[0] || null;
     const chips = list.map(function (x) {
       const p = x.key.split('-');
-      const st = x.done ? '已完成' : (x.late ? '已过期（那天没做）' : '还没到点');
+      const st = x.done ? ('已完成' + (x.at ? '（' + String(x.at).slice(11, 16) + '）' : ''))
+        : (x.late ? '已过期（那天没做）' : '还没到点');
       return '<span class="mc-chip' + (x.done ? ' done' : (x.late ? ' late' : '')) +
         '" title="' + x.key + ' · ' + st + ' · 那天的任务：' + esc(x.text) + '">' +
-        (x.done ? '✓' : (x.late ? '⚠' : '📅')) + (+p[1]) + '/' + (+p[2]) + '</span>';
+        (x.done ? '✓' : (x.late ? '⚠' : '📅')) + (+p[1]) + '/' + (+p[2]) +
+        '<i class="mc-chip-x" data-act="mc-unsched" data-col="' + colId + '" data-day="' + x.key +
+        '" title="取消 ' + x.key + ' 这天的复习安排">✕</i></span>';
     }).join('');
-    return '<div class="mc-schedline" title="这个合集已经排过复习的日期（别重复排同一天）">' +
-      '<span class="mc-schedlab">📅 已排</span>' + chips + '</div>';
+    const nextTxt = next ? (function () {
+      const p2 = String(next.key).split('-');
+      return ' · 下一天 ' + (+p2[1]) + '/' + (+p2[2]);
+    })() : ' · 没了';
+    return '<div class="mc-schedline" title="这个合集已排的全部复习日期 —— 点日期上的 ✕ 能取消某一天">' +
+      '<span class="mc-schedlab">📅 已排 ' + list.length + ' 天</span>' + chips +
+      '<span class="mc-schedsum">已完成 ' + doneN + ' 天' + nextTxt + '</span>' +
+      '<button class="mc-ib" data-act="mc-unsched-all" data-id="' + colId +
+      '" title="清空这个合集的全部复习安排">🧹</button></div>';
   }
 
   /** 📅 v116：某一天里，这个合集已经排过的（用来提示"这天排过了"） */
@@ -375,6 +468,26 @@
     let bytes = 0;
     ids.forEach(function (id) { bytes += String(phCache[id] || '').length * 0.75; });   // base64 → 字节
     return { n: ids.length, mb: Math.round(bytes / 1048576 * 10) / 10 };
+  }
+
+  /** 💾 v121：备份/导出用 —— 把图片库整个交出去（id → dataURL）。
+   *  用户原话：「我做了那么多问答的图片，它肯定不可能只是 KB…你肯定要把我问答的卡片存下来，拜托了」 */
+  function allPhotos() {
+    const out = {};
+    Object.keys(phCache).forEach(function (id) { out[id] = phCache[id]; });
+    return out;
+  }
+  /** 💾 v121：从备份/导入文件把图片**写回图片库**（找回照片本体）。返回写回的张数。 */
+  function restorePhotos(map) {
+    if (!map || typeof map !== 'object') return 0;
+    let n = 0;
+    Object.keys(map).forEach(function (id) {
+      const v = map[id];
+      if (!v || typeof v !== 'string') return;
+      phPut(id, v);          // 内部同时写内存缓存 + IDB
+      n++;
+    });
+    return n;
   }
 
   function colImgCount(c) {
@@ -1334,6 +1447,8 @@
       '（' + list.length + ' 个合集 · 共 ' + total + ' 张）</p>' +
       '<div class="mc-acts" style="margin-bottom:10px">' +
       '<button class="btn btn-small" data-act="card-new">＋ 新建一个合集</button>' +
+      '<button class="btn btn-small" data-act="mc-clear-all" title="把日历里所有 🃏 复习安排、以及所有任务上的复习轮次，一次清干净">' +
+      '🧹 清空所有复习安排</button>' +
       (photoStats().n ? '<button class="btn btn-small" data-act="card-clean">🧹 清理没用的图（' +
         orphanPhotoIds().length + ' / 共 ' + photoStats().n + ' 张 · 约 ' + photoStats().mb + 'MB）</button>' : '') +
       '</div>' +
@@ -1451,6 +1566,51 @@
       });
       return;
     }
+    if (act === 'mc-unsched') {
+      const colId = b.dataset.col, dayKey = b.dataset.day;
+      const d = (S().data().days || {})[dayKey];
+      let hit = 0;
+      if (d && d.tasks) ['required', 'ideal', 'extra'].forEach(function (c) {
+        const list = d.tasks[c] || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+          if (list[i].mcRef && list[i].mcRef.colId === colId) { list.splice(i, 1); hit++; }
+        }
+      });
+      if (!hit) { App.ui.toast('那天本来就没有这套卡的安排'); }
+      else {
+        save(); renderPage();
+        try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+        App.ui.toast('✕ 取消了 ' + dayKey + ' 那天的复习安排');
+      }
+      return;
+    }
+    if (act === 'mc-unsched-all') {
+      const c0 = find(b.dataset.id);
+      if (!c0) return;
+      const n0 = schedDaysOf(c0.id).length;
+      App.ui.confirm('清空「<b>' + esc(c0.name) + '</b>」的全部复习安排？<br>' +
+        '<span class="hint">那 ' + n0 + ' 天日历里的「🃏 复习」任务会删掉（卡片本身一张不动）。</span>',
+        '清空', function () {
+          const n = clearSchedOf(c0.id);
+          save(); renderPage();
+          try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+          App.ui.toast('🧹 清掉了 ' + n + ' 天的安排');
+        });
+      return;
+    }
+    if (act === 'mc-clear-all') {
+      App.ui.confirm('把<b>所有复习安排</b>一次清空？<br>' +
+        '<span class="hint">包括：日历里所有「🃏 复习」任务、以及所有任务上的复习轮次（🌱 那些）。' +
+        '<b>卡片和任务本身一张都不删</b>，只是不再自动提醒复习 —— 想重新开始随时再排。</span>',
+        '全部清空', function () {
+          const r = clearAllSched();
+          save(); renderPage();
+          try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+          try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+          App.ui.toast('🧹 清空了 ' + r.sched + ' 天的排期 + ' + r.plan + ' 条复习计划', 5200);
+        });
+      return;
+    }
     const col = find(b.dataset.id);
     if (!col) return;
     if (act === 'card-open') { openCol(col.id); return; }
@@ -1476,6 +1636,7 @@
     openRef: openRef,
     schedCardModal: schedCardModal,
     schedDaysOf: schedDaysOf, schedBadgeHTML: schedBadgeHTML, dupOnDay: dupOnDay,   // 📅 v116
+    cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,
     addSubject: addSubject,
     subjectOf: subjectOf,
@@ -1489,6 +1650,8 @@
     phDel: phDel,
     phLoadAll: phLoadAll,
     cleanOrphanPhotos: cleanOrphanPhotos,
+    allPhotos: allPhotos, restorePhotos: restorePhotos,           // 💾 v121 备份带图
+    photoMB: function () { return photoStats().mb; },
     orphanPhotoIds: orphanPhotoIds,
     photoStats: photoStats,
     takeImages: takeImages,
