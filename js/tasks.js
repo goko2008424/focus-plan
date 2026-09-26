@@ -4943,9 +4943,12 @@
     function render() {
       box.innerHTML = trash.length
         ? trash.slice().reverse().map(function (entry) {
-            const kind = entry.kind === 'dailytask' ? '📌 基础任务'
+            const kind = entry.kind === 'mistake' ? '📕 错题'
+              : entry.kind === 'dailytask' ? '📌 基础任务'
               : (entry.kind === 'task' ? '任务' : entry.kind === 'group' ? '任务组' : '小题');
-            const text = entry.payload && entry.payload.text ? S().esc(entry.payload.text) : (entry.payload && entry.payload.name ? S().esc(entry.payload.name) : '');
+            const text = entry.payload && entry.payload.text ? S().esc(entry.payload.text)
+              : entry.payload && entry.payload.desc ? S().esc(entry.payload.desc)
+              : entry.payload && entry.payload.name ? S().esc(entry.payload.name) : '';
             const when = new Date(entry.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #eceff3;font-size:13px">' +
               '<span style="flex:1">[' + kind + ' · ' + colName(entry.col) + '] <b>' + text + '</b>' +
@@ -4959,6 +4962,17 @@
       const i = trash.findIndex(function (x) { return x.id === id; });
       if (i < 0) return;
       const entry = trash[i];
+      // 📕 v129：错题恢复
+      if (entry.kind === 'mistake') {
+        const ml = S().data().mistakes = S().data().mistakes || [];
+        ml.push(JSON.parse(JSON.stringify(entry.payload)));
+        trash.splice(i, 1);
+        S().save();
+        try { App.mistakes.render(); } catch (e) { /* 不在错题页就忽略 */ }
+        render();
+        App.ui.toast('♻ 错题已经恢复到错题本');
+        return;
+      }
       // 🌙 v110：三种"非当日任务"的恢复（不然删了真找不回来）
       if (entry.src === 'daily') {
         const list = S().data().daily = S().data().daily || [];

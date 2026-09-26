@@ -75,6 +75,10 @@
 
     // 🧭 v124 复盘看板（放在最上面的图表前）
     renderReviewBoard();
+    // 📈 v128 考试成绩卡（跨模块兜底：exams 加载失败不拖垮历史页）
+    if (App.exams && App.exams.render) { try { App.exams.render(); } catch (e) {} }
+    // 🏅 v131 成就卡
+    if (App.badges && App.badges.render) { try { App.badges.render(); } catch (e) {} }
 
     // 周柱状图
     const week = lastNDays(7);
@@ -614,12 +618,15 @@
       subHtml + hourHtml +
       '<div class="rv-btns">' +
       '<button class="btn btn-primary" id="rv-png">📤 存成长图</button>' +
-      '<button class="btn" id="rv-copy">📋 复制文字版</button></div>';
+      '<button class="btn" id="rv-copy">📋 复制文字版</button>' +
+      '<button class="btn" id="rv-year">🏆 年度报告</button></div>';
 
     const bp = document.getElementById('rv-png');
     if (bp) bp.onclick = function () { weekCardPNG(cur, sd, hd); };
     const bc = document.getElementById('rv-copy');
     if (bc) bc.onclick = function () { weekCardCopy(weekCardText(cur, rangeTxt, onTimePct)); };
+    const by = document.getElementById('rv-year');
+    if (by) by.onclick = function () { yearReportPNG(); };
   }
   /** 纯数据汇总（探针 / 导出共用） */
   function weekStatsAll() {
@@ -752,6 +759,206 @@
     App.ui.toast('📤 长图已生成：本周复盘-' + cur.keys[0] + '.png');
   }
 
+  /* ============================================================
+   * v130 🏆 年度学习报告 —— 近 365 天，一张长图带走
+   * 数据全来自本地账本：时长/任务/复习/打卡/积分/学科/亮点
+   * ============================================================ */
+  function subjectDistN(days) {   // subjectDist 的一般化（v130：年度报告要 365 天）
+    const buckets = {}; let total = 0;
+    lastNDays(days).forEach(function (c) {
+      (c.day.sessions || []).forEach(function (s) {
+        const m = s.actualMinutes || 0;
+        if (m <= 0) return;
+        const sub = subjectOf(s.taskText) || '未分类';
+        buckets[sub] = (buckets[sub] || 0) + m;
+        total += m;
+      });
+    });
+    const list = Object.keys(buckets).map(function (k) { return { name: k, min: buckets[k] }; });
+    list.sort(function (a, b) { return b.min - a.min; });
+    return { list: list, total: total };
+  }
+  function yearAgg() {
+    const days = lastNDays(365);
+    const tk = S().todayKey();
+    const agg = {
+      study: 0, extend: 0, focus: 0, taskDone: 0, taskTotal: 0,
+      revDone: 0, revOk: 0, revNo: 0, ckDays: 0, earned: 0, spent: 0,
+      months: {}, bestDay: null, bestMin: 0, ckRun: 0, maxStreak: 0
+    };
+    const seen = {};
+    const countRounds = function (plan, text) {
+      (plan || []).forEach(function (r) {
+        if (r.done !== true || !r.at) return;
+        const kk = r.at + '|' + (r.n || 0) + '|' + (text || '');
+        if (seen[kk]) return;
+        seen[kk] = true;
+        agg.revDone++;
+        if (r.result === 'ok') agg.revOk++; else if (r.result === 'no') agg.revNo++;
+      });
+    };
+    const ckedSet = {};
+    days.forEach(function (c) {
+      const k = c.key;
+      if (k > tk) return;
+      agg.study += c.study; agg.extend += c.extend;
+      if (c.study > agg.bestMin) { agg.bestMin = c.study; agg.bestDay = k; }
+      const mk = k.slice(0, 7);
+      agg.months[mk] = (agg.months[mk] || 0) + c.study + c.extend;
+      (c.day.sessions || []).forEach(function (s) { agg.focus += s.actualMinutes || 0; });
+      ['required', 'ideal', 'extra'].forEach(function (lk) {
+        (c.day.tasks[lk] || []).forEach(function (t) {
+          agg.taskTotal++;
+          if (t.done) agg.taskDone++;
+          countRounds(t.sp && t.sp.planned, t.text);
+        });
+      });
+      (S().data().checkins || []).forEach(function (ci) {
+        if (ci.days && ci.days[k]) ckedSet[k] = true;
+      });
+    });
+    ['queue', 'queueDone'].forEach(function (arr) {
+      (S().data()[arr] || []).forEach(function (q) { countRounds(q.sp && q.sp.planned, q.text); });
+    });
+    agg.ckDays = Object.keys(ckedSet).length;
+    // 连击：从今天往前数连续打卡（当天没打也从昨天起算），顺带扫全程最长连击
+    let run = 0;
+    for (let i = 0; i < 365; i++) {
+      const x = new Date(); x.setDate(x.getDate() - i);
+      const k = S().dateKey(x);
+      if (ckedSet[k]) { run++; if (i === 0 || run > 1 || ckedSet[k]) agg.ckRun = run; if (run > agg.maxStreak) agg.maxStreak = run; }
+      else { if (i > 0 && run > agg.maxStreak) agg.maxStreak = run; run = 0; }
+    }
+    if (run > agg.maxStreak) agg.maxStreak = run;
+    const winStart = (function () { const x = new Date(); x.setDate(x.getDate() - 364); return S().dateKey(x); })();
+    S().ledger().forEach(function (e) {
+      if (e.date && e.date < winStart) return;   // 只算近一年窗口内的账
+      const p = e.points || 0;
+      if (p > 0) agg.earned += p; else if (p < 0) agg.spent += -p;
+    });
+    agg.subjects = subjectDistN(365);
+    agg.mistTotal = (S().data().mistakes || []).length;
+    agg.mistMastered = (S().data().mistakes || []).filter(function (m) { return m.status === 'mastered'; }).length;
+    agg.examN = (S().data().exams || []).length;
+    return agg;
+  }
+  function rr2(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  /** 🏆 生成近一年的学习报告长图 */
+  function yearReportPNG() {
+    const a = yearAgg();
+    const W = 750, pad = 34, gap = 12;
+    const subN = Math.min(a.subjects.list.length, 5);
+    const hasSub = subN > 0;
+    const H = 118 + 8 + 2 * (86 + 10) + 8 + 170 + (hasSub ? 60 + subN * 28 : 0) + 150 + 64;
+    const cv = document.createElement('canvas');
+    cv.width = W * 2; cv.height = H * 2;
+    const ctx = cv.getContext('2d');
+    if (!ctx) { App.ui.toast('这个浏览器画不了长图'); return; }
+    ctx.scale(2, 2);
+    ctx.fillStyle = '#f4f6f8'; ctx.fillRect(0, 0, W, H);
+    // 头
+    ctx.fillStyle = '#2d3a4a'; ctx.fillRect(0, 0, W, 118);
+    const todayK = S().todayKey();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px "Microsoft YaHei", sans-serif';
+    ctx.fillText('🏆 近一年学习报告', pad, 48);
+    ctx.font = '15px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,.82)';
+    ctx.fillText('截至 ' + todayK + ' · 数据来自你自己的账本', pad, 76);
+    ctx.fillText('focus-plan · 系统是账本，你是会计', pad, 100);
+    // 四格
+    const tiles = [
+      ['⏱ 计时专注', S().fmtDur(a.focus)],
+      ['📚 学习时长', S().fmtDur(a.study + a.extend)],
+      ['✅ 任务完成', a.taskDone + '/' + a.taskTotal],
+      ['🌱 复习轮次', a.revDone + ' 次' + (a.revDone ? ('（写出来 ' + a.revOk + ' · 没写出来 ' + a.revNo + '）') : '')]
+    ];
+    const tw = (W - pad * 2 - gap) / 2, th = 86;
+    tiles.forEach(function (t, i) {
+      const x = pad + (i % 2) * (tw + gap), y = 134 + Math.floor(i / 2) * (th + 10);
+      ctx.fillStyle = '#ffffff'; rr2(ctx, x, y, tw, th, 10); ctx.fill();
+      ctx.fillStyle = '#8a919c'; ctx.font = '13px "Microsoft YaHei", sans-serif';
+      ctx.fillText(t[0], x + 14, y + 26);
+      ctx.fillStyle = '#1f2328'; ctx.font = 'bold 20px "Microsoft YaHei", sans-serif';
+      ctx.fillText(t[1], x + 14, y + 58);
+    });
+    let y = 134 + 2 * (th + 10) + 6;
+    // 月度柱状（近 12 个月）
+    ctx.fillStyle = '#1f2328'; ctx.font = 'bold 16px "Microsoft YaHei", sans-serif';
+    ctx.fillText('📅 逐月学习时长', pad, y + 20);
+    const monthKeys = [];
+    const nowD = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const x = new Date(nowD.getFullYear(), nowD.getMonth() - i, 1);
+      monthKeys.push(x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'));
+    }
+    const mVals = monthKeys.map(function (mk) { return a.months[mk] || 0; });
+    const mMax = Math.max.apply(null, mVals.concat([60]));
+    const mH = 64, mBy = y + 34;
+    monthKeys.forEach(function (mk, i) {
+      const bw = (W - pad * 2) / 12 - 4;
+      const bh = Math.max(3, mH * mVals[i] / mMax);
+      ctx.fillStyle = mVals[i] > 0 ? '#3b82f6' : 'rgba(59,130,246,.25)';
+      rr2(ctx, pad + i * ((W - pad * 2) / 12), mBy + mH - bh, bw, bh, 3); ctx.fill();
+      if (i % 2 === 0 || i === 11) {
+        ctx.fillStyle = '#8a919c'; ctx.font = '10px sans-serif';
+        ctx.fillText(mk.slice(5) + '月', pad + i * ((W - pad * 2) / 12), mBy + mH + 14);
+      }
+    });
+    y += 170;
+    // 学科分布
+    if (hasSub) {
+      ctx.fillStyle = '#1f2328'; ctx.font = 'bold 16px "Microsoft YaHei", sans-serif';
+      ctx.fillText('🧪 计时专注 · 学科分布（共 ' + S().fmtDur(a.subjects.total) + '）', pad, y + 20);
+      const maxMin = a.subjects.list[0].min, bw = W - pad * 2;
+      const PAL = ['#3b82f6', '#22a06b', '#f59e0b', '#8b5cf6', '#0ea5e9'];
+      a.subjects.list.slice(0, 5).forEach(function (sb, i) {
+        const yy = y + 36 + i * 28;
+        ctx.fillStyle = '#1f2328'; ctx.font = '13px "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'right'; ctx.fillText(sb.name, pad + 56, yy + 13); ctx.textAlign = 'left';
+        const w = Math.max(6, (bw - 150) * sb.min / maxMin);
+        ctx.fillStyle = sb.name === '未分类' ? '#94a3b8' : PAL[i % PAL.length];
+        rr2(ctx, pad + 66, yy, w, 15, 7); ctx.fill();
+        ctx.fillStyle = '#8a919c'; ctx.fillText(S().fmtDur(sb.min), pad + 76 + w, yy + 13);
+      });
+      y += 60 + subN * 28;
+    }
+    // 亮点
+    ctx.fillStyle = '#1f2328'; ctx.font = 'bold 16px "Microsoft YaHei", sans-serif';
+    ctx.fillText('✨ 这一年', pad, y + 20);
+    ctx.font = '14px "Microsoft YaHei", sans-serif';
+    const lines = [
+      '✅ 打卡 ' + a.ckDays + ' 天 · 当前连续 ' + a.ckRun + ' 天 · 最长连续 ' + a.maxStreak + ' 天',
+      '💰 积分 +' + a.earned + ' / 花扣 ' + a.spent + ' · 最猛的一天学了 ' + (a.bestDay ? (S().fmtDateCN(a.bestDay) + '（' + S().fmtDur(a.bestMin) + '）') : '—'),
+    (function () {
+      const mkBtn = document.querySelector('.nav-btn[data-view="mistakes"]');
+      const mkOn = !mkBtn || mkBtn.style.display !== 'none';
+      return mkOn ? ('📕 错题收了 ' + a.mistTotal + ' 道 · 已巩固 ' + a.mistMastered + ' 道') : '';
+    })() + ' 📈 记了 ' + a.examN + ' 次考试成绩'
+    ];
+    lines.forEach(function (ln, i) {
+      ctx.fillStyle = '#374151';
+      ctx.fillText(ln, pad, y + 44 + i * 22);
+    });
+    // 尾
+    ctx.fillStyle = '#8a919c'; ctx.font = '12px "Microsoft YaHei", sans-serif';
+    ctx.fillText('每个小时的账都在 —— 继续记，继续涨。', pad, H - 24);
+    const aEl = document.createElement('a');
+    aEl.href = cv.toDataURL('image/png');
+    aEl.download = '学习报告-近一年-' + todayK + '.png';
+    document.body.appendChild(aEl); aEl.click();
+    setTimeout(function () { aEl.remove(); }, 300);
+    App.ui.toast('🏆 年度报告已生成，去下载里找');
+  }
+
   App.stats = { render: render, editReviewModal: editReviewModal, editHourPlanReview: editHourPlanReview, exportReview: exportReview, exportHourReviewToday: exportHourReviewToday,
-    weekStatsAll: weekStatsAll, subjectOf: subjectOf, renderReviewBoard: renderReviewBoard, weekCardPNG: weekCardPNG, weekCardText: weekCardText };
+    weekStatsAll: weekStatsAll, subjectOf: subjectOf, subjectDist: subjectDist, subjectDistN: subjectDistN, yearAgg: yearAgg, yearReportPNG: yearReportPNG, renderReviewBoard: renderReviewBoard, weekCardPNG: weekCardPNG, weekCardText: weekCardText };
 })();

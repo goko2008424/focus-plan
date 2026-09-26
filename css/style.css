@@ -1633,3 +1633,55 @@ body[data-theme="dark"] .hour-card.active, body[data-theme="purple"] .hour-card.
   background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 12%, transparent), color-mix(in srgb, var(--extra) 9%, transparent));
   border-color: var(--line);
 }
+
+/* ============ v128 📈 考试成绩 ============ */
+.exam-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.exam-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.exam-chart { display: block; margin: 4px 0; }
+.exam-list { margin-top: 10px; }
+.exam-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 13px; flex-wrap: wrap; }
+.exam-type { color: #fff; font-size: 11px; border-radius: 6px; padding: 2px 7px; }
+.exam-sub { font-weight: 700; }
+.exam-score { font-weight: 800; font-size: 15px; }
+.exam-score small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.exam-date { color: var(--muted); font-size: 12px; }
+.exam-note { color: var(--muted); font-size: 12px; flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exam-acts { margin-left: auto; display: flex; gap: 4px; }
+.exam-more summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+
+/* ============ v129 📕 错题本 ============ */
+.mk-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+.mk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.mk-list { margin-top: 8px; }
+.mk-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px; border-bottom: 1px dashed var(--line); }
+.mk-status { flex: none; color: #fff; font-size: 11px; border-radius: 6px; padding: 3px 8px; margin-top: 2px; }
+.mk-main { flex: 1; min-width: 0; }
+.mk-desc { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.mk-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.mk-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; flex: none; }
+.mk-acts { flex: none; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.mk-staged { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.mk-stage { position: relative; }
+.mk-stage img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.mk-stage-x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: var(--req); color: #fff; font-size: 11px; line-height: 1; cursor: pointer; }
+@media (max-width: 640px) { .mk-row { flex-wrap: wrap; } .mk-acts { width: 100%; justify-content: flex-start; } }
+
+/* ============ v131 🏅 成就徽章墙 ============ */
+.bg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+.bg-tile { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 8px 10px; text-align: center; }
+.bg-tile.on { background: var(--card); border-color: var(--primary); }
+.bg-tile .bg-ico { display: block; font-size: 26px; line-height: 1.2; }
+.bg-tile.off .bg-ico { filter: grayscale(1); opacity: .55; }
+.bg-tile .bg-name { display: block; font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+.bg-tile .bg-date { display: block; font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.bg-tile .bg-bar { display: block; height: 5px; background: var(--line); border-radius: 3px; margin: 6px 8px 2px; overflow: hidden; }
+.bg-tile .bg-bar i { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+.bg-tile.new { animation: bgGlow 2.2s ease infinite; }
+.bg-newtag { position: absolute; top: -7px; right: -6px; background: var(--req); color: #fff; font-size: 10px; font-weight: 700; border-radius: 8px; padding: 2px 6px; }
+@keyframes bgGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,.0); }
+  50% { box-shadow: 0 0 14px 2px rgba(59,130,246,.45); }
+}
+@media (max-width: 700px) { .bg-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 420px) { .bg-grid { grid-template-columns: repeat(2, 1fr); } }
