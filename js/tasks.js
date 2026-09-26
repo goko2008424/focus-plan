@@ -2841,6 +2841,26 @@
         //    用户完全分不清哪些是今天该做的、哪些是昨天剩的（这是他「事情越堆越多」的来源之一）
         const t = { id: S().uid(), text: u.task.text, rolled: true };
         if (u.task.points != null) t.points = u.task.points;
+        // 🌱 v135：复习身份必须跟着搬 —— 不然复习任务一到今天就「变回普通任务」
+        //    （用户：「复习的任务怎么还没有显示啊，不是当天的，从其他天下来的就没有显示了」）。
+        //    mode（🔁/📘 标签）、mcRef（🃏 卡片）、kps（知识点）原样带；
+        //    sp 里**没做完的轮次**（含昨天该做没做的 → 重置成待复习，今天该补上）跟到今天，
+        //    **已完成的轮次留在原任务上当历史**（这样同一个轮次不会在两个载体上都是待复习）。
+        if (u.task.mode) t.mode = u.task.mode;
+        if (u.task.mcRef) t.mcRef = JSON.parse(JSON.stringify(u.task.mcRef));
+        if (u.task.kps && u.task.kps.length) t.kps = JSON.parse(JSON.stringify(u.task.kps));
+        if (u.task.sp) {
+          const sp2 = JSON.parse(JSON.stringify(u.task.sp));
+          sp2.planned = (sp2.planned || [])
+            .filter(function (r) { return r.done === null || r.done === false; })
+            .map(function (r) { if (r.done === false) { r.done = null; r.hits = r.hits || []; } return r; });
+          if (sp2.planned.length) {
+            t.sp = sp2;
+            // 原任务上把搬走的待复习轮次摘掉（留历史）—— 同一个轮次不会在两天各挂一份
+            u.task.sp.planned = (u.task.sp.planned || [])
+              .filter(function (r) { return r.done === true || r.done === false; });
+          }
+        }
         S().getDay(nextDayKeyOf(dayKey)).tasks[u.k].push(t);
         out.rolled++;
       });
@@ -6359,8 +6379,14 @@
     let cards = [];
     try { cards = (App.memcards && App.memcards.cardsForTask) ? App.memcards.cardsForTask(task) : []; }
     catch (e) { cards = []; }
+    // 🖼 v134：卡片贴的题图/答案图必须带进复习 —— 用户：「我问题的图片都没有，你让我怎么回答」
+    //  正面图直接显示（它是题目的一部分）；背面图跟着答案一起模糊、点「看答案」才揭示。
+    const imgsOf = function (ids) {
+      try { return (App.memcards && App.memcards.imgsHTML) ? App.memcards.imgsHTML(ids) : ''; }
+      catch (e) { return ''; }
+    };
     const kps = cards.length
-      ? cards.map(function (c) { return { q: c.front, a: c.back }; })
+      ? cards.map(function (c) { return { q: c.front, a: c.back, fImgs: c.frontImgs || [], bImgs: c.backImgs || [] }; })
       : (task.kps || []);
     const colNames = [];
     cards.forEach(function (c) { if (c.colName && colNames.indexOf(c.colName) < 0) colNames.push(c.colName); });
@@ -6380,9 +6406,12 @@
         '<span class="hint">💡 做完这轮，去任务行点 <b>🃏</b> 做几张卡 —— 下次复习就直接翻卡自测了。</span></div>';
     } else {
       body += '<div id="rev-kps">' + kps.map(function (k, i) {
+        const fImgs = imgsOf(k.fImgs), bImgs = imgsOf(k.bImgs);
+        const qTxt = k.q ? S().esc(k.q) : (fImgs ? '<i>（看图作答）</i>' : '（没写问题 —— 自己想想该问什么）');
+        const aTxt = k.a ? S().esc(k.a) : (bImgs ? '<i>（看图核对）</i>' : '（没写答案）');
         return '<div class="rev-kp" data-i="' + i + '">' +
-          '<div class="rev-kp-q">' + (i + 1) + '. ' + S().esc(k.q || '（没写问题 —— 自己想想该问什么）') + '</div>' +
-          '<div class="rev-kp-a hidden-a" data-ans="' + i + '">' + S().esc(k.a || '（没写答案）') + '</div>' +
+          '<div class="rev-kp-q">' + (i + 1) + '. ' + qTxt + fImgs + '</div>' +
+          '<div class="rev-kp-a hidden-a" data-ans="' + i + '">' + aTxt + bImgs + '</div>' +
           '<div class="rev-kp-bar"><button class="btn btn-mini btn-primary" data-reveal="' + i + '">👁 看答案</button></div>' +
           '</div>';
       }).join('') + '</div>';
@@ -6423,6 +6452,12 @@
         App.ui.closeModal(); srRev = null;
         App.ui.toast('没关系，想起来再来一轮', 3200);
       }
+    });
+    // 🖼 v134：点图看大图 —— 必须放在 bindActions **之后**（它会把 map 外的 [data-act] 绑成空操作）
+    m.querySelectorAll('img[data-act="mc-zoom"]').forEach(function (img) {
+      img.onclick = function () {
+        try { if (App.memcards && App.memcards.zoomImg) App.memcards.zoomImg(img.dataset.id); } catch (e) { /* 忽略 */ }
+      };
     });
   }
 

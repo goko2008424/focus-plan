@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
-const OUT = 'D:/dsh任务插件/focus-plan-预览-v133.html';
+const OUT = 'D:/dsh任务插件/focus-plan-预览-v135.html';
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 

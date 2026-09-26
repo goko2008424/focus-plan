@@ -1685,3 +1685,6 @@ body[data-theme="dark"] .hour-card.active, body[data-theme="purple"] .hour-card.
 }
 @media (max-width: 700px) { .bg-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 420px) { .bg-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* v134：复习弹窗里的卡片题图/答案图 */
+.rev-kp img.mc-img { max-width: 100%; max-height: 320px; border-radius: 8px; }

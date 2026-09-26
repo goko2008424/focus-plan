@@ -55,8 +55,10 @@
     const push = function (col, only) {
       (col.cards || []).forEach(function (k) {
         if (only && only.indexOf(k.id) < 0) return;
+        // 🖼 v134：题图/答案图必须跟着走 —— 复习弹窗靠它们出图（丢图用户就没法答题）
         out.push({ front: k.front || '', back: k.back || '', colId: col.id,
-                   colName: col.name || '', cardId: k.id });
+                   colName: col.name || '', cardId: k.id,
+                   frontImgs: k.frontImgs || [], backImgs: k.backImgs || [] });
       });
     };
     if (!task) return out;
@@ -1646,6 +1648,7 @@
     exportAll: exportAll,
     pickDir: pickDir,
     phGet: phGet,
+    imgsHTML: imgsHTML, zoomImg: zoomImg,   // 🖼 v134 复习弹窗也要出图（带放大）
     phPut: phPut,
     phDel: phDel,
     phLoadAll: phLoadAll,

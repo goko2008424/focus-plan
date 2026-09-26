@@ -132,6 +132,11 @@
     if (standard) nt.standard = standard;
     if (freshSubs.length) nt.subs = freshSubs;
     if (freshGroups.length) nt.groups = freshGroups;
+    // 🌱 v135：复习身份跟着走（mode → 🔁/📘 标签；mcRef → 🃏 卡片；kps → 知识点兜底）。
+    //    sp 不搬 —— 排期留在原任务上，避免同一个轮次在两天各挂一份。
+    if (task.mode) nt.mode = task.mode;
+    if (task.mcRef) nt.mcRef = JSON.parse(JSON.stringify(task.mcRef));
+    if (task.kps && task.kps.length) nt.kps = JSON.parse(JSON.stringify(task.kps));
     tday.tasks[toCol].push(nt);
     S().save();
     return true;
