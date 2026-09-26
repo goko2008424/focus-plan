@@ -5872,25 +5872,30 @@
     const per0 = Math.max(1, (lastR && lastR.need) || cfg.perDay || 1);
     const isNewTask = task.mode === SR_MODE_NEW && !plan.some(function (r) { return r.done === true; });
     const body = srHistHTML(plan, task) +
-      '<div class="field"><label>下次哪天几点复习</label>' +
-      '<input type="datetime-local" id="srp-at" value="' + dtLocalVal(srDefaultDue(task)) + '" style="width:200px" /></div>' +
+      '<div class="field"><label>下次哪天几点复习（听完课由你自己定）</label>' +
+      '<input type="datetime-local" id="srp-at" style="width:200px" />' +
+      '<div class="sr-chips" style="margin-top:6px">' +
+      '<button class="btn" data-act="srp-chip0">⚡ 30分钟后</button>' +
+      '<button class="btn" data-act="srp-chip1">🌙 今晚 21:00</button>' +
+      '<button class="btn" data-act="srp-chip2">🌅 明早 8:00</button>' +
+      '</div></div>' +
       '<p class="rev-hint" id="srp-when" style="margin-top:-2px"></p>' +
       '<div class="field"><label>这一次要过几遍（默认 1 遍）</label>' +
       '<input type="number" id="srp-per" min="1" max="20" style="width:90px" value="' + per0 + '" /></div>' +
       '<p class="hint">' + (isNewTask
-        ? '📘 <b>新知识</b>：默认就排<b>今天稍后</b>（先过一遍最不容易忘）。'
-        : '🔄 <b>复习</b>：默认明天早上，想哪天/几点自己改。') +
+        ? '📘 <b>新知识</b>：<b>听完课再定几点复习</b> —— 时间由你挑；这会儿还不想定，点「🎧 听完课再来定」，听完点任务行的 🌱 一样能排。'
+        : '🔄 <b>复习</b>：哪天几点自己挑。') +
       '现在是 ' + srWhen(Date.now()) + '。</p>';
     const m = App.ui.openModal('🌱 定下一次复习（' + S().esc(String(task.text || '').slice(0, 14)) + '）',
       body,
       '<button class="btn btn-primary" data-act="ok">🌱 就排这一次</button>' +
       (plan.length ? '<button class="btn" data-act="clear">🧹 清空这条的复习安排</button>' : '') +
-      '<button class="btn" data-act="cancel">取消</button>');
+      '<button class="btn" data-act="cancel">' + (isNewTask ? '🎧 听完课再来定' : '取消') + '</button>');
     const gEl = srBindWhenPreview(m, 'srp-at', 'srp-when');
     App.ui.bindActions({
       ok: function () {
         const due = dtLocalParse(gEl ? gEl.value : '');
-        if (!due) { App.ui.toast('先挑一个时间'); return; }
+        if (!due) { App.ui.toast('时间还没挑 —— 想先去听课，就点「🎧 听完课再来定」', 4200); return; }
         if (due < Date.now() - 86400000) { App.ui.toast('那个时间太早了 —— 重新挑一个', 4200); return; }
         const perEl = m.querySelector('#srp-per');
         const perDay = Math.max(1, Math.min(20, parseInt(perEl ? perEl.value : '', 10) || 1));
@@ -5924,7 +5929,14 @@
             App.ui.toast('🧹 这条的复习安排清空了 —— 想重新开始随时点 🌱');
           });
       },
-      cancel: function () { App.ui.closeModal(); }
+      cancel: function () {
+        App.ui.closeModal();
+        if (isNewTask) App.ui.toast('好 —— 听完课再点任务行的 🌱 定几点复习', 4200);
+      },
+      // ⚡ 快捷键：填进去，看得见、改得了 —— 最终还是他自己的决定（同一个 map 里绑，别二次 bindActions 冲掉主按钮）
+      'srp-chip0': function () { const d = new Date(); d.setMinutes(d.getMinutes() + 30, 0, 0); gEl.value = dtLocalVal(d); gEl.dispatchEvent(new Event('input')); },
+      'srp-chip1': function () { const d = new Date(); d.setHours(21, 0, 0, 0); if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1); gEl.value = dtLocalVal(d); gEl.dispatchEvent(new Event('input')); },
+      'srp-chip2': function () { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); gEl.value = dtLocalVal(d); gEl.dispatchEvent(new Event('input')); }
     });
   }
 
@@ -5994,30 +6006,15 @@
    *  日期 = 现在 + 模板的第一个间隔；后面每次复习完再单独定下一次。 */
   function srAfterTaskDone(task, listKey, dayKey) {
     if (!srOn() || !srWanted(task) || task.sp) return;
-    const cfg = srCfgOf(task);
-    // 🌱 v121：新知识**当天**就排一次（用户：「对于我们新学的知识，你可以去当天安排复习好吗？」）
-    const gap = SR_NEW_FIRST_MIN;
-    const perDay = Math.max(1, cfg.perDay || 1);
-    const due = Date.now() + gap * 60000;
-    const dl = cfg.dl ? srClockMs(dayKey || S().todayKey(), cfg.dl) : 0;
-    // 截止时刻只约束"落在同一天"的那一轮（跨天的不归今天的几点管）
-    if (dl && S().dateKey(new Date(due)) === (dayKey || S().todayKey()) && due > dl) {
-      App.ui.toast('🌱 这会儿排下一次复习会到 ' + srHHMM(due) + '（超过你设的截止 ' + srHHMM(dl) +
-        '）—— 今天先不自动排，想排就点任务行的 🌱', 6400);
-      srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };
-      return;
-    }
-    task.sp = {
-      planned: [{ n: 1, gap: gap, due: due, done: null, at: null, need: perDay, hits: [] }],
-      dl: dl, at: Date.now(), bonus: false,
-      cfg: { gaps: [gap], perDay: perDay, dl: cfg.dl }
-    };
-    S().save();
-    App.ui.toast('🌱 新知识已排<b>今天</b>复习：<b>' + srWhen(due) + '</b>' +
-      (perDay > 1 ? '（这一轮过 ' + perDay + ' 遍）' : '') +
-      ' —— 到点在「今天」页顶上提醒你', 6800);
+    // 🌱 v133：**不再静默排「30分钟后」**（用户：「他还是自己定的，实际上可以听完一节课以后去定内容，
+    //    听完一节课以后定几点复习」）→ 完课只记两个待办：① 知识点弹窗（srPendKp，原有）
+    //    ② 排期弹窗（srPendPlan，接在知识点后面）—— 时间留空，由用户自己挑；不挑就先不排。
     srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };
+    srPendPlan = { id: task.id, listKey: listKey, dayKey: dayKey };
+    App.ui.toast('🌱 听完一节课了 —— 接下来弹窗，<b>几点复习你自己定</b>（先不想定也可以）', 5600);
   }
+
+  let srPendPlan = null;   // 🌱 v133：完课后待弹的「定下一次复习」
 
   /** 等任务总结弹窗关掉之后再弹（免得两个弹窗打架） */
   function srRunPending() {
@@ -6028,7 +6025,13 @@
     if (srPendKp) {
       const q = srPendKp; srPendKp = null;
       const t = srFindTask(q.id);
-      if (t && srOn()) srAskKps(t, q.listKey, q.dayKey);
+      if (t && srOn()) { srAskKps(t, q.listKey, q.dayKey); return; }
+    }
+    // 🌱 v133：没有知识点弹窗要弹（或那条任务没了）→ 直接进排期弹窗
+    if (srPendPlan) {
+      const q = srPendPlan; srPendPlan = null;
+      const tt = srFindTask(q.id);
+      if (tt && srOn()) srPlanModal(tt, q.listKey);
     }
   }
 
@@ -6155,7 +6158,9 @@
       'kp-save': function () { srSaveKps(); },
       'kp-skip': function () {
         App.ui.closeModal(); srKpTmp = null;
-        if (srKpReturn) { const r = srKpReturn; srKpReturn = null; srOpenReview(r.task, r.round); }
+        if (srKpReturn) { const r = srKpReturn; srKpReturn = null; srOpenReview(r.task, r.round); return; }
+        // 🌱 v133：跳过知识点 → 接「定下一次复习」
+        if (srPendPlan) { const q = srPendPlan; srPendPlan = null; const tt = srFindTask(q.id); if (tt && srOn()) srPlanModal(tt, q.listKey); }
       }
     });
   }
@@ -6220,7 +6225,9 @@
     App.ui.closeModal();
     srKpTmp = null;
     App.tasks.renderAll();
-    if (srKpReturn) { const r = srKpReturn; srKpReturn = null; setTimeout(function () { srOpenReview(r.task, r.round); }, 320); }
+    if (srKpReturn) { const r = srKpReturn; srKpReturn = null; setTimeout(function () { srOpenReview(r.task, r.round); }, 320); return; }
+    // 🌱 v133：知识点问完 → 接「定下一次复习」（时间留空由用户挑）
+    if (srPendPlan) { const q = srPendPlan; srPendPlan = null; const tt = srFindTask(q.id); if (tt && srOn()) srPlanModal(tt, q.listKey); }
   }
 
   /* ---------- ③ 独立计时 → 进时间轴 ---------- */
@@ -6843,6 +6850,7 @@
     dayContentSummary: dayContentSummary,
     init: init, renderAll: renderAll, renderToday: renderToday,
     quickParse: quickParse, quickAddModal: quickAddModal, quickApply: quickApply,
+    srPlanModal: srPlanModal, srAfterTaskDone: srAfterTaskDone, srRunPending: srRunPending,   // 🌱 v133 导出给探针
     carryTagHTML: carryTagHTML, settleDayCore: settleDayCore,
     taskRowHTML: taskRowHTML, bindTaskAreaEvents: bindTaskAreaEvents,
     // 🌱 v115：复习计划（用户自定义）
