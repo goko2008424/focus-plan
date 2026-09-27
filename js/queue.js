@@ -1577,7 +1577,8 @@
         (day.tasks[col] || []).forEach(function (t) {
           if (t.fromDaily) return;                    // 基础任务的副本上面已经列了
           if (t.done === true) return;                // 做完的不重复列
-          if (t.mcRef || t.mode === 'review') out.push({ t: t, col: col });
+          // 🌱 v138：名字一看就是复习的（「复习 · xxx」）也必须列进来 —— 就算顺延把身份字段弄丢了
+          if (t.mcRef || t.mode === 'review' || /^复习\s*[·•・:：]?\s*/.test(String(t.text || '').trim())) out.push({ t: t, col: col });
         });
       });
       return out;
@@ -1588,7 +1589,11 @@
       revs.forEach(function (x) {
         const t = x.t;
         const dots = (App.tasks && App.tasks.revDotsHTML) ? App.tasks.revDotsHTML(t) : '';
-        const nCards = (t.mcRef && t.mcRef.n) ? t.mcRef.n : 0;
+        // 🌱 v138：🃏 数量走完整解析（mcRef 丢了也能按「合集名 = 课程名」匹配回来）
+        let nCards = (t.mcRef && t.mcRef.n) ? t.mcRef.n : 0;
+        if (!nCards && App.memcards && App.memcards.cardsForTask) {
+          try { nCards = App.memcards.cardsForTask(t).length; } catch (e) { /* 忽略 */ }
+        }
         h += '<div class="q-row q-rev-row" data-id="' + t.id + '">' +
           '<span class="q-text">' + esc(t.text) +
           (nCards ? ' <span class="mc-chip" title="这套卡有 ' + nCards + ' 张">🃏 ' + nCards + '</span>' : '') +
@@ -1903,6 +1908,11 @@
       if (!t0) { App.ui.toast('这条找不到了，刷新一下'); return; }
       if (act === 'qrev-cards') {
         if (t0.mcRef && App.memcards && App.memcards.openRef && App.memcards.openRef(t0.mcRef)) return;
+        // 🌱 v138：mcRef 没了也能按「合集名 = 课程名」匹配打开（cardsForTask 完整解析 → openCol）
+        try {
+          const cl = (App.memcards && App.memcards.cardsForTask) ? App.memcards.cardsForTask(t0) : [];
+          if (cl.length && App.memcards.openCol) { App.memcards.openCol(cl[0].colId, {}); return; }
+        } catch (e) { /* 忽略 */ }
         App.ui.toast('这条没挂着卡片合集了'); return;
       }
       if (act === 'qrev-open') {

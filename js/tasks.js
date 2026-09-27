@@ -6322,7 +6322,12 @@
             });
           });
         }
-        if (!src) return;
+        if (!src) {
+          // 🌱 v138：原任务实在找不到（可能也被顺延洗过），但名字一看就是复习 → 至少把 🔁 标记补上，
+          //    「今天的复习」区块和复习提醒就能认出它（🃏 走合集名匹配兜底）
+          if (/^复习\s*[·•・:：]?\s*/.test(String(t.text || '').trim())) { t.mode = 'review'; fixed++; }
+          return;
+        }
         if (src.mode) t.mode = src.mode;
         if (src.mcRef) t.mcRef = JSON.parse(JSON.stringify(src.mcRef));
         if (src.kps && src.kps.length) t.kps = JSON.parse(JSON.stringify(src.kps));
