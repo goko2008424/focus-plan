@@ -1506,6 +1506,15 @@
       '想固定在某一天做，点它右边的 <b>📅</b>。<br>💡 挂着小任务/任务组的，点行里的 <b>⇣ 展开</b> 能逐条看、逐条勾。' +
       '<br>🧲 点 <b>▶</b> 做这条 —— 它会在<b>原地</b>变成一条<b>完整任务</b>（🎧 听课、加小任务、建任务组、逐题计时都在那儿）。</p>';
 
+    // 🎯 v137：小时代进行中 → 直接回答「做基础任务算不算」—— 算（副本在必须栏，按栏计入）
+    const hpDay = S().peekDay ? S().peekDay(k) : S().getDay(k);
+    if (hpDay && hpDay.activeHourPlan) {
+      const tg = hpDay.activeHourPlan.targets || {};
+      h += '<p class="hint" style="margin:4px 0 0;background:color-mix(in srgb, var(--primary) 8%, transparent);' +
+        'border:1px solid var(--primary);border-radius:8px;padding:6px 10px">🎯 <b>小时代进行中</b> —— 点 <b>▶</b> 做这里的任务，' +
+        '计时<b>会计入这一段的「必须」</b>（目标 必须 ' + (tg.required || 0) + ' 分；悬浮窗上实时看得到计入多少）。</p>';
+    }
+
     // ↩ v100：前几天没做完的，留着让你搬（以前会被自动删掉）
     const stale = staleDaily();
     if (stale.length) {

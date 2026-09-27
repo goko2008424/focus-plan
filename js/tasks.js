@@ -95,6 +95,7 @@
       }
     }
     // 🔥 连续学习累计与小休倒计时都在常驻 tick（hourPlanAutoTick）里，这里不再重复处理
+    try { renderFloatHp(); } catch (e) { /* 忽略 */ }   // 🎯 v137：小时代计入行每秒刷新
     // 子任务倒计时区（到点继续计时、不自动弹窗，显示超时）
     if (cdTimer) {
       // 任务内小休（强化休息系统）：倒计时展示 + 到点自动恢复原题
@@ -426,6 +427,27 @@
       : (bits.join(' · ') + (both ? '　⚠️ 两个计时同时在跑，暂停时看清停的是哪一个' : ''));
   }
 
+  /** 🎯 v137：小时代进行中 + 有计时在跑 → 悬浮窗直接写明「计入哪一类、已经计入多少」
+   *  （用户：做今天的基础任务时不知道时间会不会纳入小时代 —— 答案是会：基础任务点 ▶ 的副本住在
+   *  必须栏，hourPlanBucket 按栏分桶计入。以前只是"事实上算"，现在让它看得见。） */
+  function renderFloatHp() {
+    const el = fx('tf-hp');
+    if (!el) return;
+    const day = S().getDay(S().todayKey());
+    const plan = day && day.activeHourPlan;
+    const t = timer || cdTimer;
+    if (!plan || !plan.startAt || !t || !t.startedAt) { el.classList.add('hidden'); return; }
+    const bk = hourPlanBucket(t.taskId);
+    if (!bk) { el.classList.add('hidden'); return; }   // 不在三类栏里（比如单纯休息）→ 不显示
+    const sum = hourPlanSummary(plan, new Date(), false);
+    const target = (plan.targets || {})[bk] || 0;
+    const cur = Math.round((sum.actual || {})[bk] || 0);
+    const bkName = bk === 'required' ? '必须' : (bk === 'ideal' ? '理想' : '拓展');
+    el.classList.remove('hidden');
+    el.innerHTML = '🎯 <b>计入小时代</b> · ' + bkName + ' <b>' + cur + '/' + target + '</b> 分' +
+      (target > 0 && cur >= target ? ' ✅ 已达标' : '');
+  }
+
   function renderFloatLec() {
     const box = fx('tf-lec');
     if (!box) return;
@@ -684,6 +706,7 @@
     renderFloatLec();
     renderDrawer();
     renderFloatState();
+    renderFloatHp();
     // 什么都没在进行（连听课也没有）→ 悬浮窗收起来，别留个空窗在屏幕上
     const lecOn = !!(App.lecture && App.lecture.current && App.lecture.current());
     if (!shouldKeepFloat() && !lecOn) {     // 计时/待办/听课都没在进行 → 才收窗
@@ -6268,6 +6291,58 @@
   }
 
   /* ---------- ④ 今日「待复习」提醒条 ---------- */
+  /** 🌱 v136：修复 v135 之前顺延丢身份的复习副本（用户截图：顺延来的复习任务只剩「↩ 昨天没做完」，
+   *  🔁/🌱/🃏 全没了 —— v135 修的是以后的顺延，救不了已经存在的副本）。
+   *  只修「今天」清单里的：rolled 且 mode/mcRef/sp 三样全空 → 往前（最多 30 天）找**同文字、带复习身份**
+   *  的原任务，把 mode/mcRef/kps 补上，sp 的待复习轮次（含错过的 → 重置为待复习）搬过来，
+   *  原任务只留历史。链式顺延的中间副本没身份会被跳过，一直找到最早的源头。返回修了几条。 */
+  function repairRolledReviews() {
+    const tk = S().todayKey();
+    const day = S().peekDay ? S().peekDay(tk) : S().getDay(tk);
+    if (!day || !day.tasks) return 0;
+    const days = (S().data() || {}).days || {};
+    const keys = Object.keys(days).sort();
+    const fromD = new Date(); fromD.setDate(fromD.getDate() - 30);
+    const fromKey = S().dateKey(fromD);
+    let fixed = 0;
+    const hasIdentity = function (t) { return !!(t.mode || t.mcRef || (t.sp && (t.sp.planned || []).length)); };
+    ['required', 'ideal', 'extra'].forEach(function (col) {
+      (day.tasks[col] || []).forEach(function (t) {
+        if (!t.rolled || t.mode || t.mcRef || (t.sp && (t.sp.planned || []).length)) return;
+        let src = null;
+        for (let i = keys.length - 1; i >= 0 && !src; i--) {
+          const pk = keys[i];
+          if (pk >= tk || pk < fromKey) continue;
+          const pd = days[pk];
+          if (!pd || !pd.tasks) continue;
+          ['required', 'ideal', 'extra'].forEach(function (col2) {
+            (pd.tasks[col2] || []).forEach(function (t2) {
+              if (src || t2.text !== t.text || !hasIdentity(t2)) return;
+              src = t2;
+            });
+          });
+        }
+        if (!src) return;
+        if (src.mode) t.mode = src.mode;
+        if (src.mcRef) t.mcRef = JSON.parse(JSON.stringify(src.mcRef));
+        if (src.kps && src.kps.length) t.kps = JSON.parse(JSON.stringify(src.kps));
+        if (src.sp) {
+          const sp2 = JSON.parse(JSON.stringify(src.sp));
+          sp2.planned = (sp2.planned || [])
+            .filter(function (r) { return r.done === null || r.done === false; })
+            .map(function (r) { if (r.done === false) { r.done = null; r.hits = r.hits || []; } return r; });
+          if (sp2.planned.length) {
+            t.sp = sp2;
+            src.sp.planned = (src.sp.planned || []).filter(function (r) { return r.done === true || r.done === false; });
+          }
+        }
+        fixed++;
+      });
+    });
+    if (fixed) S().save();
+    return fixed;
+  }
+
   function srPendingList() {
     const out = [];
     srCarriers().forEach(function (x) {
@@ -6904,6 +6979,8 @@
     srOn: srOn, srGaps: srGaps, srDeadlineHM: srDeadlineHM, srPoints: srPoints,
     srKpPoints: srKpPoints, srFinishBonus: srFinishBonus,
     planSpaced: planSpaced, srPlan: srPlan, srPendingOf: srPendingOf,
+    repairRolledReviews: repairRolledReviews,
+    renderFloatHp: renderFloatHp,   // 🎯 v137 导出给探针
     srPendingList: srPendingList, renderReviewBanner: renderReviewBanner,
     srCarriers: srCarriers, revDotsHTML: revDotsHTML,     // 🌱 v112
     srStartRound: srStartRound, srFinishRound: srFinishRound, srAskKps: srAskKps,

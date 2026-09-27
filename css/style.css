@@ -1688,3 +1688,7 @@ body[data-theme="dark"] .hour-card.active, body[data-theme="purple"] .hour-card.
 
 /* v134：复习弹窗里的卡片题图/答案图 */
 .rev-kp img.mc-img { max-width: 100%; max-height: 320px; border-radius: 8px; }
+
+/* v137：悬浮窗上的小时代计入行 */
+#tf-hp { margin: 8px 0 0; font-size: 12.5px; background: var(--bg); border: 1px solid var(--primary); border-radius: 8px; padding: 5px 9px; }
+#tf-hp.hidden { display: none; }
