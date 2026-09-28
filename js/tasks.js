@@ -790,8 +790,8 @@
       '  <p class="hint" id="pm-hint" style="margin:6px 0 0"></p>' +
       '</div>' +
       '<div class="field">' +
-      '  <label>这段时间要做什么（写给自己看的）</label>' +
-      '  <input type="text" id="plan-content" placeholder="" />' +
+      '  <label>这段时间要做什么（可不填 —— 空着就按任务名记）</label>' +
+      '  <input type="text" id="plan-content" placeholder="留空 = 按任务名记" />' +
       '</div>' +
       '<div class="field" id="plan-dur-wrap">' +
       '  <label>预计用时</label>' +
@@ -831,7 +831,7 @@
     function validate() {
       const content = contentInput.value.trim();
       const mins = (+hInput.value || 0) * 60 + (+mInput.value || 0);
-      if (!content) { errEl.textContent = '请填写这段时间要做什么'; return false; }
+      // 🌱 v141：这段内容**可不填** —— 空着就按任务名记（用户：「这一段时间能不能不写呀？怪烦的」）
       if (planMode === 'down' && mins <= 0) { errEl.textContent = '倒计时得填一个预计用时（大于 0）'; return false; }
       return true;
     }
@@ -841,7 +841,7 @@
         try { const st = S().settings(); if (st) st.planMode = planMode; S().save(); } catch (e) { /* 忽略 */ }
         timer = {
           taskKey: taskKey, taskId: taskId, taskText: task.text,
-          planContent: contentInput.value.trim(),
+          planContent: contentInput.value.trim() || task.text || '',   // 🌱 v141：空着就按任务名记
           mode: planMode,                                   // ⏱ v102
           planMinutes: planMode === 'down' ? ((+hInput.value || 0) * 60 + (+mInput.value || 0)) : 0,
           startedAt: Date.now(), pausedMs: 0, paused: false
@@ -4316,7 +4316,9 @@
           { text: task.text, points: task.points, mode: task.mode, mcRef: task.mcRef, kps: task.kps,
             subs: task.subs, groups: task.groups },
           listKey, d, task.standard, true, listKey);
-        if (!okM) { App.ui.toast('那天已经有同名任务了 —— 换一天，或者先给它改个名', 4600); return; }
+        // 🌱 v141：搬不过去也**照样从今天走** —— 用户实报「做完之后安排日期，这一条它不会走」。
+        //   以前那天有同名条就直接拦回来，今天这条成了甩不掉的死条；现在照常收走，只提示没搬过去。
+        if (!okM) App.ui.toast('那天有同名任务，本体没搬过去 —— 今天这条先收走了', 4200);
         const nt = (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
         if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
         App.calendar.removeTask(dayKey, listKey, taskId);

@@ -438,10 +438,34 @@
     return (card.front ? render(card.front) : '') + imgsHTML(card.frontImgs);
   }
   function backHTML(card) {
-    return (card.back ? render(card.back) : '') + imgsHTML(card.backImgs);
+    return (card.back ? render(card.back) : '') + imgsHTML(card.backImgs) + suppsHTML(card);
   }
   function hasText(card) {
     return !!(card && ((card.front || '').trim() || (card.back || '').trim()));
+  }
+  /** ✍️ v140：复习时随手补充的笔记（存每张卡自己身上，答案面末尾显示） */
+  function fmtSuppAt(ms) {
+    const d = new Date(ms), now = new Date();
+    const p = function (x) { return (x < 10 ? '0' : '') + x; };
+    const hm = p(d.getHours()) + ':' + p(d.getMinutes());
+    return (d.toDateString() === now.toDateString()) ? ('今天 ' + hm) : ((d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm);
+  }
+  function suppsHTML(card) {
+    const list = (card && card.supps) || [];
+    if (!list.length) return '';
+    return '<div class="mc-supps">' + list.map(function (s) {
+      return '<div class="mc-supp"><span class="mc-supp-at">📌 ' + fmtSuppAt(s.at) + ' 补充</span>' + (s.text ? render(s.text) : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  function suppBtnHTML(card) {
+    const n = (card && card.supps) ? card.supps.length : 0;
+    return '<button class="btn btn-small" data-act="mc-supp" title="给这张卡补充自己的笔记">✍️ 补充' + (n ? ' ·' + n : '') + '</button>';
+  }
+  /** 复习/补充视图里「当前那张卡」 */
+  function revCard() {
+    if (!state) return null;
+    const order = state.order || [];
+    return (state.col.cards || []).filter(function (x) { return x.id === order[state.idx]; })[0] || null;
   }
   /** 找出"没有任何卡片引用"的图片（删合集、贴了图又没保存都会留下这种） */
   function usedImgIds() {
@@ -878,7 +902,46 @@
         '<div class="mc-revacts">' +
         '<button class="btn btn-small" data-act="mc-prev">⬅ 上一张</button>' +
         '<button class="btn btn-small btn-primary" data-act="mc-flip">' + (state.flipped ? '↩ 看正面' : '🔄 翻面') + '</button>' +
-        '<button class="btn btn-small" data-act="mc-next">下一张 ➡</button></div>';
+        '<button class="btn btn-small" data-act="mc-next">下一张 ➡</button>' + suppBtnHTML(c) +
+        '<button class="btn btn-small" data-act="mc-edit-front" title="复习时发现题目写错了 / 想换个问法，直接就地改">✏️ 改问题</button>' +
+        '<button class="btn btn-small" data-act="mc-edit-back" title="复习时发现答案写错了 / 想补一句，直接就地改">✏️ 改答案</button>' +
+        '</div>';
+      return;
+    }
+
+    if (state.mode === 'supp') {
+      const c = revCard();
+      if (!c) { state.mode = 'review'; paint(); return; }
+      const list = c.supps || [];
+      box.innerHTML =
+        '<div class="mc-revtop"><span class="mc-cnt">✍️ 补充笔记</span>' +
+        '<span><button class="btn btn-small" data-act="mc-supp-cancel">← 回到复习</button></span></div>' +
+        '<div class="mc-supp-face"><span class="mc-face-tag">这张卡</span>' + (faceHTML(c) || '<span class="hint" style="margin:0">（这张卡还没写内容，补充就当它的正文）</span>') + '</div>' +
+        '<div class="mc-lab" style="margin-top:10px">' + (list.length ? '已补充的（点 ✕ 删掉那条）' : '还没有补充 —— 想到什么写下面：') + '</div>' +
+        (list.length ? list.map(function (s, i) {
+          return '<div class="mc-supp"><button class="mc-ib" data-act="mc-supp-del" data-i="' + i + '" title="删掉这条补充">✕</button>' +
+            '<span class="mc-supp-at">📌 ' + fmtSuppAt(s.at) + '</span>' + (s.text ? render(s.text) : '') + '</div>';
+        }).join('') : '') +
+        '<textarea class="mc-ta" id="mc-supp-new" rows="4" placeholder="写下自己的理解、易错点、老师补的一句……（可以留空不加）"></textarea>' +
+        '<div class="mc-row"><button class="btn btn-primary" data-act="mc-supp-save">💾 保存补充</button>' +
+        '<button class="btn" data-act="mc-supp-cancel">返回复习</button></div>';
+      return;
+    }
+
+    if (state.mode === 'editf' || state.mode === 'editb') {
+      const cE = revCard();
+      if (!cE) { state.mode = 'review'; paint(); return; }
+      const isF = state.mode === 'editf';
+      const val = (isF ? (cE.front || '') : (cE.back || '')).replace(/\r/g, '');
+      const taId = 'mc-edit-ta';
+      box.innerHTML =
+        '<div class="mc-revtop"><span class="mc-cnt">✏️ 改' + (isF ? '问题' : '答案') + '</span>' +
+        '<span><button class="btn btn-small" data-act="mc-edit-cancel">← 回到复习</button></span></div>' +
+        '<div class="mc-supp-face"><span class="mc-face-tag">这张卡现在的' + (isF ? '问题' : '答案') + '</span>' + (isF ? faceHTML(cE) : backHTML(cE)) + '</div>' +
+        '<div class="mc-lab" style="margin-top:10px">改成：</div>' +
+        '<textarea class="mc-ta" id="' + taId + '" rows="' + (isF ? 2 : 4) + '" placeholder="' + (isF ? '改正后的问题' : '改正后的答案') + '">' + esc(val) + '</textarea>' +
+        '<div class="mc-row"><button class="btn btn-primary" data-act="mc-edit-save">💾 保存修改</button>' +
+        '<button class="btn" data-act="mc-edit-cancel">返回复习</button></div>';
       return;
     }
 
@@ -1247,6 +1310,47 @@
       state.idx = (state.idx - 1 + state.order.length) % state.order.length;
       paint(); return;
     }
+    if (act === 'mc-supp') { state.mode = 'supp'; paint(); return; }
+    if (act === 'mc-supp-cancel') { state.mode = 'review'; paint(); return; }
+    if (act === 'mc-supp-save') {
+      const c0 = revCard();
+      if (!c0) { state.mode = 'review'; paint(); return; }
+      const ta = cur.querySelector('#mc-supp-new');
+      const v = ta ? (ta.value || '').trim() : '';
+      if (v) {
+        if (!Array.isArray(c0.supps)) c0.supps = [];
+        c0.supps.push({ at: Date.now(), text: v });
+        touch(col); afterChange();
+        App.ui.toast('📝 补充存好了 —— 翻到答案就能看到');
+      }
+      state.mode = 'review'; state.flipped = true; paint(); return;
+    }
+    if (act === 'mc-supp-del') {
+      const c1 = revCard(), di = parseInt(b.dataset.i, 10);
+      if (c1 && Array.isArray(c1.supps) && c1.supps[di]) {
+        c1.supps.splice(di, 1);
+        if (!c1.supps.length) delete c1.supps;
+        touch(col); afterChange();
+      }
+      paint(); return;
+    }
+    if (act === 'mc-edit-front') { state.mode = 'editf'; paint(); return; }
+    if (act === 'mc-edit-back') { state.mode = 'editb'; paint(); return; }
+    if (act === 'mc-edit-cancel') { state.mode = 'review'; paint(); return; }
+    if (act === 'mc-edit-save') {
+      const cS = revCard();
+      if (!cS) { state.mode = 'review'; paint(); return; }
+      const taS = cur.querySelector('#mc-edit-ta');
+      const vS = taS ? taS.value : '';
+      const isFS = state.mode === 'editf';
+      if (isFS) cS.front = vS; else cS.back = vS;
+      touch(col); afterChange();
+      App.ui.toast(isFS ? '✅ 问题改好啦' : '✅ 答案改好啦', 2600);
+      state.mode = 'review';
+      state.flipped = !isFS;   // 改完问题回正面看，改完答案翻到反面看
+      paint(); return;
+    }
+
     if (act === 'mc-export') { App.ui.toast('导出已经去掉啦 —— 卡片就在这儿复习就好', 3600); return; }
     if (act === 'mc-pick') {
       state.pickSide = b.dataset.side || 'front';

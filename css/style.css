@@ -1160,6 +1160,13 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
 .mc-flip-hint { color: var(--muted); font-size: 12.5px; margin: 8px 0; text-align: center; }
 .mc-revtop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .mc-revacts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/* —— ✍️ v140：复习时随手补充的笔记 —— */
+.mc-supp-face { border: 1px solid var(--line); border-left: 3px solid var(--primary); border-radius: 10px; padding: 10px 12px; background: var(--card); font-size: 13.5px; line-height: 1.65; }
+.mc-supp-face .mc-face-tag { margin-right: 8px; }
+.mc-supps { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 6px; }
+.mc-supp { border: 1px solid var(--line); border-left: 3px solid #e0a02c; border-radius: 8px; padding: 6px 9px; margin: 6px 0; font-size: 13px; line-height: 1.65; }
+.mc-supp-at { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 2px; }
+.mc-supp .mc-ib { float: right; margin-left: 6px; }
 .mc-body .katex { font-size: 1.02em; }
 /* —— 🏷 v91：队列里的属性徽标（点一下能改）+ ↩ 点错了条 —— */
 .mode-plain { background: #f1f3f6; color: #6b7280; border-color: #dfe3e9; }

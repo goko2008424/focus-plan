@@ -1,80 +1,4 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>专注计划 · 版本更新史</title>
-<link rel="stylesheet" href="css/style.css" />
-<style>
-  :root{
-    --bg0:#0b1020; --bg1:#111a33; --bg2:#172246;
-    --ink:#eaf0ff; --muted:#9fb0d0; --line:rgba(255,255,255,.09);
-    --c1:#3b82f6; --c2:#22a06b; --c3:#f59e0b; --c4:#e2545d; --c5:#a855f7;
-  }
-  *{margin:0;padding:0;box-sizing:border-box}
-  html,body{height:100%}
-  body{
-    font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
-    color:var(--ink);overflow:hidden;background:var(--bg0);
-  }
-  .bg{position:fixed;inset:0;z-index:0;background:radial-gradient(1200px 800px at 20% -10%,#1c2b55 0%,transparent 55%),radial-gradient(1000px 700px at 110% 110%,#152041 0%,transparent 55%);}
-  .blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.28;z-index:0;animation:drift 14s ease-in-out infinite}
-  .b1{width:420px;height:420px;background:var(--c1);top:-60px;left:-60px}
-  .b2{width:360px;height:360px;background:var(--c5);bottom:-80px;right:-40px;animation-delay:-6s}
-  .b3{width:260px;height:260px;background:var(--c2);top:55%;left:45%;animation-delay:-3s}
-  @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-25px)}}
-  .stage{position:relative;z-index:2;height:100%;width:100%}
-  .slide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6vh 8vw;opacity:0;transform:translateY(24px) scale(.98);pointer-events:none;transition:opacity .5s,transform .5s}
-  .slide.on{opacity:1;transform:none;pointer-events:auto}
-  .card{max-width:1080px;width:100%;max-height:86vh;overflow:auto;background:linear-gradient(160deg,rgba(255,255,255,.085),rgba(255,255,255,.035));border:1px solid var(--line);border-radius:26px;padding:44px 52px;backdrop-filter:blur(14px);box-shadow:0 30px 80px rgba(0,0,0,.45)}
-  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:13px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin-bottom:14px;border:1px solid var(--line);padding:5px 12px;border-radius:999px}
-  h1{font-size:58px;line-height:1.05;font-weight:800;background:linear-gradient(90deg,#7dd3fc,#22a06b 60%,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:8px}
-  .sub{font-size:18px;color:var(--muted);margin-bottom:26px}
-  .big{font-size:clamp(52px,9vw,120px);font-weight:900;line-height:1;background:linear-gradient(120deg,#22a06b,#f59e0b,#e2545d,#a855f7);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 6px 30px rgba(34,160,107,.35))}
-  .badge{display:inline-block;font-size:15px;font-weight:800;padding:7px 16px;border-radius:12px;margin-bottom:16px}
-  .tag{font-size:30px;font-weight:800;margin-bottom:18px}
-  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:22px}
-  .col{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
-  .col h4{font-size:14px;letter-spacing:.04em;color:var(--muted);margin-bottom:10px}
-  .col ul{list-style:none}
-  .col li{font-size:15px;line-height:1.7;padding-left:22px;position:relative;margin-bottom:6px;color:var(--ink)}
-  .col li::before{content:"◆";position:absolute;left:0;top:1px;font-size:10px;color:var(--cc,#22a06b)}
-  .single{font-size:16px;line-height:1.85;color:var(--ink);margin-top:20px}
-  .single b{color:#7dd3fc}
-  .nav{position:fixed;z-index:5;left:0;right:0;bottom:18px;display:flex;align-items:center;justify-content:center;gap:18px}
-  .arrow{width:52px;height:52px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font-size:22px;cursor:pointer;transition:.2s;display:grid;place-items:center}
-  .arrow:hover{background:rgba(255,255,255,.16);transform:scale(1.05)}
-  .dots{display:flex;gap:9px;align-items:center}
-  .dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18);cursor:pointer;transition:.2s}
-  .dot.on{width:26px;border-radius:6px;background:linear-gradient(90deg,#3b82f6,#22a06b)}
-  .count{font-size:13px;color:var(--muted);letter-spacing:.08em}
-  .hint{position:fixed;z-index:5;top:16px;right:20px;font-size:12px;color:var(--muted);letter-spacing:.05em}
-  .back{position:fixed;z-index:5;top:16px;left:20px;font-size:12px;color:var(--muted);letter-spacing:.05em;cursor:pointer;border:1px solid var(--line);padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.05)}
-  .back:hover{background:rgba(255,255,255,.14)}
-  em.glow{color:#22a06b;font-style:normal;font-weight:700}
-  .timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:26px}
-  .tl{text-align:center;padding:16px 8px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.04);cursor:pointer;transition:.2s}
-  .tl:hover{background:rgba(255,255,255,.09)}
-  .tl .n{font-size:26px;font-weight:900;background:linear-gradient(90deg,#7dd3fc,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .tl .t{font-size:12px;color:var(--muted);margin-top:4px}
-  ::-webkit-scrollbar{width:8px;height:8px}
-  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:8px}
-  @media (max-width:700px){ .slide{padding:4vh 5vw} .card{padding:26px 22px} h1{font-size:38px} .tag{font-size:24px} .big{font-size:64px} }
-</style>
-</head>
-<body>
-  <div class="bg"></div>
-  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
-  <div class="back" id="back">‹ 返回专注计划</div>
-  <div class="hint">← → 翻页 · 圆点跳转</div>
-  <div class="stage" id="stage"></div>
-  <div class="nav">
-    <button class="arrow" id="prev">‹</button>
-    <div class="dots" id="dots"></div>
-    <button class="arrow" id="next">›</button>
-  </div>
 
-<script>
 // 封面/收尾里的「从 1.0 到 N.0」从 SLIDES 自动算，避免以后又忘了改（曾长期停在 9.0）
 function maxVer() {
   let m = 1;
@@ -145,7 +69,6 @@ const SLIDES = [
       '<div class="tl" data-i="55"><div class="n">v55</div><div class="t">进度跟人走 · 复习看得见</div></div>'+
       '<div class="tl" data-i="56"><div class="n">v56</div><div class="t">改天再做 · 只带没做完</div></div>'+
       '<div class="tl" data-i="57"><div class="n">v57</div><div class="t">随手改 · 补充/改问题/改答案</div></div>'+
-      '<div class="tl" data-i="58"><div class="n">v58</div><div class="t">计时可不填 · 复习行🗑 · 改日期必走</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -1597,23 +1520,6 @@ const SLIDES = [
     ]
   },
   {
-    name:"v58 · 计时可不填 · 复习行能收走",
-    badge:{t:"v58 · 🧹 清爽",c:"#0ea5e9"},
-    tag:"不想写的字不写；想收走的条收得走 —— 「做完安排日期之后这一条它不会走」修好了",
-    cols:[
-      {t:"⏱ 计时内容可不填", c:"#0ea5e9", items:[
-        "开始计时的「这段时间要做什么」空着也能点开始，不再弹「请填写」",
-        "空着就自动按任务名记 —— 悬浮窗、总结、时间轴、会话记录都有内容",
-        "想写细节还是能写（比如「只刷了选择题」），写不写随你"]},
-      {t:"🗑 复习行上多了删除", c:"#e0a02c", items:[
-        "「今天的复习」每行多了个 🗑，点一下、确认一下就收走",
-        "只收今天这一条：任务页那章还在、复习计划照旧，明天该冒的还会冒"]},
-      {t:"📅 改日期拦不住「走」了", c:"#22a06b", items:[
-        "修了个实在 bug：做完之后 📅 安排日期，碰到那天有同名任务时这条会被拦着不走",
-        "现在照常从今天收走，只提示「本体没搬过去」—— 甩不掉的死条没有了"]}
-    ]
-  },
-  {
     name:"收尾", cls:"cover",
     html:function(){
       return '<div style="text-align:center">'+
@@ -1657,6 +1563,3 @@ document.getElementById('prev').onclick=()=>go(-1);
 document.getElementById('back').onclick=()=>window.close();
 window.addEventListener('keydown',e=>{if(e.key==='ArrowRight')go(1);if(e.key==='ArrowLeft')go(-1);});
 paint();
-</script>
-</body>
-</html>
