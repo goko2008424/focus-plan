@@ -119,10 +119,24 @@
     const tday = S().getDay(targetKey);
     if (!tday.tasks[toCol]) tday.tasks[toCol] = [];
     if (tday.tasks[toCol].some(function (t) { return t.text === task.text; })) return false;
-    const freshSubs = (keepKids ? (task.subs || []) : []).map(function (s) {
+    // 🌱 v139：带小任务/任务组时**只带没做完的**（用户：「我以前完成了部分的，你没给我去掉…
+    //   比如我已经安排了，但你没给我安排到第二天，你是安排全部的」）。
+    //   规则：① 做完的小题不带（它的历史留在原任务上）② 组里全做完 → 整组不带
+    //   ③ 例外：如果**所有**小题/组都做完了（说明是刻意整体重做一遍），保留全部
+    const kidsAll = (task.subs || []).length + (task.groups || []).length;
+    let srcSubs = (task.subs || []).filter(function (s) { return s.done !== true; });
+    let srcGroups = (task.groups || []).map(function (g) {
+      const left = (g.subs || []).filter(function (s) { return s.done !== true; });
+      return left.length ? { name: g.name, subs: left } : null;
+    }).filter(function (g) { return !!g; });
+    if (kidsAll && !srcSubs.length && !srcGroups.length) {     // 全做完 → 整体重做：原样全带
+      srcSubs = (task.subs || []).slice();
+      srcGroups = (task.groups || []).slice();
+    }
+    const freshSubs = (keepKids ? srcSubs : []).map(function (s) {
       return { id: S().uid(), text: s.text, minutes: s.minutes, points: s.points || 0, done: null };
     });
-    const freshGroups = (keepKids ? (task.groups || []) : []).map(function (g) {
+    const freshGroups = (keepKids ? srcGroups : []).map(function (g) {
       return { id: S().uid(), name: g.name, subs: (g.subs || []).map(function (s) {
         return { id: S().uid(), text: s.text, minutes: s.minutes, points: s.points || 0, done: null };
       }) };
@@ -655,6 +669,7 @@
     repeatModal: repeatModal,
     repeatSubModal: repeatSubModal,
     copySubToDay: copySubToDay,
-    findSubById: findSubById
+    findSubById: findSubById,
+    removeTask: removeTask
   };
 })();

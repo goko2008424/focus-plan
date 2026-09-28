@@ -2884,6 +2884,25 @@
               .filter(function (r) { return r.done === true || r.done === false; });
           }
         }
+        // 🌱 v139：小任务/任务组只带**没做完的** —— 做完的部分去掉（用户：「已经完成的任务组的就去掉」）。
+        //   做完的小题不带；组里全做完 → 整组不带；如果这条的小题/组全做完了 → 它没必要再顺延。
+        if (u.task.subs) {
+          const us = (u.task.subs || []).filter(function (s) { return s.done !== true; })
+            .map(function (s) { return JSON.parse(JSON.stringify(s)); });
+          if (us.length) t.subs = us;
+        }
+        if (u.task.groups) {
+          const gs = [];
+          (u.task.groups || []).forEach(function (g) {
+            const ug = (g.subs || []).filter(function (s) { return s.done !== true; })
+              .map(function (s) { return JSON.parse(JSON.stringify(s)); });
+            if (ug.length) gs.push({ id: g.id, name: g.name, subs: ug });
+          });
+          if (gs.length) t.groups = gs;
+        }
+        const kidTotal = (u.task.subs || []).length + (u.task.groups || []).length;
+        const kidLeft = (t.subs || []).length + (t.groups || []).length;
+        if (kidTotal && !kidLeft) { u.task.movedOut = true; return; }   // 小题/组全做完 → 这条不用再顺延
         S().getDay(nextDayKeyOf(dayKey)).tasks[u.k].push(t);
         out.rolled++;
       });
@@ -3479,6 +3498,13 @@
     // 🗑 v117：今天这三栏以前**没有删除入口**（只能点文字进编辑窗里删）——
     //   用户：「为已添加的任务提供删除选项，让用户能够直接移除任意已添加的任务」
     const delBtn = '<button class="task-timer-btn task-del-btn" data-act="del" title="删掉这条（先进回收站，能恢复）">🗑</button>';
+    // 📅 v139：行上「改天再做」—— 带小任务的、排过复习的、复习任务才给这个按钮
+    //   （用户：「行列上直接加个 📅」：挑个日子，把这条 + 还没做完的小题搬到那天）
+    const kidsN = (task.subs || []).length + (task.groups || []).length;
+    const mvdBtn = (kidsN || srPlan(task).length || task.mode === SR_MODE_REV)
+      ? '<button class="task-timer-btn task-mv-btn" data-act="move-day" title="📅 改天再做：挑个日子，这条' +
+        (kidsN ? '（只带没做完的小题）' : '') + '搬到那天">📅</button>'
+      : '';
     const lecPanel = (App.lecture && App.lecture.inlineHTML) ? App.lecture.inlineHTML(task) : '';
     return '<div class="task-row' + (task.done ? ' done' : '') + (lecPanel ? ' lec-running' : '') + '" data-list="' + listKey + '" data-id="' + task.id + '">' +
       '<span class="task-check' + (task.done ? ' checked' : '') + '" data-act="check">✓</span>' +
@@ -3492,6 +3518,7 @@
       mcBtn +
       dupBtn +
       btn +
+      mvdBtn +
       delBtn +
       '</div>' +
       lecPanel +
@@ -4230,6 +4257,81 @@
     if (!task) { App.ui.toast('找不到这条任务'); return; }
     if (App.lecture && App.lecture.startFromTask) App.lecture.startFromTask(task, fromTomorrow);
   }
+  /** 📅 v139：**改天再做** —— 把这条（+ 还没做完的小题/组）搬到挑的那天，今天这条删掉。
+   *  用户：「行列上直接加个 📅」+「已经完成的部分要去掉」。
+   *  两个入口共用这一份实现：任务页行上的 📅 / 队列页「今天的复习」行上的 📅。 */
+  /** 🌱 v139：复习轮次跟着改期 —— 没做完的轮次按原时刻落到目标那天，间隔保持（做完的当历史留着） */
+  function moveSpRoundsTo(sp, targetKey) {
+    const pend = (sp.planned || []).filter(function (r) { return r.done !== true; });
+    if (!pend.length) return sp;
+    const d0 = new Date(pend[0].due || Date.now());
+    const base = new Date(targetKey + 'T00:00:00');
+    base.setHours(d0.getHours(), d0.getMinutes(), 0, 0);
+    let cur = base.getTime(), started = false;
+    (sp.planned || []).forEach(function (r) {
+      if (r.done === true) return;
+      if (started) cur = cur + Math.max(1, r.gap || 1440) * 60000;
+      r.due = cur;
+      started = true;
+      if (r.done === false) { r.done = null; r.hits = r.hits || []; }
+      r.gap = Math.max(1, Math.round((r.due - Date.now()) / 60000));
+    });
+    return sp;
+  }
+  /** 🌱 v139：把任务行/队列复习行的「📅 改天再做」统一到这里 */
+  function moveTaskDayModal(listKey, dayKey, taskId) {
+    const task = ((S().getDay(dayKey).tasks[listKey] || []).filter(function (x) { return x.id === taskId; })[0]) || null;
+    if (!task) { App.ui.toast('这条找不到了，刷新一下'); return; }
+    if ((timer && timer.taskId === taskId) || (cdTimer && cdTimer.taskId === taskId)) {
+      App.ui.toast('这条正在计时 —— 先结束计时再改天', 4400); return;
+    }
+    const subN = (task.subs || []).length;
+    const grpN = (task.groups || []).length;
+    const leftSub = (task.subs || []).filter(function (s) { return s.done !== true; }).length +
+      (task.groups || []).reduce(function (n, g) {
+        return n + (g.subs || []).filter(function (s) { return s.done !== true; }).length;
+      }, 0);
+    const allN = subN + (task.groups || []).reduce(function (n, g) { return n + (g.subs || []).length; }, 0);
+    const dropN = Math.max(0, allN - leftSub);
+    const spN = srPlan(task).filter(function (r) { return r.done !== true; }).length;
+    const m = App.ui.openModal('📅 改天再做（' + S().esc(String(task.text || '').slice(0, 16)) + '）',
+      '<p class="hint">' + (allN
+        ? ('这条带了 <b>' + (subN ? subN + ' 道小任务' : '') + (subN && grpN ? ' + ' : '') +
+           (grpN ? grpN + ' 个任务组' : '') + '</b>：只带<b>没做完的 ' + leftSub + ' 项</b>过去' +
+           (dropN ? '，做完的 ' + dropN + ' 项不带（它留在 ' + S().fmtDateCN(dayKey) + ' 的记录里）' : '') + '。')
+        : ('整条搬到那天，' + S().fmtDateCN(dayKey) + '这条就删掉。')) +
+      (spN ? '<br>🌱 复习计划：<b>' + spN + ' 个没做的轮次</b>也跟着走（按原时刻落到那天）。' : '') + '</p>' +
+      '<div class="field"><label>改到哪天</label>' +
+      '<input type="date" id="mvd-date" value="' + nextDayKeyOf(dayKey) + '" min="' + S().todayKey() + '" style="width:180px" /></div>',
+      '<button class="btn btn-primary" data-act="mvd-ok">📅 就改到这天</button>' +
+      '<button class="btn" data-act="cancel">取消</button>');
+    App.ui.bindActions({
+      'mvd-ok': function () {
+        const d = (m.querySelector('#mvd-date').value || '').trim();
+        if (!d) { App.ui.toast('先挑一个日期'); return; }
+        if (d < S().todayKey()) { App.ui.toast('那天的日子已经过去了 —— 往后面挑一天', 4200); return; }
+        if (d === dayKey) { App.ui.toast('这就是同一天呀 —— 挑别的日子', 4200); return; }
+        const spMove = task.sp ? JSON.parse(JSON.stringify(task.sp)) : null;
+        const okM = App.calendar.copyTaskToDay(
+          { text: task.text, points: task.points, mode: task.mode, mcRef: task.mcRef, kps: task.kps,
+            subs: task.subs, groups: task.groups },
+          listKey, d, task.standard, true, listKey);
+        if (!okM) { App.ui.toast('那天已经有同名任务了 —— 换一天，或者先给它改个名', 4600); return; }
+        const nt = (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
+        if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
+        App.calendar.removeTask(dayKey, listKey, taskId);
+        S().save();
+        App.ui.closeModal();
+        App.tasks.renderAll();
+        try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+        try { if (App.calendar && App.calendar.render) App.calendar.render(); } catch (e) { /* 忽略 */ }
+        App.ui.toast('📅 「' + String(task.text || '').slice(0, 14) + '」改到 ' + S().fmtDateCN(d) + ' 了' +
+          (dropN ? '（做完的 ' + dropN + ' 项没带过去）' : ''), 5600);
+      },
+      cancel: App.ui.closeModal
+    });
+  }
+
   function bindTodayEvents() {
     bindTaskAreaEvents(document.getElementById('task-columns'));
   }
@@ -4308,6 +4410,7 @@
         });
         return;
       }
+      if (act === 'move-day') { moveTaskDayModal(listKey, S().todayKey(), taskId); return; }   // 📅 v139
       if (act === 'sr-plan') { srPlanModal(srFindTask(taskId), listKey); return; }   // 🌱 v115
       if (act === 'lecture') { lecturePickModal(listKey, taskId, false); return; }
       if (act === 'memcards') {
@@ -4409,6 +4512,7 @@
       if (act === 'sub-add' && listKey) { addSubModal(listKey, actBtn.dataset.task, null, S().tomorrowKey()); return; }
       if (act === 'sub-edit' && listKey) { addSubModal(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
       if (act === 'sub-del' && listKey) { delSub(listKey, actBtn.dataset.task, actBtn.dataset.sub, S().tomorrowKey()); return; }
+      if (act === 'move-day' && listKey && row) { moveTaskDayModal(listKey, S().tomorrowKey(), row.dataset.id); return; }   // 📅 v139
       if (act === 'sr-plan' && listKey && row) {
         const tkSr = ((S().getDay(S().tomorrowKey()).tasks[listKey] || []).filter(function (t) { return t.id === row.dataset.id; })[0]) || null;
         if (tkSr) srPlanModal(tkSr, listKey);
@@ -6972,6 +7076,7 @@
     parseGap: parseGap, fmtGap: fmtGap, srCfgOf: srCfgOf, srBuildPlan: srBuildPlan,
     srReschedule: srReschedule, srPlanModal: srPlanModal, srWhen: srWhen, srWanted: srWanted,
     srAskAgain: srAskAgain,     // 🔁 v116
+    moveTaskDayModal: moveTaskDayModal,   // 📅 v139 改天再做（队列页也调它）
     mcWritable: mcWritable,     // 🃏 v117
     autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,

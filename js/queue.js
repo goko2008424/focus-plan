@@ -1601,6 +1601,7 @@
           '<span class="q-acts">' +
           (nCards ? '<button class="q-ib" data-act="qrev-cards" data-col="' + x.col + '" data-id="' + t.id + '" title="打开这套卡翻卡自测">🃏</button>' : '') +
           '<button class="q-ib" data-act="qrev-start" data-col="' + x.col + '" data-id="' + t.id + '" title="开始计时做这条">▶</button>' +
+          '<button class="q-ib" data-act="qrev-date" data-col="' + x.col + '" data-id="' + t.id + '" title="重新定日期：改天再做（本体+复习计划一起搬过去）">📅</button>' +
           '<button class="q-ib" data-act="qrev-open" data-col="' + x.col + '" data-id="' + t.id + '" title="去任务页看这条（🎧/🌱/逐题都在那儿）">→</button>' +
           '</span></div>';
       });
@@ -1901,7 +1902,7 @@
     }
     if (act === 'd-tomorrow-all') { moveAllDailyToTomorrow(); return; }
     // 🌱 v118：基础任务卡里「今天的复习」那几个按钮
-    if (act === 'qrev-start' || act === 'qrev-cards' || act === 'qrev-open') {
+    if (act === 'qrev-start' || act === 'qrev-cards' || act === 'qrev-date' || act === 'qrev-open') {
       const col = b.dataset.col || 'required';
       const day0 = S().getDay(S().todayKey());
       const t0 = (day0.tasks[col] || []).filter(function (x) { return x.id === b.dataset.id; })[0];
@@ -1914,6 +1915,13 @@
           if (cl.length && App.memcards.openCol) { App.memcards.openCol(cl[0].colId, {}); return; }
         } catch (e) { /* 忽略 */ }
         App.ui.toast('这条没挂着卡片合集了'); return;
+      }
+      if (act === 'qrev-date') {
+        // 🌱 v139：交给任务页那套「📅 改天再做」（一份实现，两个入口；顺带把 withKids 打开，
+        //   这样带小任务的复习行也只搬没做完的那部分）
+        if (App.tasks && App.tasks.moveTaskDayModal) App.tasks.moveTaskDayModal(col, S().todayKey(), t0.id);
+        else App.ui.toast('这条暂时改不了日期，刷新一下页面');
+        return;
       }
       if (act === 'qrev-open') {
         try { App.app.switchView('tasks'); } catch (e) {}
