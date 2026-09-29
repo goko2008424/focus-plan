@@ -477,7 +477,7 @@
       (plan || []).forEach(function (r) {
         if (r.done !== true || !r.at) return;
         const rk = S().dateKey(new Date(r.at));
-        if (!set[rk]) return;
+        if (!set[rk] || rk > tk) return;   // 🔒 未来日期的轮次绝不统计（哪怕在本周日历范围内）
         const kk = r.at + '|' + (r.n || 0) + '|' + (text || '');
         if (seen[kk]) return;          // 任务页副本 + 队列载体是同一轮，只算一次
         seen[kk] = true;
@@ -509,7 +509,7 @@
     });
     st.ckDays = Object.keys(cked).length;
     S().ledger().forEach(function (e) {
-      if (!set[e.date]) return;
+      if (!set[e.date] || e.date > tk) return;   // 🔒 未来日期的账目绝不统计
       const p = e.points || 0;
       if (p > 0) st.earned += p; else if (p < 0) st.spent += -p;
     });

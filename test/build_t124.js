@@ -64,10 +64,11 @@ d.queueDone = [{ id: 'QD1', text: '生物 · 遗传规律', minutes: 25, done: t
   sp: { planned: [{ n: 1, gap: 30, due: MS(at(3, '09:00:00')), done: true, at: MS(at(3, '10:00:00')),
     need: 1, hits: [MS(at(3, '10:00:00'))], result: 'ok', resultAt: MS(at(3, '10:00:00')) }] } }];
 
-// ---- 未来日期（绝不能被统计进去）----
-const dFut = day(K[8]);
+// ---- 未来日期（绝不能被统计进去）—— 放在今天+4，保证任何星期几都还在未来 ----
+const dFut = (function(){ var x=new Date(TODAY); x.setDate(x.getDate()+4); return day(key(x)); })();
 dFut.timeline.push({ id: 'TLF', start: 600, end: 1200, minutes: 600, content: '学习', category: 'study', countAsStudy: true, auto: false });
-dFut.sessions.push({ id: 'SF', taskText: '化学 · 未来不该出现', actualMinutes: 500, startAt: at(8, '10:00:00'), endAt: at(8, '18:20:00') });
+var futK = (function(){ var x=new Date(TODAY); x.setDate(x.getDate()+4); return key(x); })();
+dFut.sessions.push({ id: 'SF', taskText: '化学 · 未来不该出现', actualMinutes: 500, startAt: futK + 'T10:00:00', endAt: futK + 'T18:20:00' });
 
 // ---- 上周 ----
 const dPrev = day(K[-6]);

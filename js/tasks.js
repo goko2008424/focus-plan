@@ -6122,38 +6122,46 @@
     const plan = srPlan(t);
     if (!plan.length) return '';
     const now = Date.now();
-    const doneN = plan.filter(function (r) { return r.done === true; }).length;
+    // 🌱 v152：用户说旧设计（圆点 + 一堆 chips）看不懂 → 改成一句人话：
+    //   「第1次 原定9/28 → 9/29 ✓（原定≠实际才显示两个日期）· 下一次：原定10/6」
+    //   数据源不变（还是 sp.planned 的轮次），只是把「怎么讲」换了。
+    const doneR = plan.filter(function (r) { return r.done === true; });
     const pend = plan.filter(function (r) { return r.done === null; });
     const next = pend[0] || null;
     const late = !!next && next.due <= now;
-    // 🌱 v116：鼠标放上去能看全 —— 每一轮在哪天、什么状态（已完成 / 待做 / 已过期）
     const stoppedNow = !!(t && t.sp && t.sp.stopped);
-    const allTxt = '复习计划 ' + doneN + '/' + plan.length + ' 轮已完成' +
-      (stoppedNow ? '（🚩 已结束，不再安排）' : '') + ' ｜ ' +
+    const fmD = function (ms) { const d = new Date(ms); return (d.getMonth() + 1) + '/' + d.getDate(); };
+    const one = function (r, prefix) {
+      const due = fmD(r.due), at = r.at ? fmD(r.at) : '';
+      let s = prefix + '原定 ' + due;
+      if (at && at !== due) s += ' → 实际 ' + at;
+      return s + ' ✓' + (r.result === 'no' ? '（没写出来）' : '');
+    };
+    const bits = [];
+    doneR.slice(-2).forEach(function (r) { bits.push(one(r, '第' + r.n + '次 ')); });
+    if (doneR.length > 2) bits.unshift('…共 ' + doneR.length + ' 次');
+    let tail;
+    if (next) {
+      const nf = fmD(next.due);
+      tail = late ? '下一次：原定 ' + nf + ' · <b style="color:#b0262e">该复习了</b>'
+                  : '下一次：原定 ' + nf;
+    } else if (stoppedNow) {
+      tail = '已结束（不再安排）';
+    } else {
+      tail = '没有下一次了 —— 想继续就点 🌱 再排';
+    }
+    const allTxt = '复习记录 ' + doneR.length + '/' + plan.length + ' ｜ ' +
       plan.map(function (r) {
-        const st = r.done === true ? ('✓已完成' + (r.result ? '·' + SR_RES_LABEL[r.result] : '')) : (r.done === false ? '✗那天没做' : (r.due <= now ? '⚠️已过期还没做' : '待做'));
-        return '第' + r.n + '轮 ' + srWhen(r.due) + '(' + st + ')';
-      }).join(' ｜ ');
-    // 🌱 v116：日期直接写在行上（最多列 3 个），不用点开也不用悬停
-    const dates = pend.slice(0, 3).map(function (r) { return srWhen(r.due); }).join(' · ') +
-      (pend.length > 3 ? ' 等 ' + pend.length + ' 轮' : '');
-    // 🌱 v120：一次只定下一次 → 行上直接写「已复习 N 次 · 下次哪天几点」，鼠标放上去看全部历史
-    // 🚩 v122：主动结束的，行上就直接写「已结束」——不然跟"忘了排"根本分不清
-    const stopped = !!(t && t.sp && t.sp.stopped);
-    const label = next
-      ? ('🌱 已复习 ' + doneN + ' 次 · 下次 ' + dates + (late ? ' · 该复习了' : ''))
-      : (stopped
-        ? ('🌱 已复习 ' + doneN + ' 次 · 已结束')
-        : ('🌱 已复习 ' + doneN + ' 次 · 没有下一次了'));
+        const st = r.done === true ? ('✓做完' + (r.result ? '·' + SR_RES_LABEL[r.result] : ''))
+          : (r.done === false ? '✗那天没做' : (r.due <= now ? '⚠️过期还没做' : '还没到'));
+        return '第' + r.n + '轮 原定 ' + srWhen(r.due) + (r.at ? '（实际 ' + srWhen(r.at) + '）' : '') + ' ' + st;
+      }).join(' ｜ ') + (stoppedNow ? ' ｜ 🚩 已结束' : '');
     const cls2 = late ? ' late' : (next ? '' : ' done');
+    const main = bits.length ? bits.join(' · ') + ' · ' + tail : tail;
     return '<span class="rev-dots" title="' + allTxt + '">' +
-      plan.map(function (r) {
-        const isLate = r.done === null && r.due <= now;
-        const cls = r.done === true ? 'on' : (r.done === false ? 'miss' : (isLate ? 'late' : ''));
-        return '<i class="' + cls + '"></i>';
-      }).join('') + doneN + '/' + plan.length + '</span>' +
-      '<span class="rev-next' + cls2 + '" title="' + allTxt + '">' + label + '</span>';
+      '<span class="rev-next' + cls2 + '" title="' + allTxt + '">🌱 ' + main + '</span>';
   }
+
 
   function modeTagHTML(t) {
     if (!t) return '';
@@ -6484,8 +6492,15 @@
 
   function srPendingList() {
     const out = [];
+    const seenPR = {};
     srCarriers().forEach(function (x) {
-      srPendingOf(x.t).forEach(function (r) { out.push({ t: x.t, listKey: x.listKey, r: r }); });
+      srPendingOf(x.t).forEach(function (r) {
+        // 🌱 v152：同一条复习（同任务文字 + 同原定日）只提醒一次 —— 顺延副本/多载体不再把「34 轮」堆出来
+        const kk = String(x.t.text || '') + '|' + S().dateKey(new Date(r.due));
+        if (seenPR[kk]) return;
+        seenPR[kk] = true;
+        out.push({ t: x.t, listKey: x.listKey, r: r });
+      });
     });
     out.sort(function (a, b) { return a.r.due - b.r.due; });
     return out;

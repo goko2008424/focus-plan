@@ -317,69 +317,53 @@
    *  用户：「当天做了就打绿色的标；没做就顺延，按顺序把下一次的日期也标一下」
    *  链的样子：[9/24 ↷][9/27 ↷][今天 ·2][✓ 9/26][9/29]，✕ 仍能单独取消某天 */
   function schedBadgeHTML(colId) {
-    const list = schedDaysOf(colId);
-    if (!list.length) return '';
-    const today = S().todayKey();
-    const fm = function (k) { const p = String(k).split('-'); return (+p[1]) + '/' + (+p[2]); };
-    const doneN = list.filter(function (x) { return x.done; }).length;
-    const pendToday = list.filter(function (x) { return !x.done && x.key === today; });
-    const nextX = list.filter(function (x) { return !x.done && x.key > today; })[0] || null;
-    const chips = [];
-    const slipSeen = {};
-    let todayEmitted = false;
-    const addSlip = function (k) {
-      if (!k || slipSeen[k]) return;
-      slipSeen[k] = 1;
-      chips.push('<span class="mc-chip slip" title="' + k + ' 定的复习没做 → 已顺延（今天补上就行）">' + fm(k) + ' ↷</span>');
-    };
-    let runA = null, runB = null;
-    const flushRun = function () {
-      if (!runA) return;
-      const span = (runB && runB !== runA) ? (' ~ ' + fm(runB)) : '';
-      chips.push('<span class="mc-chip slip" title="' + runA + (span ? ' ~ ' + runB : '') +
-        ' 定的复习没做 → 已顺延（补上就行）">' + fm(runA) + span + ' ↷</span>');
-      runA = runB = null;
-    };
-    list.forEach(function (x) {
-      // ① 顺延史：过去定了没做、已经被顺延走的（superseded=结算搬走了；兜底=异常滞留）—— 连续的并成一枚
-      if (!x.done && x.key < today) {
-        if (!runA) runA = x.key;
-        runB = x.key;
-        slipSeen[x.key] = 1;
-        return;
-      }
-      flushRun();
-      // ② 做完的：绿底 ✓，标的是**做完那天**
-      if (x.done) {
-        chips.push('<span class="mc-chip done" title="' + x.key + ' 做完了' + (x.at ? '（' + String(x.at).slice(11, 16) + '）' : '') +
-          ' · 那天的任务：' + esc(x.text) + '">✓ ' + fm(x.key) + '</span>');
-        return;
-      }
-      // ③ 今天该补的：顺延起点先摆出来，再合并成「今天 ·N」一枚
-      if (x.key === today) {
-        if (!todayEmitted) {
-          todayEmitted = true;
-          pendToday.forEach(function (y) { addSlip(y.slippedFrom); });
-          chips.push('<span class="mc-chip today" title="定过的日子没做 → 顺延到今天来了。点「打开 / 复习」直接做，点 ✕ 取消">' +
-            '今天' + (pendToday.length > 1 ? ' · ' + pendToday.length : '') +
-            '<i class="mc-chip-x" data-act="mc-unsched" data-col="' + colId + '" data-day="' + today +
-            '" title="取消今天的补复习">✕</i></span>');
-        }
-        return;
-      }
-      // ④ 还没到点的：绿虚线框
-      chips.push('<span class="mc-chip next" title="' + x.key + ' · 还没到点 · 那天的任务：' + esc(x.text) + '">' + fm(x.key) +
-        '<i class="mc-chip-x" data-act="mc-unsched" data-col="' + colId + '" data-day="' + x.key +
-        '" title="取消 ' + x.key + ' 这天的复习安排">✕</i></span>');
+    // 🌱 v152：旧 chips 设计（顺延史/今天·N/下一次…）看不懂 → 一句人话；
+    //   且**按真实完成的轮次**计数（以前数的是「有这张卡的任务的日子」，顺延副本也算，才一次复习标成 2 次）。
+    //   数据源：所有挂着这套卡（mcRef.colId）的任务的 sp.planned 轮次，按「原定日+轮次号」去重。
+    const rounds = [];
+    const seenR = {};
+    const days = (S().data() || {}).days || {};
+    Object.keys(days).forEach(function (k) {
+      const d = days[k];
+      if (!d || !d.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        (d.tasks[c] || []).forEach(function (t) {
+          if (!t.mcRef || t.mcRef.colId !== colId) return;
+          ((t.sp && t.sp.planned) || []).forEach(function (r) {
+            const key = S().dateKey(new Date(r.due)) + '|' + (r.n || 0);
+            if (seenR[key]) return;
+            seenR[key] = true;
+            rounds.push({ due: r.due, done: r.done === true, at: r.at || null, result: r.result || '' });
+          });
+        });
+      });
     });
-    flushRun();
-    let tail = '';
-    if (pendToday.length && nextX) tail = '<span class="mc-schedsum">做完 → 下一次 ' + fm(nextX.key) + '</span>';
-    else if (nextX) tail = '<span class="mc-schedsum">下一次 ' + fm(nextX.key) + '</span>';
-    else if (doneN === list.length) tail = '<span class="mc-schedsum">都做完啦 ✓</span>';
-    return '<div class="mc-schedline" title="定的日子做了打 ✓；没做自动顺延，直到做完 —— 点日期上的 ✕ 能取消某一天">' +
-      '<span class="mc-schedlab">📅 复习 ' + list.length + ' 次</span>' + chips.join('') + tail +
-      '<button class="mc-ib" data-act="mc-unsched-all" data-id="' + colId + '" title="清空这个合集的全部复习安排">🧹</button></div>';
+    if (!rounds.length) return '';
+    rounds.sort(function (a, b) { return a.due - b.due; });
+    const fm = function (ms) { const d = new Date(ms); return (d.getMonth() + 1) + '/' + d.getDate(); };
+    const doneR = rounds.filter(function (r) { return r.done; });
+    const lateR = rounds.filter(function (r) { return !r.done && r.due <= Date.now(); });
+    const nextR = rounds.filter(function (r) { return !r.done && r.due > Date.now(); })[0] || null;
+    const parts = [];
+    if (doneR.length) {
+      const last = doneR[doneR.length - 1];
+      const dueD = S().dateKey(new Date(last.due));
+      const atD = last.at ? S().dateKey(new Date(last.at)) : dueD;
+      if (doneR.length === 1) {
+        parts.push('复习 1 次：' + (dueD === atD ? fm(dueD) + ' ✓' : '原定 ' + fm(dueD) + ' → 实际 ' + fm(atD) + ' ✓'));
+      } else {
+        parts.push('复习 ' + doneR.length + ' 次，最近：' + (dueD === atD ? fm(dueD) + ' ✓' : '原定 ' + fm(dueD) + ' → 实际 ' + fm(atD) + ' ✓'));
+      }
+    }
+    if (lateR.length) {
+      parts.push('原定 ' + fm(lateR[lateR.length - 1].due) + ' 没做 → <b>顺延中</b>' + (doneR.length ? '（补上就记实际日期）' : ''));
+    }
+    if (nextR) {
+      parts.push('下一次：原定 ' + fm(nextR.due));
+    }
+    if (!parts.length) return '';
+    return '<div class="mc-schedline" title="一次复习一条记录：哪天做了打 ✓（记实际日期）；原定日没做就顺延，直到做完">' +
+      '📅 ' + parts.join(' · ') + '</div>';
   }
 
   /** 📅 v116：某一天里，这个合集已经排过的（用来提示"这天排过了"） */

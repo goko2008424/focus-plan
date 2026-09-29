@@ -1,10 +1,10 @@
 // 打包单文件预览版：把 v131 的样式+全部脚本+演示种子打进一个 HTML
 // 用法: 先 node test/build_t124.js（拿最新种子），再 node test/build_preview.js
-// 产出: D:/dsh任务插件/focus-plan-预览-v131.html（双击即开，file:// 存储与线上隔离）
+// 产出: D:/dsh任务插件/focus-plan-预览-v152.html（双击即开，file:// 存储与线上隔离）
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
-const OUT = 'D:/dsh任务插件/focus-plan-预览-v138.html';
+const OUT = 'D:/dsh任务插件/focus-plan-预览-v152.html';
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
