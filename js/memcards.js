@@ -200,11 +200,59 @@
    *     mcRef.slippedFrom 记住最初定的日子（排期链上显示「9/24 ↷」）
    *  ② 结算已经复制了一份到后面 → 原地那条标 superseded（只当顺延史，不再算「该做的」）
    *  卡片页每次渲染前跑（pageHTML / init），打开页面就能看到最新位置 */
+  /** 🛟 v147：这套卡在 dayKey 当天（或之后）翻过吗？—— 翻过 = 那天复习过 */
+  function flippedOn(colId, dayKey) {
+    const c = find(colId);
+    return !!(c && c.lastFlipDay && c.lastFlipDay >= dayKey);
+  }
+  /** 🛟 v147：把一条漏勾的复习任务补勾 + 补发分（记在它所在的那天 —— 做了就该有分） */
+  function markTaskDone(t, dayKey, colKey) {
+    t.done = true;
+    t.doneAt = new Date().toISOString();
+    t.autoDone = true;    // 标记：系统补勾的（用户手动勾也会走任务页自己的发分）
+    const p = (t.points != null) ? (+t.points || 0) : 0;
+    if (p > 0) {
+      S().addLedger(dayKey, 'earn-required', {
+        points: p,
+        note: '🌱 复习补记（那天翻过这套卡）：' + String(t.text || '').slice(0, 24) + ' · +' + p + ' 分',
+        taskId: t.id
+      });
+    }
+  }
+  /** 🧹 v147：把今天**成对/成堆**的重复复习清掉 —— 同一栏、同名（复习·开头）、都没做的，
+   *  保留一条（优先今天新排的正轮），其余删掉。用户一晚上被滚出 80 条就是这来的。 */
+  function dedupeReviewDupes() {
+    const today = S().todayKey();
+    const day = S().getDay(today);
+    let n = 0;
+    ['required', 'ideal', 'extra'].forEach(function (c) {
+      const arr = day.tasks[c] || [];
+      const seen = {};
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const t = arr[i];
+        if (t.done === true) continue;
+        const txt = String(t.text || '').trim();
+        if (!/^复习/.test(txt)) continue;          // 只收复习任务，别的任务绝不碰
+        const key = c + '|' + txt;
+        if (!seen[key]) {
+          // 留下第一条（从后往前扫，遇到的就是"最后写的"—— 优先保留今天新排的正轮，
+          //   顺延来的旧副本在更前面，会被下面 continue 掉吗？不会 —— 从后往前第一条留下，其余删）
+          seen[key] = true;
+          continue;
+        }
+        arr.splice(i, 1); n++;
+      }
+    });
+    if (n) S().save();
+    return n;
+  }
+
   function mcSweepOverdue() {
+    try { dedupeReviewDupes(); } catch (e) { /* 忽略 */ }   // 🧹 v147：先清成对的重复复习
     const data = S().data() || {};
     const days = data.days || {};
     const today = S().todayKey();
-    let moved = 0, marked = 0;
+    let moved = 0, marked = 0, fixed = 0;
     const overs = {};
     Object.keys(days).forEach(function (k) {
       if (k >= today) return;
@@ -213,6 +261,8 @@
       ['required', 'ideal', 'extra'].forEach(function (c) {
         (d.tasks[c] || []).forEach(function (t) {
           if (!t.mcRef || !t.mcRef.colId || t.done === true) return;
+          // 🛟 v147：那天翻过这套卡 = 那天复习过了 —— 补勾 + 补发分，不再当「没做完」
+          if (flippedOn(t.mcRef.colId, k)) { markTaskDone(t, k, c); fixed++; return; }
           (overs[t.mcRef.colId] = overs[t.mcRef.colId] || []).push({ k: k, c: c, t: t });
         });
       });
@@ -241,14 +291,26 @@
         const list = (d0 && d0.tasks && d0.tasks[e.c]) || [];
         const ix = list.indexOf(e.t);
         if (ix < 0) return;
+        // 🛟 v147：今天已经有同名的了（新排的轮次/别的副本）→ 不再搬，标 superseded ——
+        //    不然「顺延来的 + 今天新排的」成对出现，任务翻倍（用户一晚上被滚出 80 条）
+        const tday = S().getDay(today);
+        const dupToday = ['required', 'ideal', 'extra'].some(function (c2) {
+          return (tday.tasks[c2] || []).some(function (x) {
+            return x !== e.t && String(x.text || '').trim() === String(e.t.text || '').trim() && x.done !== true;
+          });
+        });
+        if (dupToday) {
+          if (!e.t.mcRef.superseded) { e.t.mcRef.superseded = true; marked++; }
+          return;
+        }
         list.splice(ix, 1);
         if (!e.t.mcRef.slippedFrom) e.t.mcRef.slippedFrom = e.k;
         S().getDay(today).tasks.required.push(e.t);
         moved++;
       });
     });
-    if (moved || marked) save();
-    return { moved: moved, marked: marked };
+    if (moved || marked || fixed) save();
+    return { moved: moved, marked: marked, fixed: fixed };
   }
 
   /** 📅 v116→v120→v142：合集行上的「复习排期链」
@@ -416,6 +478,7 @@
   let phCache = {};                 // id -> dataURL
   let phReady = false;
   let phWait = [];
+  let phFailed = false;             // 🛟 v148：图片库读失败时置位（卡片页出警示横幅）
 
   function phOpen() {
     return new Promise(function (resolve, reject) {
@@ -444,8 +507,16 @@
         };
         rq.onerror = function () { resolve(false); };
       });
-    }).catch(function () { /* 没 IDB 也不致命 */ }).then(function () {
+    }).catch(function () {
+      phFailed = true;              // 🛟 v148：读失败要喊出来，别悄悄装没事
+      return false;
+    }).then(function (okLoad) {
       phReady = true;
+      if (okLoad === false) {
+        phFailed = true;
+        // 60 秒后自动重试一次（Edge 更新/占用时偶发打不开）
+        setTimeout(function () { phReady = false; phFailed = false; phLoadAll(); }, 60000);
+      }
       flushPhWait();
     });
   }
@@ -534,10 +605,16 @@
   }
   /** 正面/反面整块（文字 + 图），全站统一走这两个函数 */
   function faceHTML(card) {
-    return (card.front ? render(card.front) : '') + imgsHTML(card.frontImgs);
+    const base = (card.front ? render(card.front) : '') + imgsHTML(card.frontImgs);
+    if (base || !(card.frontImgs || []).length) return base;
+    // 🛟 v148：正面只有图、但图片库没读出来 —— 别让人以为正面是空的
+    return '<span class="hint">（正面是图片 —— 图片库没加载出来，<b>刷新一下页面</b>试试）</span>';
   }
   function backHTML(card) {
-    return (card.back ? render(card.back) : '') + imgsHTML(card.backImgs) + suppsHTML(card);
+    const base = (card.back ? render(card.back) : '') + imgsHTML(card.backImgs) + suppsHTML(card);
+    if (base || !(card.backImgs || []).length) return base;
+    // 🛟 v148：反面只有图、但图片库没读出来 —— 别显示「反面还没写」让人以为内容没了
+    return '<span class="hint">（反面是图片 —— 图片库没加载出来，<b>刷新一下页面</b>试试）</span>';
   }
   function hasText(card) {
     return !!(card && ((card.front || '').trim() || (card.back || '').trim()));
@@ -1403,7 +1480,16 @@
       for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = o[i]; o[i] = o[j]; o[j] = t; }
       state.order = o; state.idx = 0; state.flipped = false; paint(); return;
     }
-    if (act === 'mc-flip') { state.flipped = !state.flipped; paint(); return; }
+    if (act === 'mc-flip') {
+      state.flipped = !state.flipped;
+      // 🛟 v147：翻卡 = 这套卡当天复习过 —— 记下日期，结算/顺延就不再把它当「没做完」
+      //   （此前翻卡复习做完从不勾任务，结算每天把「未做」的复制一份，越滚越多成雪球）
+      try {
+        const tk = S().todayKey();
+        if (col.lastFlipDay !== tk) { col.lastFlipDay = tk; S().save(); }
+      } catch (e) { /* 忽略 */ }
+      paint(); return;
+    }
     if (act === 'mc-next') {
       state.flipped = false;
       state.idx = (state.idx + 1) % state.order.length;
@@ -1681,7 +1767,21 @@
       return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
     });
     const total = list.reduce(function (n, c) { return n + (c.cards || []).length; }, 0);
-    let h = '<div class="card">' +
+    // 🛟 v148：图片库读出来是空的、但卡片明明引用了图 → 大声警示（别让人以为卡坏了）
+    let phWarn = '';
+    try {
+      const refN = list.reduce(function (n, c) {
+        return n + (c.cards || []).reduce(function (m, x) {
+          return m + (x.frontImgs || []).length + (x.backImgs || []).length;
+        }, 0);
+      }, 0);
+      if (refN > 0 && photoStats().n === 0) {
+        phWarn = '<div class="mc-closewarn" style="margin:0 0 10px">⚠️ <b>图片库一张图都没读出来</b>' +
+          '（你的卡引用了 ' + refN + ' 张图）。先<b>刷新页面</b>试试；还不行说明图片数据可能被浏览器清了 —— ' +
+          '去设置页的「💾 自动备份」里<b>恢复备份</b>，图会连着数据一起回来。</div>';
+      }
+    } catch (e) { /* 忽略 */ }
+    let h = (phWarn || '') + '<div class="card">' +
       '<h2>🃏 设问卡</h2>' +
       '<p class="hint" style="margin-top:-2px">听课「③ 整理」那一步给自己出的题，都收在这里 —— 一个合集 = 一节课。' +
       '出题：<b>听课 → ③整理 → 🃏 设问卡</b>，或任务行上的 🃏（课已经上完了也能补加）。<br>' +
@@ -1878,6 +1978,9 @@
     openRef: openRef,
     schedCardModal: schedCardModal,
     schedDaysOf: schedDaysOf, schedBadgeHTML: schedBadgeHTML, dupOnDay: dupOnDay, mcSweepOverdue: mcSweepOverdue,   // 📅 v116
+    flippedOn: flippedOn,               // 🛟 v147 结算也要问「那天翻过这套卡没」
+    phFailedNow: function () { return phFailed; },   // 🛟 v148
+    dedupeReviewDupes: dedupeReviewDupes,
     cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,
     addSubject: addSubject,

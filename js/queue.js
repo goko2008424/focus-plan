@@ -687,6 +687,22 @@
     });
   }
 
+  /** 🏅 v146b：这条每日必做完成得几分（没单独设就用全局默认 dailyPoints，默认 2） */
+  function dailyPts(it) {
+    if (it && it.points != null) return Math.max(0, +it.points || 0);
+    const v = (S().settings() || {}).dailyPoints;
+    return (v == null ? 2 : +v) || 0;
+  }
+  /** 🏅 v146b：行内改每日必做的积分（写源条目；打勾时按这个发） */
+  function onDailyPtsChange(e) {
+    const t = e.target;
+    if (!t || !t.dataset || t.dataset.dpts == null) return;
+    const it = findIn(DY(), t.dataset.dpts);
+    if (!it) return;
+    it.points = Math.max(0, +t.value || 0);
+    S().save();
+    App.ui.toast(it.points > 0 ? ('🏅 打勾完成得 ' + it.points + ' 分') : '这条完成时不发分（改成 0 了）');
+  }
   function dToggle(id) {
     const it = findIn(DY(), id);
     if (!it) return;
@@ -694,6 +710,23 @@
     const k = S().todayKey();
     const on = !it.days[k];
     if (on) it.days[k] = Date.now(); else delete it.days[k];
+    // 🏅 v146b：勾上发分 / 取消退分（此前每日必做完成从不发分！）
+    const dp = dailyPts(it);
+    if (on && dp > 0) {
+      S().addLedger(k, 'earn-daily', {
+        points: dp,
+        note: '📌 每日必做完成：' + String(it.text || '').slice(0, 24) + ' · +' + dp + ' 分',
+        taskId: id
+      });
+      const led = S().data().ledger || [];
+      if (led.length) { it.ledIds = it.ledIds || {}; it.ledIds[k] = led[led.length - 1].id; }
+    } else if (!on && it.ledIds && it.ledIds[k]) {
+      const lid = it.ledIds[k];
+      const arr = S().data().ledger || [];
+      const ix = arr.findIndex(function (x) { return x.id === lid; });
+      if (ix >= 0) arr.splice(ix, 1);   // ↩ 取消勾，把那笔也退掉
+      delete it.ledIds[k];
+    }
     // 📌 v96：任务页那份副本跟着一起勾/取消 —— 不然两边会不一致
     // ⚠️ 这里必须用 includeDone：勾上之后副本就是 done=true 了，
     //    只用「未完成的」去找会 null，于是**取消勾同步不过去**（v96 第一版就是这么错的）
@@ -1553,7 +1586,10 @@
           (done ? '✓' : '') + '</button>' +
           '<span class="q-text">' + esc(it.text) + mtag(it, 'daily') +
             (it.movedFrom === shiftDayBack2(k) ? '<span class="d-moved">↩ 昨天挪来的</span>' : '') +
-            dailySubHTML(it, !!openDaily[it.id]) + '</span>' +
+            dailySubHTML(it, !!openDaily[it.id]) +
+            // 🏅 v146b：每日必做也有积分框（此前勾每日必做从不发分！）
+            '<input class="q-pts-inp" type="number" min="0" data-dpts="' + it.id + '" value="' + dailyPts(it) +
+            '" title="打勾完成得多少分（改成 0 = 不发分）" /></span>' +
           '<span class="q-meta">' + meta + '</span>' +
           '<span class="q-acts">' +
           '<button class="q-ib d-start' + (running ? ' running' : '') + '" data-act="d-start" data-id="' + it.id +
@@ -2050,7 +2086,10 @@
     const root = document.getElementById('queue-view');
     if (root) {
       root.addEventListener('click', onClick);
-      root.addEventListener('change', onPtsChange);   // 🏅 v146：行内积分
+      root.addEventListener('change', function (e) {
+        onPtsChange(e);
+        onDailyPtsChange(e);   // 🏅 v146b：每日必做行内积分
+      });
     }
     const bar = document.getElementById('queue-bar');
     if (bar) bar.addEventListener('click', onClick);

@@ -206,12 +206,23 @@
   /** 把图片池同步成"现在这份"（内容没变就不写，别每 3 小时重写几 MB） */
   function syncPool() {
     const map = photoMap();
-    const sigNow = poolSigOf(map);
-    const n = Object.keys(map).length;
     return poolGet().then(function (old) {
-      const info = { n: n, mb: photoMBOf(map), sig: sigNow, changed: false };
+      // 🛟 v148：**合并**而不是覆盖 —— 旧池保底，当前内存里的图往上叠。
+      //   以前直接拿当前内存快照整份覆盖：页面刚打开时 phCache 还没从图片库读完
+      //   （几百张图要读好几秒），第一份自动备份就抢跑了 → 池子被覆盖成残缺的，
+      //   旧图在备份里的救命副本也没了（不可逆）。
+      const merged = {};
+      if (old && old.photos) Object.keys(old.photos).forEach(function (id) {
+        if (old.photos[id]) merged[id] = old.photos[id];
+      });
+      Object.keys(map || {}).forEach(function (id) {
+        if (map[id]) merged[id] = map[id];
+      });
+      const sigNow = poolSigOf(merged);
+      const n = Object.keys(merged).length;
+      const info = { n: n, mb: photoMBOf(merged), sig: sigNow, changed: false };
       if (old && old.sig === sigNow) return info;
-      return bodyPut({ id: PHOTO_KEY, photos: map, sig: sigNow, at: Date.now() }).then(function () {
+      return bodyPut({ id: PHOTO_KEY, photos: merged, sig: sigNow, at: Date.now() }).then(function () {
         info.changed = true;
         return info;
       });

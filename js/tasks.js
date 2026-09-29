@@ -2860,6 +2860,22 @@
       ids.forEach(function (id) {
         const u = undone.find(function (x) { return x.task.id === id; });
         if (!u) return;
+        // 🛟 v147：复习任务在**当天翻过这套卡** = 已经复习过了 —— 补勾 + 补发分，不再往后滚
+        //   （此前翻卡复习不勾任务，结算每天把「未做」的复制一份，越滚越多成雪球）
+        if (u.task.mcRef && u.task.mcRef.colId && App.memcards && App.memcards.flippedOn &&
+            App.memcards.flippedOn(u.task.mcRef.colId, dayKey)) {
+          const rt = u.task;
+          rt.done = true; rt.doneAt = new Date().toISOString(); rt.autoDone = true;
+          const rp = (rt.points != null) ? (+rt.points || 0) : 0;
+          if (rp > 0) {
+            S().addLedger(dayKey, 'earn-required', {
+              points: rp,
+              note: '🌱 复习补记（那天翻过这套卡）：' + String(rt.text || '').slice(0, 24) + ' · +' + rp + ' 分',
+              taskId: rt.id
+            });
+          }
+          return;
+        }
         // ↩ v74：带上 rolled 标记 —— 以前只有 {id,text}，搬过来的任务和今天定的长得一模一样，
         //    用户完全分不清哪些是今天该做的、哪些是昨天剩的（这是他「事情越堆越多」的来源之一）
         const t = { id: S().uid(), text: u.task.text, rolled: true };
@@ -6835,6 +6851,8 @@
   }
 
   function renderAll() {
+    // 🧹 v147：进任务页先把今天成对的重复复习清掉（窄条件：同栏同名且以「复习」开头）
+    try { if (App.memcards && App.memcards.dedupeReviewDupes) App.memcards.dedupeReviewDupes(); } catch (e) { /* 忽略 */ }
     renderToday();
     renderTomorrow();
     // 🎧 三步面板的按钮/预算是动态拼进任务行的，渲染完要重新接一次事件
