@@ -153,6 +153,8 @@ const SLIDES = [
       '<div class="tl" data-i="63"><div class="n">v63</div><div class="t">队列任务 · 行内积分</div></div>'+
       '<div class="tl" data-i="64"><div class="n">v64</div><div class="t">复习做过就算数 · 防翻倍</div></div>'+
       '<div class="tl" data-i="65"><div class="n">v65</div><div class="t">图片保护 · 备份池只增不减</div></div>'+
+      '<div class="tl" data-i="66"><div class="n">v66</div><div class="t">复习行积分 · 当天翻卡当天勾</div></div>'+
+      '<div class="tl" data-i="67"><div class="n">v67</div><div class="t">图片救援 · 只救图不动数据</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -1726,6 +1728,27 @@ const SLIDES = [
         "现在改成**只增不减**：旧图永远留在池子里，新图往上叠"]},
       {t:"🩺 图片库更皮实", c:"#e0a02c", items:[
         "图片库偶尔打不开（浏览器更新/占用）→ 60 秒自动重试，不再一坏就永远空着"]}
+    ]
+  },
+  {
+    name:"v66 · 复习行也有积分",
+    badge:{t:"v66 · 🏅",c:"#e0a02c"},
+    tag:"「今天的复习」每行后面也有**分数框** —— 改完，翻卡做完就按它发分",
+    cols:[
+      {t:"🏅 复习也攒分", c:"#e0a02c", items:[
+        "「今天的复习」每条后面有个分数框（默认显示这条排期时定的分）",
+        "点一下直接改 —— **翻卡做完自动算完成时，就按这个分发**",
+        "当天翻完这套卡，当天的任务也自动勾上（不用第二天才发现没算数）"]}
+    ]
+  },
+  {
+    name:"v67 · 图片救援",
+    badge:{t:"v67 · 🖼",c:"#0ea5e9"},
+    tag:"图库被清了也不怕 —— 恢复包**只把图写回图库**，其他数据一根手指都不碰",
+    cols:[
+      {t:"🖼 一键救图", c:"#0ea5e9", items:[
+        "设置 → 备份 → **🖼 图片救援**：选图片恢复包（json），图就回到卡片上",
+        "只恢复图片，任务/卡片/积分数据**不会被替换**"]}
     ]
   },
   {

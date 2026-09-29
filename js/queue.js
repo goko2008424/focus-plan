@@ -1639,7 +1639,12 @@
         h += '<div class="q-row q-rev-row" data-id="' + t.id + '">' +
           '<span class="q-text">' + esc(t.text) +
           (nCards ? ' <span class="mc-chip" title="这套卡有 ' + nCards + ' 张">🃏 ' + nCards + '</span>' : '') +
-          dots + '</span>' +
+          dots +
+          // 🏅 v149：复习行也有积分框 —— 改的就是这条任务自己的 points，
+          //   翻卡做完自动补勾时（v147）/ 任务页打勾时都按它发分
+          '<input class="q-pts-inp" type="number" min="0" data-rpts="' + t.id + '" data-rcol="' + x.col +
+          '" value="' + (t.points != null ? t.points : 2) +
+          '" title="这条复习完成得多少分（翻卡做完自动算完成时按这个发；改成 0 = 不发分）" /></span>' +
           '<span class="q-acts">' +
           (nCards ? '<button class="q-ib" data-act="qrev-cards" data-col="' + x.col + '" data-id="' + t.id + '" title="打开这套卡翻卡自测">🃏</button>' : '') +
           '<button class="q-ib" data-act="qrev-start" data-col="' + x.col + '" data-id="' + t.id + '" title="开始计时做这条">▶</button>' +
@@ -2066,7 +2071,21 @@
    *  不然完成时 syncBack 会拿副本里的旧分，把源上刚设的分盖回去。 */
   function onPtsChange(e) {
     const t = e.target;
-    if (!t || !t.dataset || t.dataset.pts == null) return;
+    if (!t || !t.dataset) return;
+    // 🏅 v149：「今天的复习」行内积分 —— 改的是任务本体（mcRef 复习任务），
+    //   翻卡做完自动补勾（v147 markTaskDone）/ 任务页打勾都按这个分发
+    if (t.dataset.rpts != null) {
+      const col = t.dataset.rcol || 'required';
+      const dayR = S().getDay(S().todayKey());
+      const taskR = (dayR.tasks[col] || []).filter(function (x) { return x.id === t.dataset.rpts; })[0];
+      if (!taskR) return;
+      const vR = Math.max(0, +t.value || 0);
+      taskR.points = vR;
+      S().save();
+      App.ui.toast(vR > 0 ? ('🏅 这条复习完成时得 ' + vR + ' 分') : '这条复习完成时不发分（改成 0 了）');
+      return;
+    }
+    if (t.dataset.pts == null) return;
     const it = findIn(Q(), t.dataset.pts);
     if (!it) return;
     const v = Math.max(0, +t.value || 0);

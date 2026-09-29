@@ -455,6 +455,7 @@
         '<button class="btn btn-small" data-bk-act="file" data-id="' + (last ? last.id : '') + '"' + (last ? '' : ' disabled') + '>⬇ 把最新一份存成文件</button>' +
         '<button class="btn btn-small" data-bk-act="prune">🧹 清理过期的</button>' +
         '<button class="btn btn-small" data-bk-act="import">⬆ 从文件恢复</button>' +
+        '<button class="btn btn-small" data-bk-act="photo-rescue">🖼 图片救援</button>' +
         '<button class="btn btn-small" data-bk-act="all">🗂 看全部（' + all.length + ' 份 · ' + kb(total) + '）</button>' +
         '</div>' +
         (all.length
@@ -486,6 +487,43 @@
     });
   }
 
+  /** 🖼 v150：图片救援 —— 选一个恢复包（{图id: dataURL}，或任意含 __photos__ 的备份导出文件），
+   *  **只把图写回图库**，任务/卡片数据一个字都不动。专治「图库被清了但卡片引用还在」。 */
+  function photoRescue() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.json,application/json';
+    inp.style.display = 'none';
+    inp.addEventListener('change', function () {
+      const f = inp.files && inp.files[0];
+      try { document.body.removeChild(inp); } catch (e) { /* 忽略 */ }
+      if (!f) return;
+      const fr = new FileReader();
+      fr.onload = function () {
+        try {
+          const d = JSON.parse(fr.result);
+          let map = null;
+          if (d && d.photos && typeof d.photos === 'object') map = d.photos;               // 图片池条目本身
+          else if (d && d.body && d.body.__photos__ && d.body.__photos__.photos) map = d.body.__photos__.photos;
+          else if (d && typeof d === 'object' && !d.days) map = d;                          // 纯 {id: dataURL}
+          else if (d && d.body && Array.isArray(d.body)) {                                  // 导出文件格式：body 是数组
+            const p = d.body.filter(function (x) { return x && x.id === '__photos__'; })[0];
+            if (p && p.photos) map = p.photos;
+          }
+          if (!map || !Object.keys(map).length) { App.ui.toast('这个文件里没找到图片 —— 要选「图片恢复包.json」这种'); return; }
+          const n = (App.memcards && App.memcards.restorePhotos) ? App.memcards.restorePhotos(map) : 0;
+          App.ui.toast('🖼 图片救援完成：写回 ' + n + ' 张图 —— 刷新页面就能看到了', 6000);
+          render();
+        } catch (e) {
+          App.ui.toast('文件读不出来：' + ((e && e.message) || e), 5000);
+        }
+      };
+      fr.readAsText(f);
+    });
+    document.body.appendChild(inp);
+    inp.click();
+  }
+
   function bind() {
     const box = document.getElementById('bk-box');
     if (!box || box.dataset.bkBound) return;
@@ -500,7 +538,7 @@
         prune().then(function (n) { App.ui.toast(n ? ('🧹 清掉 ' + n + ' 份过期备份') : '🧹 没有过期的'); render(); });
         return;
       }
-      if (act === 'import') { importFile(); return; }
+      if (act === 'photo-rescue') { photoRescue(); return; }
       if (act === 'all') { allModal(); return; }
       if (act === 'close') { App.ui.closeModal(); return; }
       if (act === 'restore') {

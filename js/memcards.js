@@ -1486,7 +1486,21 @@
       //   （此前翻卡复习做完从不勾任务，结算每天把「未做」的复制一份，越滚越多成雪球）
       try {
         const tk = S().todayKey();
-        if (col.lastFlipDay !== tk) { col.lastFlipDay = tk; S().save(); }
+        if (col.lastFlipDay !== tk) {
+          col.lastFlipDay = tk;
+          // 🛟 v149b：当天翻过这套卡 → 当天排的复习任务也自动勾 + 发分
+          //   （sweep 只管过去日的漏勾；当天不勾的话，明天结算又会把它当「没做完」滚一份 ——
+          //    昨天那个雪球的原点就是这个）
+          const d0 = S().getDay(tk);
+          ['required', 'ideal', 'extra'].forEach(function (c) {
+            (d0.tasks[c] || []).forEach(function (t) {
+              if (t.done === true) return;
+              if (!t.mcRef || t.mcRef.colId !== col.id) return;
+              markTaskDone(t, tk, c);
+            });
+          });
+          S().save();
+        }
       } catch (e) { /* 忽略 */ }
       paint(); return;
     }
