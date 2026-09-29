@@ -1271,7 +1271,10 @@
   function rowQ(it, n) {
     return '<div class="q-row" data-id="' + it.id + '">' +
       '<span class="q-idx">' + n + '</span>' +
-      '<span class="q-text">' + esc(it.text) + mtag(it, 'queue') + ptsBadge(it) + subDetailHTML(it.subs, it.groups) + '</span>' +
+      '<span class="q-text">' + esc(it.text) + mtag(it, 'queue') + subDetailHTML(it.subs, it.groups) +
+      // 🏅 v146：行内积分框 —— 显示当前生效分（没单独设就显示全局默认），改完完成时就按它发
+      '<input class="q-pts-inp" type="number" min="0" data-pts="' + it.id + '" value="' + itemPoints(it) +
+      '" title="这条完成得多少分（完成时按这个发；改成 0 = 不发分）" /></span>' +
       '<span class="q-acts">' +
       '<button class="q-ib" data-act="q-done" data-id="' + it.id + '" title="做完了">✓</button>' +
       '<button class="q-ib" data-act="q-top" data-id="' + it.id + '" title="调到第一个（队列最上面）">⇈</button>' +
@@ -1379,7 +1382,10 @@
       const copy = findCopyOf(c.id);
       h += '<div class="q-now">' +
         '<div class="q-now-tag">▶ 现在做这条</div>' +
-        '<div class="q-now-mode">' + mtag(c, 'queue', c.id) + ptsBadge(c) + '</div>' +
+        // 🏅 v146b：当前条也能行内改积分（跟下面列表一致；onPtsChange 会同步源+今天副本）
+        '<div class="q-now-mode">' + mtag(c, 'queue', c.id) +
+        '<input class="q-pts-inp" type="number" min="0" data-pts="' + c.id + '" value="' + itemPoints(c) +
+        '" title="这条完成得多少分（完成时按这个发；改成 0 = 不发分）" /></div>' +
         // 🧲 v85：直接嵌入完整任务行 —— 计时 / 🎧 听课三步 / 小任务·任务组 全在原地，不用去任务页
         (copy && App.tasks && App.tasks.taskRowHTML
           ? '<div class="task-col q-now-area" data-col="required" id="q-now-area">' +
@@ -1603,7 +1609,7 @@
           '<button class="q-ib" data-act="qrev-start" data-col="' + x.col + '" data-id="' + t.id + '" title="开始计时做这条">▶</button>' +
           '<button class="q-ib" data-act="qrev-date" data-col="' + x.col + '" data-id="' + t.id + '" title="重新定日期：改天再做（本体+复习计划一起搬过去）">📅</button>' +
           '<button class="q-ib" data-act="qrev-del" data-col="' + x.col + '" data-id="' + t.id + '" title="把这条从今天的复习里收走（任务页那章和复习计划不受影响）">🗑</button>' +
-          '<button class="q-ib" data-act="qrev-open" data-col="' + x.col + '" data-id="' + t.id + '" title="去任务页看这条（🎧/🌱/逐题都在那儿）">→</button>' +
+          '<button class="q-ib" data-act="qrev-open" data-col="' + x.col + '" data-id="' + t.id + '" title="先不做了？一键挪到明天（本体+复习计划一起搬走，今天这行就走；想挑别的日子用 📅）">→</button>' +
           '</span></div>';
       });
       h += '</div>';
@@ -1943,8 +1949,14 @@
         return;
       }
       if (act === 'qrev-open') {
-        try { App.app.switchView('tasks'); } catch (e) {}
-        App.ui.toast('📍 这条在任务页必须栏 —— 🎧 听课 / 🌱 复习计划 / 逐题计时都在那行上', 4200);
+        // 🌟 v143：→ 改成「一键挪到明天」—— 用户把 → 理解成"转移走"，老版只跳任务页不搬数据，
+        //   被当成 bug 报（「转移任务它不会移走」）。现在跟 📅 同一套搬运：本体+没做完的小题+
+        //   复习轮次一起到明天，今天这行立刻消失；想挑别的日子用 📅。
+        if (App.tasks && App.tasks.moveTaskDayDo) {
+          App.tasks.moveTaskDayDo(col, S().todayKey(), t0.id, S().tomorrowKey());
+        } else {
+          try { App.app.switchView('tasks'); } catch (e) {}
+        }
         return;
       }
       App.tasks.startTimer(col, t0.id);      // ▶ 直接开始计时
@@ -2014,10 +2026,32 @@
     }
   }
 
+  /** 🏅 v146：队列条目行内改积分 —— 改源条目，同时把今天的副本（工位上那条）也改掉：
+   *  不然完成时 syncBack 会拿副本里的旧分，把源上刚设的分盖回去。 */
+  function onPtsChange(e) {
+    const t = e.target;
+    if (!t || !t.dataset || t.dataset.pts == null) return;
+    const it = findIn(Q(), t.dataset.pts);
+    if (!it) return;
+    const v = Math.max(0, +t.value || 0);
+    it.points = v;
+    const day = S().getDay(S().todayKey());
+    ['required', 'ideal', 'extra'].forEach(function (k) {
+      (day.tasks[k] || []).forEach(function (c) {
+        if (c.fromQueue === it.id) c.points = v;
+      });
+    });
+    S().save();
+    App.ui.toast(v > 0 ? ('🏅 这条完成时得 ' + v + ' 分') : '这条完成时不发分（改成 0 了）');
+  }
+
   function init() {
     try { pruneDaily(); } catch (e) { /* 忽略 */ }   // 📌 v94：打开时先清掉昨天剩下的
     const root = document.getElementById('queue-view');
-    if (root) root.addEventListener('click', onClick);
+    if (root) {
+      root.addEventListener('click', onClick);
+      root.addEventListener('change', onPtsChange);   // 🏅 v146：行内积分
+    }
     const bar = document.getElementById('queue-bar');
     if (bar) bar.addEventListener('click', onClick);
     // ⏱ v82：60 秒兜底 —— 计时结束 / 跨天 / 其他入口改动后，把当前条重新实体化

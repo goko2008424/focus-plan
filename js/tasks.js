@@ -4278,6 +4278,37 @@
     });
     return sp;
   }
+  /** 🌟 v143：改天的**核心动作**（从 📅 弹窗回调里抽出来）—— 队列页「今天的复习」行上的 →（一键挪到明天）也调它。
+   *  做的事：整条（+ 没做完的小题/组）搬到 d，sp 没做完的轮次跟着改期，今天这条删掉。
+   *  v141 的口径保持：目标那天有同名任务搬不动时，今天这条也照样收走，只提示一句。 */
+  function moveTaskDayDo(listKey, dayKey, taskId, d) {
+    const task = ((S().getDay(dayKey).tasks[listKey] || []).filter(function (x) { return x.id === taskId; })[0]) || null;
+    if (!task) { App.ui.toast('这条找不到了，刷新一下'); return; }
+    if ((timer && timer.taskId === taskId) || (cdTimer && cdTimer.taskId === taskId)) {
+      App.ui.toast('这条正在计时 —— 先结束计时再改天', 4400); return;
+    }
+    if (!d || d < S().todayKey()) { App.ui.toast('那天的日子已经过去了 —— 往后面挑一天', 4200); return; }
+    if (d === dayKey) { App.ui.toast('这就是同一天呀 —— 挑别的日子', 4200); return; }
+    const allN = (task.subs || []).length + (task.groups || []).reduce(function (n, g) { return n + (g.subs || []).length; }, 0);
+    const leftN = (task.subs || []).filter(function (s) { return s.done !== true; }).length +
+      (task.groups || []).reduce(function (n, g) { return n + (g.subs || []).filter(function (s) { return s.done !== true; }).length; }, 0);
+    const dropN = Math.max(0, allN - leftN);
+    const spMove = task.sp ? JSON.parse(JSON.stringify(task.sp)) : null;
+    const okM = App.calendar.copyTaskToDay(
+      { text: task.text, points: task.points, mode: task.mode, mcRef: task.mcRef, kps: task.kps,
+        subs: task.subs, groups: task.groups },
+      listKey, d, task.standard, true, listKey);
+    if (!okM) App.ui.toast('那天有同名任务，本体没搬过去 —— 今天这条先收走了', 4200);
+    const nt = (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
+    if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
+    App.calendar.removeTask(dayKey, listKey, taskId);
+    S().save();
+    App.tasks.renderAll();
+    try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+    try { if (App.calendar && App.calendar.render) App.calendar.render(); } catch (e) { /* 忽略 */ }
+    App.ui.toast('➡️ 「' + String(task.text || '').slice(0, 14) + '」挪到 ' + S().fmtDateCN(d) + ' 了' +
+      (dropN ? '（做完的 ' + dropN + ' 项没带过去）' : ''), 5600);
+  }
   /** 🌱 v139：把任务行/队列复习行的「📅 改天再做」统一到这里 */
   function moveTaskDayModal(listKey, dayKey, taskId) {
     const task = ((S().getDay(dayKey).tasks[listKey] || []).filter(function (x) { return x.id === taskId; })[0]) || null;
@@ -4307,28 +4338,9 @@
       '<button class="btn" data-act="cancel">取消</button>');
     App.ui.bindActions({
       'mvd-ok': function () {
-        const d = (m.querySelector('#mvd-date').value || '').trim();
-        if (!d) { App.ui.toast('先挑一个日期'); return; }
-        if (d < S().todayKey()) { App.ui.toast('那天的日子已经过去了 —— 往后面挑一天', 4200); return; }
-        if (d === dayKey) { App.ui.toast('这就是同一天呀 —— 挑别的日子', 4200); return; }
-        const spMove = task.sp ? JSON.parse(JSON.stringify(task.sp)) : null;
-        const okM = App.calendar.copyTaskToDay(
-          { text: task.text, points: task.points, mode: task.mode, mcRef: task.mcRef, kps: task.kps,
-            subs: task.subs, groups: task.groups },
-          listKey, d, task.standard, true, listKey);
-        // 🌱 v141：搬不过去也**照样从今天走** —— 用户实报「做完之后安排日期，这一条它不会走」。
-        //   以前那天有同名条就直接拦回来，今天这条成了甩不掉的死条；现在照常收走，只提示没搬过去。
-        if (!okM) App.ui.toast('那天有同名任务，本体没搬过去 —— 今天这条先收走了', 4200);
-        const nt = (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
-        if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
-        App.calendar.removeTask(dayKey, listKey, taskId);
-        S().save();
+        // 🌟 v143：核心动作抽到 moveTaskDayDo（队列页 → 一键挪到明天共用这一份）
+        moveTaskDayDo(listKey, dayKey, taskId, (m.querySelector('#mvd-date').value || '').trim());
         App.ui.closeModal();
-        App.tasks.renderAll();
-        try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
-        try { if (App.calendar && App.calendar.render) App.calendar.render(); } catch (e) { /* 忽略 */ }
-        App.ui.toast('📅 「' + String(task.text || '').slice(0, 14) + '」改到 ' + S().fmtDateCN(d) + ' 了' +
-          (dropN ? '（做完的 ' + dropN + ' 项没带过去）' : ''), 5600);
       },
       cancel: App.ui.closeModal
     });
@@ -7079,6 +7091,7 @@
     srReschedule: srReschedule, srPlanModal: srPlanModal, srWhen: srWhen, srWanted: srWanted,
     srAskAgain: srAskAgain,     // 🔁 v116
     moveTaskDayModal: moveTaskDayModal,   // 📅 v139 改天再做（队列页也调它）
+    moveTaskDayDo: moveTaskDayDo,         // 🌟 v143 改天的核心动作（队列页 → 一键挪到明天调它）
     mcWritable: mcWritable,     // 🃏 v117
     autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,

@@ -50,22 +50,51 @@
         if (!db.objectStoreNames.contains(ST_META)) db.createObjectStore(ST_META, { keyPath: 'id' });
         if (!db.objectStoreNames.contains(ST_BODY)) db.createObjectStore(ST_BODY, { keyPath: 'id' });
       };
-      rq.onsuccess = function () { resolve(rq.result); };
+      rq.onsuccess = function () {
+        const db = rq.result;
+        // 🛟 v145：浏览器把连接收走（标签休眠/省电/版本升级）时，主动放开缓存句柄 ——
+        // 下次任何操作都会自动重连。以前死句柄被 dbp 永久缓存，一断就永久瘫。
+        try {
+          const me = dbp;
+          db.onclose = function () { if (dbp === me) dbp = null; };
+          db.onversionchange = function () {
+            try { db.close(); } catch (e) { /* 忽略 */ }
+            if (dbp === me) dbp = null;
+          };
+        } catch (e) { /* 忽略 */ }
+        resolve(db);
+      };
       rq.onerror = function () { reject(rq.error || new Error('打不开备份库')); };
     });
     return dbp;
   }
+  function runTx(db, store, mode, fn) {
+    return new Promise(function (resolve, reject) {
+      let t;
+      try { t = db.transaction(store, mode); } catch (e) { reject(e); return; }
+      const st = t.objectStore(Array.isArray(store) ? store[0] : store);
+      let out;
+      try { out = fn(st, t); } catch (e) { reject(e); return; }
+      t.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
+      t.onerror = function () { reject(t.error); };
+      t.onabort = function () { reject(t.error || new Error('事务被中断')); };
+    });
+  }
+  /** 连接被浏览器收走时 transaction() 抛的错（name=InvalidStateError） */
+  function isConnDead(e) {
+    if (!e) return false;
+    if (e.name === 'InvalidStateError') return true;
+    return /connection is closing|not open|has been closed/i.test(String(e.message || e));
+  }
   function tx(store, mode, fn) {
     return idb().then(function (db) {
-      return new Promise(function (resolve, reject) {
-        const t = db.transaction(store, mode);
-        const st = t.objectStore(store);
-        let out;
-        try { out = fn(st); } catch (e) { reject(e); return; }
-        t.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
-        t.onerror = function () { reject(t.error); };
-        t.onabort = function () { reject(t.error || new Error('事务被中断')); };
-      });
+      return runTx(db, store, mode, fn);
+    }).catch(function (e) {
+      // 🛟 v145：连接死了 → 丢掉旧句柄、重连、再试一次（只对"连接已死"类错误重试，
+      //   业务错误照常抛出去，不掩盖）
+      if (!isConnDead(e)) throw e;
+      dbp = null;
+      return idb().then(function (db2) { return runTx(db2, store, mode, fn); });
     });
   }
   function metaAll() {
@@ -82,14 +111,11 @@
   /** 同时删 meta + body（两个 store 一个事务） */
   function dropReal(ids) {
     if (!ids || !ids.length) return Promise.resolve(0);
-    return idb().then(function (db) {
-      return new Promise(function (resolve, reject) {
-        const t = db.transaction([ST_META, ST_BODY], 'readwrite');
-        const m = t.objectStore(ST_META), b = t.objectStore(ST_BODY);
-        ids.forEach(function (id) { m.delete(id); b.delete(id); });
-        t.oncomplete = function () { resolve(ids.length); };
-        t.onerror = function () { reject(t.error); };
-      });
+    // 🛟 v145：改走 tx（双 store 一个事务，fn 拿第一个 store + 事务句柄），自带断连重试
+    return tx([ST_META, ST_BODY], 'readwrite', function (m, t) {
+      const b = t.objectStore(ST_BODY);
+      ids.forEach(function (id) { m.delete(id); b.delete(id); });
+      return ids.length;
     });
   }
 
@@ -427,7 +453,11 @@
           : '<p class="hint" style="margin:6px 0 0">还没有备份。点「💾 现在备份一份」立刻存一份。</p>') +
         '<p class="hint bk-hint" style="margin:8px 0 0">' + hintHTML() + '</p>';
     }).catch(function (e) {
-      box.innerHTML = '<p class="hint">备份功能在这个浏览器里用不了：' + esc((e && e.message) || e) + '</p>';
+      // 🛟 v145：连接类错误现在能自愈了 —— 文案从"用不了"改成"重试就好"，别吓人
+      const conn = isConnDead(e);
+      box.innerHTML = '<p class="hint">' + (conn
+        ? '备份刚才没连上（' + esc((e && e.message) || e) + '）—— <b>重进设置页再试一次</b>，一般自己就好了'
+        : '备份功能在这个浏览器里用不了：' + esc((e && e.message) || e)) + '</p>';
     });
   }
 

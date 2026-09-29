@@ -183,7 +183,10 @@
       ['required', 'ideal', 'extra'].forEach(function (c) {
         (d.tasks[c] || []).forEach(function (t) {
           if (!t.mcRef || t.mcRef.colId !== colId) return;
-          out.push({ key: k, text: t.text, done: t.done === true, late: k < today && t.done !== true,
+          out.push({ key: k, text: t.text, done: t.done === true,
+                     late: k < today && t.done !== true && !t.mcRef.superseded,
+                     superseded: !!t.mcRef.superseded,
+                     slippedFrom: t.mcRef.slippedFrom || '',
                      at: t.doneAt || t.at || '' });
         });
       });
@@ -192,33 +195,129 @@
     return out;
   }
 
-  /** 📅 v116→v120：合集行上那串小日期（✓已完成 / ⚠已过期 / 📅待做）
-   *  v120：① 每个日期带 ✕ 能单独取消那天 ② 末尾给「已完成 N 天 · 下一天 X」+ 🧹 清空
-   *  用户：「你要把历史它在哪些天设了，这个要清楚…每次他定的时间都要在这边有时间的显示」 */
+  /** 🔁 v142：没做的复习自动「依次顺延」—— 用户：「没做的话就移到第二天，依次顺延；做了就打绿标」
+   *  ① 过去某天没做、后面也没有顺延副本（那天一直没结算）→ 整条搬到今天（明天还没做会再顺延），
+   *     mcRef.slippedFrom 记住最初定的日子（排期链上显示「9/24 ↷」）
+   *  ② 结算已经复制了一份到后面 → 原地那条标 superseded（只当顺延史，不再算「该做的」）
+   *  卡片页每次渲染前跑（pageHTML / init），打开页面就能看到最新位置 */
+  function mcSweepOverdue() {
+    const data = S().data() || {};
+    const days = data.days || {};
+    const today = S().todayKey();
+    let moved = 0, marked = 0;
+    const overs = {};
+    Object.keys(days).forEach(function (k) {
+      if (k >= today) return;
+      const d = days[k];
+      if (!d || !d.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        (d.tasks[c] || []).forEach(function (t) {
+          if (!t.mcRef || !t.mcRef.colId || t.done === true) return;
+          (overs[t.mcRef.colId] = overs[t.mcRef.colId] || []).push({ k: k, c: c, t: t });
+        });
+      });
+    });
+    Object.keys(overs).forEach(function (colId) {
+      // 这个合集今天/以后还有没有「待做」的（结算顺延出来的副本就算）
+      let hasLater = false;
+      Object.keys(days).forEach(function (k) {
+        if (k >= today && !hasLater) {
+          const d2 = days[k];
+          if (d2 && d2.tasks) ['required', 'ideal', 'extra'].forEach(function (c) {
+            (d2.tasks[c] || []).forEach(function (t) {
+              // 🔴 只认「顺延副本」（结算搬的带 rolled / 我们搬的带 slippedFrom）——
+              //    未来新排的其他轮次不算，不然漏掉的旧轮次永远被当成「已经有副本」而不搬
+              if (t.mcRef && t.mcRef.colId === colId && (t.rolled || t.mcRef.slippedFrom)) hasLater = true;
+            });
+          });
+        }
+      });
+      overs[colId].sort(function (a, b) { return a.k < b.k ? -1 : 1; }).forEach(function (e) {
+        if (hasLater) {
+          if (!e.t.mcRef.superseded) { e.t.mcRef.superseded = true; marked++; }
+          return;
+        }
+        const d0 = days[e.k];
+        const list = (d0 && d0.tasks && d0.tasks[e.c]) || [];
+        const ix = list.indexOf(e.t);
+        if (ix < 0) return;
+        list.splice(ix, 1);
+        if (!e.t.mcRef.slippedFrom) e.t.mcRef.slippedFrom = e.k;
+        S().getDay(today).tasks.required.push(e.t);
+        moved++;
+      });
+    });
+    if (moved || marked) save();
+    return { moved: moved, marked: marked };
+  }
+
+  /** 📅 v116→v120→v142：合集行上的「复习排期链」
+   *  用户：「当天做了就打绿色的标；没做就顺延，按顺序把下一次的日期也标一下」
+   *  链的样子：[9/24 ↷][9/27 ↷][今天 ·2][✓ 9/26][9/29]，✕ 仍能单独取消某天 */
   function schedBadgeHTML(colId) {
     const list = schedDaysOf(colId);
     if (!list.length) return '';
+    const today = S().todayKey();
+    const fm = function (k) { const p = String(k).split('-'); return (+p[1]) + '/' + (+p[2]); };
     const doneN = list.filter(function (x) { return x.done; }).length;
-    const next = list.filter(function (x) { return !x.done; })[0] || null;
-    const chips = list.map(function (x) {
-      const p = x.key.split('-');
-      const st = x.done ? ('已完成' + (x.at ? '（' + String(x.at).slice(11, 16) + '）' : ''))
-        : (x.late ? '已过期（那天没做）' : '还没到点');
-      return '<span class="mc-chip' + (x.done ? ' done' : (x.late ? ' late' : '')) +
-        '" title="' + x.key + ' · ' + st + ' · 那天的任务：' + esc(x.text) + '">' +
-        (x.done ? '✓' : (x.late ? '⚠' : '📅')) + (+p[1]) + '/' + (+p[2]) +
+    const pendToday = list.filter(function (x) { return !x.done && x.key === today; });
+    const nextX = list.filter(function (x) { return !x.done && x.key > today; })[0] || null;
+    const chips = [];
+    const slipSeen = {};
+    let todayEmitted = false;
+    const addSlip = function (k) {
+      if (!k || slipSeen[k]) return;
+      slipSeen[k] = 1;
+      chips.push('<span class="mc-chip slip" title="' + k + ' 定的复习没做 → 已顺延（今天补上就行）">' + fm(k) + ' ↷</span>');
+    };
+    let runA = null, runB = null;
+    const flushRun = function () {
+      if (!runA) return;
+      const span = (runB && runB !== runA) ? (' ~ ' + fm(runB)) : '';
+      chips.push('<span class="mc-chip slip" title="' + runA + (span ? ' ~ ' + runB : '') +
+        ' 定的复习没做 → 已顺延（补上就行）">' + fm(runA) + span + ' ↷</span>');
+      runA = runB = null;
+    };
+    list.forEach(function (x) {
+      // ① 顺延史：过去定了没做、已经被顺延走的（superseded=结算搬走了；兜底=异常滞留）—— 连续的并成一枚
+      if (!x.done && x.key < today) {
+        if (!runA) runA = x.key;
+        runB = x.key;
+        slipSeen[x.key] = 1;
+        return;
+      }
+      flushRun();
+      // ② 做完的：绿底 ✓，标的是**做完那天**
+      if (x.done) {
+        chips.push('<span class="mc-chip done" title="' + x.key + ' 做完了' + (x.at ? '（' + String(x.at).slice(11, 16) + '）' : '') +
+          ' · 那天的任务：' + esc(x.text) + '">✓ ' + fm(x.key) + '</span>');
+        return;
+      }
+      // ③ 今天该补的：顺延起点先摆出来，再合并成「今天 ·N」一枚
+      if (x.key === today) {
+        if (!todayEmitted) {
+          todayEmitted = true;
+          pendToday.forEach(function (y) { addSlip(y.slippedFrom); });
+          chips.push('<span class="mc-chip today" title="定过的日子没做 → 顺延到今天来了。点「打开 / 复习」直接做，点 ✕ 取消">' +
+            '今天' + (pendToday.length > 1 ? ' · ' + pendToday.length : '') +
+            '<i class="mc-chip-x" data-act="mc-unsched" data-col="' + colId + '" data-day="' + today +
+            '" title="取消今天的补复习">✕</i></span>');
+        }
+        return;
+      }
+      // ④ 还没到点的：绿虚线框
+      chips.push('<span class="mc-chip next" title="' + x.key + ' · 还没到点 · 那天的任务：' + esc(x.text) + '">' + fm(x.key) +
         '<i class="mc-chip-x" data-act="mc-unsched" data-col="' + colId + '" data-day="' + x.key +
-        '" title="取消 ' + x.key + ' 这天的复习安排">✕</i></span>';
-    }).join('');
-    const nextTxt = next ? (function () {
-      const p2 = String(next.key).split('-');
-      return ' · 下一天 ' + (+p2[1]) + '/' + (+p2[2]);
-    })() : ' · 没了';
-    return '<div class="mc-schedline" title="这个合集已排的全部复习日期 —— 点日期上的 ✕ 能取消某一天">' +
-      '<span class="mc-schedlab">📅 已排 ' + list.length + ' 天</span>' + chips +
-      '<span class="mc-schedsum">已完成 ' + doneN + ' 天' + nextTxt + '</span>' +
-      '<button class="mc-ib" data-act="mc-unsched-all" data-id="' + colId +
-      '" title="清空这个合集的全部复习安排">🧹</button></div>';
+        '" title="取消 ' + x.key + ' 这天的复习安排">✕</i></span>');
+    });
+    flushRun();
+    let tail = '';
+    if (pendToday.length && nextX) tail = '<span class="mc-schedsum">做完 → 下一次 ' + fm(nextX.key) + '</span>';
+    else if (nextX) tail = '<span class="mc-schedsum">下一次 ' + fm(nextX.key) + '</span>';
+    else if (doneN === list.length) tail = '<span class="mc-schedsum">都做完啦 ✓</span>';
+    return '<div class="mc-schedline" title="定的日子做了打 ✓；没做自动顺延，直到做完 —— 点日期上的 ✕ 能取消某一天">' +
+      '<span class="mc-schedlab">📅 复习 ' + list.length + ' 次</span>' + chips.join('') + tail +
+      '<button class="mc-ib" data-act="mc-unsched-all" data-id="' + colId + '" title="清空这个合集的全部复习安排">🧹</button></div>';
   }
 
   /** 📅 v116：某一天里，这个合集已经排过的（用来提示"这天排过了"） */
@@ -938,8 +1037,13 @@
         '<div class="mc-revtop"><span class="mc-cnt">✏️ 改' + (isF ? '问题' : '答案') + '</span>' +
         '<span><button class="btn btn-small" data-act="mc-edit-cancel">← 回到复习</button></span></div>' +
         '<div class="mc-supp-face"><span class="mc-face-tag">这张卡现在的' + (isF ? '问题' : '答案') + '</span>' + (isF ? faceHTML(cE) : backHTML(cE)) + '</div>' +
+        // 📷 v144：改问题/改答案也能带图 —— textarea 挂 data-f=ef/eb（Ctrl+V 粘贴会被 sideOf 认出侧别），
+        //   缩略图区 + 📷 贴图按钮复用列表编辑那一套（draft.ef/eb），保存时写回 frontImgs/backImgs。
         '<div class="mc-lab" style="margin-top:10px">改成：</div>' +
-        '<textarea class="mc-ta" id="' + taId + '" rows="' + (isF ? 2 : 4) + '" placeholder="' + (isF ? '改正后的问题' : '改正后的答案') + '">' + esc(val) + '</textarea>' +
+        '<textarea class="mc-ta" data-f="' + (isF ? 'ef' : 'eb') + '" id="' + taId + '" rows="' + (isF ? 2 : 4) + '" placeholder="' + (isF ? '改正后的问题' : '改正后的答案') + '">' + esc(val) + '</textarea>' +
+        '<div class="mc-thumbs" data-thumbs="' + (isF ? 'ef' : 'eb') + '"></div>' +
+        '<div class="mc-siderow"><button class="btn btn-small" data-act="mc-pick" data-side="' + (isF ? 'ef' : 'eb') + '">📷 贴图</button>' +
+        '<span class="hint" style="margin:0">截图也可以直接 <b>Ctrl+V</b> 粘进框里</span></div>' +
         '<div class="mc-row"><button class="btn btn-primary" data-act="mc-edit-save">💾 保存修改</button>' +
         '<button class="btn" data-act="mc-edit-cancel">返回复习</button></div>';
       return;
@@ -1334,8 +1438,19 @@
       }
       paint(); return;
     }
-    if (act === 'mc-edit-front') { state.mode = 'editf'; paint(); return; }
-    if (act === 'mc-edit-back') { state.mode = 'editb'; paint(); return; }
+    // 📷 v144：进编辑先把这张卡**已有的图**捞进草稿 —— 不然保存时按草稿整份写回，旧图就丢了
+    if (act === 'mc-edit-front') {
+      const cEF = revCard();
+      state.mode = 'editf';
+      state.draft.ef = cEF ? (cEF.frontImgs || []).slice() : [];
+      paint(); return;
+    }
+    if (act === 'mc-edit-back') {
+      const cEB = revCard();
+      state.mode = 'editb';
+      state.draft.eb = cEB ? (cEB.backImgs || []).slice() : [];
+      paint(); return;
+    }
     if (act === 'mc-edit-cancel') { state.mode = 'review'; paint(); return; }
     if (act === 'mc-edit-save') {
       const cS = revCard();
@@ -1343,7 +1458,19 @@
       const taS = cur.querySelector('#mc-edit-ta');
       const vS = taS ? taS.value : '';
       const isFS = state.mode === 'editf';
-      if (isFS) cS.front = vS; else cS.back = vS;
+      // 📷 v144：文字照写，图按草稿整份写回（跟 mc-card-save 同一口径；换掉的旧图不删，
+      //   留给「🧹 清理没用的图」兜底 —— 和列表编辑行为一致）
+      if (isFS) {
+        cS.front = vS;
+        const efS = (state.draft.ef || []).slice();
+        if (efS.length) cS.frontImgs = efS; else delete cS.frontImgs;
+        state.draft.ef = [];
+      } else {
+        cS.back = vS;
+        const ebS = (state.draft.eb || []).slice();
+        if (ebS.length) cS.backImgs = ebS; else delete cS.backImgs;
+        state.draft.eb = [];
+      }
       touch(col); afterChange();
       App.ui.toast(isFS ? '✅ 问题改好啦' : '✅ 答案改好啦', 2600);
       state.mode = 'review';
@@ -1516,6 +1643,7 @@
 
   /* ---------- 入口 ---------- */
   function init() {
+    try { mcSweepOverdue(); } catch (e) { /* 忽略 */ }
     // 📁 读一次"记着的文件夹"名字（v99：导出入口已去掉，这段保留但没入口）
     fsGet().then(function (h) {
       if (h && h.name) { fsName = h.name; renderPage(); }
@@ -1541,6 +1669,14 @@
 
   /* ---------- 🃏 v93：独立的「卡片」页（导出 Obsidian 的固定入口） ---------- */
   function pageHTML() {
+    // 🔁 v142：渲染前先把没做的复习顺延到位（搬了就要连带刷任务页/队列页）
+    try {
+      const swp = mcSweepOverdue();
+      if (swp && swp.moved) {
+        try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+        try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+      }
+    } catch (e) { /* 忽略 */ }
     const list = D().slice().sort(function (a, b) {
       return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
     });
@@ -1741,7 +1877,7 @@
     pageHTML: pageHTML,
     openRef: openRef,
     schedCardModal: schedCardModal,
-    schedDaysOf: schedDaysOf, schedBadgeHTML: schedBadgeHTML, dupOnDay: dupOnDay,   // 📅 v116
+    schedDaysOf: schedDaysOf, schedBadgeHTML: schedBadgeHTML, dupOnDay: dupOnDay, mcSweepOverdue: mcSweepOverdue,   // 📅 v116
     cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,
     addSubject: addSubject,

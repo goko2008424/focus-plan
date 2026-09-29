@@ -1180,6 +1180,9 @@ body[data-theme="dark"] .ms-row.ms-soon .ms-dd, body[data-theme="purple"] .ms-ro
 }
 .q-undo-acts { margin-left: auto; display: flex; gap: 6px; }
 .q-pts { margin-left: 5px; font-size: 11.5px; color: #b8860b; background: #fdf3d8; border: 1px solid #f0dfae; border-radius: 9px; padding: 1px 6px; }
+/* —— 🏅 v146：队列条目行内积分框 —— */
+.q-pts-inp { margin-left: 6px; width: 58px; padding: 2px 6px; border: 1px solid #f0dfae; border-radius: 8px; font-size: 12px; background: #fffdf5; color: #8a6508; text-align: center; }
+body[data-theme="dark"] .q-pts-inp, body[data-theme="purple"] .q-pts-inp { background: var(--card); color: #e8c66a; border-color: var(--line); }
 
 .mc-rowline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; }
 .mc-rowmain { flex: 1; min-width: 200px; }
@@ -1319,6 +1322,16 @@ body[data-theme="dark"] .rev-next.done, body[data-theme="purple"] .rev-next.done
 body[data-theme="dark"] .mc-chip, body[data-theme="purple"] .mc-chip { background: #123024; color: #7fd6a6; }
 body[data-theme="dark"] .mc-chip.late, body[data-theme="purple"] .mc-chip.late { background: #3a1c1c; color: #ff9c93; }
 body[data-theme="dark"] .mc-chip.done, body[data-theme="purple"] .mc-chip.done { background: #23262b; color: #9aa3ad; }
+/* 🔁 v142：复习排期链 —— ✓做了(绿底) / 今天该补(红底) / 还没到(绿虚线框) / 顺延史(灰)
+   ⚠️ 带 .mc-schedline 前缀压过上面的旧 .mc-chip.done（灰），深色主题单独覆盖 */
+.mc-schedline .mc-chip.done { background: #e8f6ee; color: #14804a; }
+.mc-schedline .mc-chip.next { background: #f4fbf7; color: #14804a; box-shadow: inset 0 0 0 1px #a9dcc2; }
+.mc-schedline .mc-chip.today { background: #fdecec; color: #c0392b; }
+.mc-schedline .mc-chip.slip { background: #eef1f5; color: #98a1ad; }
+body[data-theme="dark"] .mc-schedline .mc-chip.done, body[data-theme="purple"] .mc-schedline .mc-chip.done { background: #123024; color: #7fd6a6; }
+body[data-theme="dark"] .mc-schedline .mc-chip.next, body[data-theme="purple"] .mc-schedline .mc-chip.next { background: transparent; color: #7fd6a6; box-shadow: inset 0 0 0 1px #2c5b43; }
+body[data-theme="dark"] .mc-schedline .mc-chip.today, body[data-theme="purple"] .mc-schedline .mc-chip.today { background: #3a1c1c; color: #ff9c93; }
+body[data-theme="dark"] .mc-schedline .mc-chip.slip, body[data-theme="purple"] .mc-schedline .mc-chip.slip { background: #23262b; color: #98a1ad; }
 /* 🌱 v118：基础任务卡里的「今天的复习」小节 */
 .q-revsec { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .q-revsec-h { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
