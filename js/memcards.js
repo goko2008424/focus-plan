@@ -295,13 +295,16 @@
     return n;
   }
 
+  /** 🌱 v157：欠的复习**不再自动搬进今天** —— 用户炸了：「我自己都不打算今天做这个，你给我加上？
+   *  我还要自己手动删，烦不烦」。现在只做一件事：过去某天排了没做、但那天**翻过这套卡**的 →
+   *  补勾 + 补发分（做了就该认账）。其余欠的留在原地，由 overdueReviews() 列出来，
+   *  队列页「↷ 之前欠的复习」汇总条里让用户点「📥 搬进来今天做」才进今天的清单。 */
   function mcSweepOverdue() {
     try { dedupeReviewDupes(); } catch (e) { /* 忽略 */ }   // 🧹 v147：先清成对的重复复习
     const data = S().data() || {};
     const days = data.days || {};
     const today = S().todayKey();
-    let moved = 0, marked = 0, fixed = 0;
-    const overs = {};
+    let fixed = 0;
     Object.keys(days).forEach(function (k) {
       if (k >= today) return;
       const d = days[k];
@@ -309,58 +312,68 @@
       ['required', 'ideal', 'extra'].forEach(function (c) {
         (d.tasks[c] || []).forEach(function (t) {
           if (!t.mcRef || !t.mcRef.colId || t.done === true) return;
-          // 🛟 v147：那天翻过这套卡 = 那天复习过了 —— 补勾 + 补发分，不再当「没做完」
-          if (flippedOn(t.mcRef.colId, k)) { markTaskDone(t, k, c); fixed++; return; }
-          (overs[t.mcRef.colId] = overs[t.mcRef.colId] || []).push({ k: k, c: c, t: t });
+          // 🛟 v147：那天翻过这套卡 = 那天复习过了 —— 补勾 + 补发分（做了就该认账）
+          if (flippedOn(t.mcRef.colId, k)) { markTaskDone(t, k, c); fixed++; }
         });
       });
     });
-    Object.keys(overs).forEach(function (colId) {
-      // 这个合集今天/以后还有没有「待做」的（结算顺延出来的副本就算）
-      let hasLater = false;
-      Object.keys(days).forEach(function (k) {
-        if (k >= today && !hasLater) {
-          const d2 = days[k];
-          if (d2 && d2.tasks) ['required', 'ideal', 'extra'].forEach(function (c) {
-            (d2.tasks[c] || []).forEach(function (t) {
-              // 🔴 只认「顺延副本」（结算搬的带 rolled / 我们搬的带 slippedFrom）——
-              //    未来新排的其他轮次不算，不然漏掉的旧轮次永远被当成「已经有副本」而不搬
-              if (t.mcRef && t.mcRef.colId === colId && (t.rolled || t.mcRef.slippedFrom)) hasLater = true;
-          // 🧹 v153：今天已经有这一套（不管是不是副本）→ 一样算"后面有了"，别再搬一份过来
-          if (k === today && t.mcRef && t.mcRef.colId === colId && t.done !== true) hasLater = true;
-            });
-          });
-        }
-      });
-      overs[colId].sort(function (a, b) { return a.k < b.k ? -1 : 1; }).forEach(function (e) {
-        if (hasLater) {
-          if (!e.t.mcRef.superseded) { e.t.mcRef.superseded = true; marked++; }
-          return;
-        }
-        const d0 = days[e.k];
-        const list = (d0 && d0.tasks && d0.tasks[e.c]) || [];
-        const ix = list.indexOf(e.t);
-        if (ix < 0) return;
-        // 🛟 v147：今天已经有同名的了（新排的轮次/别的副本）→ 不再搬，标 superseded ——
-        //    不然「顺延来的 + 今天新排的」成对出现，任务翻倍（用户一晚上被滚出 80 条）
-        const tday = S().getDay(today);
-        const dupToday = ['required', 'ideal', 'extra'].some(function (c2) {
-          return (tday.tasks[c2] || []).some(function (x) {
-            return x !== e.t && String(x.text || '').trim() === String(e.t.text || '').trim() && x.done !== true;
-          });
+    if (fixed) save();
+    return { moved: 0, marked: 0, fixed: fixed };
+  }
+  /** 📋 v157：之前欠下的复习（过去某天排了没做、没取消、那天也没翻过卡） */
+  function overdueReviews() {
+    const data = S().data() || {};
+    const days = data.days || {};
+    const today = S().todayKey();
+    const out = [];
+    Object.keys(days).forEach(function (k) {
+      if (k >= today) return;
+      const d = days[k];
+      if (!d || !d.tasks) return;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        (d.tasks[c] || []).forEach(function (t) {
+          if (!t.mcRef || !t.mcRef.colId || t.done === true) return;
+          if (t.mcRef.superseded) return;
+          if (flippedOn(t.mcRef.colId, k)) return;
+          out.push({ k: k, c: c, t: t });
         });
-        if (dupToday) {
-          if (!e.t.mcRef.superseded) { e.t.mcRef.superseded = true; marked++; }
-          return;
-        }
-        list.splice(ix, 1);
-        if (!e.t.mcRef.slippedFrom) e.t.mcRef.slippedFrom = e.k;
-        S().getDay(today).tasks.required.push(e.t);
-        moved++;
       });
     });
-    if (moved || marked || fixed) save();
-    return { moved: moved, marked: marked, fixed: fixed };
+    out.sort(function (a, b) { return a.k < b.k ? -1 : 1; });
+    return out;
+  }
+  /** 📥 v157：把欠的搬进今天做（用户点了才算数）—— 同一套卡今天已有的顶掉旧的，不重复 */
+  function moveOverdueIntoToday() {
+    const today = S().todayKey();
+    const tday = S().getDay(today);
+    let n = 0;
+    overdueReviews().forEach(function (e) {
+      const dup = ['required', 'ideal', 'extra'].some(function (c2) {
+        return (tday.tasks[c2] || []).some(function (x) {
+          return x !== e.t && x.mcRef && x.mcRef.colId === e.t.mcRef.colId && x.done !== true;
+        });
+      });
+      if (dup) { if (!e.t.mcRef.superseded) { e.t.mcRef.superseded = true; } return; }
+      const d0 = (S().data().days || {})[e.k];
+      const list = (d0 && d0.tasks && d0.tasks[e.c]) || [];
+      const ix = list.indexOf(e.t);
+      if (ix < 0) return;
+      list.splice(ix, 1);
+      if (!e.t.mcRef.slippedFrom) e.t.mcRef.slippedFrom = e.k;
+      tday.tasks.required.push(e.t);
+      n++;
+    });
+    if (n) S().save();
+    return n;
+  }
+  /** 🗑 v157：欠的一批全不做了（标 superseded 留史，排期链里还能看到「取消过」） */
+  function dropOverdueReviews() {
+    let n = 0;
+    overdueReviews().forEach(function (e) {
+      if (!e.t.mcRef.superseded) { e.t.mcRef.superseded = true; n++; }
+    });
+    if (n) S().save();
+    return n;
   }
 
   /** 📅 v116→v120→v142：合集行上的「复习排期链」
@@ -2029,6 +2042,7 @@
     flippedOn: flippedOn,               // 🛟 v147 结算也要问「那天翻过这套卡没」
     phFailedNow: function () { return phFailed; },   // 🛟 v148
     dedupeReviewDupes: dedupeReviewDupes, dropRolledReviews: dropRolledReviews,   // 🧹 v153
+    overdueReviews: overdueReviews, moveOverdueIntoToday: moveOverdueIntoToday, dropOverdueReviews: dropOverdueReviews,   // 📋 v157
     revIsReview: revIsReview, revKeyOf: revKeyOf,
     cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,

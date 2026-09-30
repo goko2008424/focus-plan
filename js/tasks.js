@@ -2481,6 +2481,10 @@
         // 🌱 v93：没标「新知识」的任务不排复习时，**明确说一句**，别让用户以为是漏了
         const mm = task.mode === 'review' ? '🔄 复习（只作标记）' : '⚪ 普通（不排复习）';
         App.ui.toast('🌱 这条标的是「' + mm + '」，所以今天不排复习 —— 想排就点它的属性改成 📘 新知识', 4800);
+      } else if (srOn() && task.mode === SR_MODE_NEW && task.sp) {
+        // 🌱 v155：以前排过的 —— 别静默。用户实报「完成之后没让我安排下一次复习，彻底搞没了」
+        App.ui.toast('📘 这条以前排过复习计划（' + ((task.sp.planned || []).length) +
+          ' 轮）—— 完课就不重复弹了；想加一轮：点行上的 <b>🌱</b>', 5600);
       }
       // 📋 v82：这是队列实体化的副本 → 完成队列项、发队列分（下一条顶上等总结窗关掉）
       if (task.fromQueue && App.queue && App.queue.onTaskDone) {
@@ -2860,6 +2864,9 @@
       ids.forEach(function (id) {
         const u = undone.find(function (x) { return x.task.id === id; });
         if (!u) return;
+        // 🌱 v157：设问卡复习（mcRef）**不再自动滚到明天** —— 欠的复习列在队列页「↷ 之前欠的复习」，
+        //    用户点「📥 搬进来今天做」才进今天的清单（用户炸了：「我自己都不打算今天做这个你给我加上」）
+        if (u.task.mcRef && u.task.mcRef.colId) return;
         // 🛟 v147：复习任务在**当天翻过这套卡** = 已经复习过了 —— 补勾 + 补发分，不再往后滚
         //   （此前翻卡复习不勾任务，结算每天把「未做」的复制一份，越滚越多成雪球）
         if (u.task.mcRef && u.task.mcRef.colId && App.memcards && App.memcards.flippedOn &&
@@ -4816,9 +4823,11 @@
         const ptsInput = modal.querySelector('#edit-points');
         if (ptsInput) task.points = Math.max(0, +ptsInput.value || 0);
         const modeEl2 = modal.querySelector('#edit-mode');
+        const prevMode = task.mode;
         if (modeEl2) {
           const mv = modeEl2.value;
           if (mv) task.mode = mv; else delete task.mode;
+          modal.dataset.newMode = mv || '';   // 🌱 v155：给保存后补弹用
         }
         // v93：推进类型不再让用户选（保留原来的 aux/long 不动作）
         // 🎧 听课预设：勾了就存下来，取消勾选就把预设删掉（回到"开课时再配"）
@@ -4840,6 +4849,19 @@
         S().save();
         App.ui.closeModal();
         App.tasks.renderAll();
+        // 🌱 v155：已经做完的任务**这会儿才被标成「新知识」** → 当场补弹「定下一次复习」。
+        //   以前这里什么都不发生（完课时它还不是新知识，弹窗早过了）—— 用户：「彻底搞没了」
+        const mv2 = modal.dataset.newMode;
+        if (mv2 === 'new' && prevMode !== 'new' && task.done && srOn() && !task.sp) {
+          const doneDay = task.doneDay || dayKey;
+          if (doneDay === S().todayKey()) {
+            srAfterTaskDone(task, listKey, S().todayKey());   // 🌱 v156：自动帮他订好（+30分钟），不逼他挑
+            srRunPending();                                   // 知识点弹窗照旧
+          } else {
+            App.ui.toast('📘 标成新知识了。这条是 ' + S().shortDateCN(doneDay) +
+              ' 做完的 —— 想复习它：点行上的 🌱 自己排一次', 6600);
+          }
+        }
       },
       del: function () {
         App.ui.confirm('删除这条任务？（先进回收站，可恢复）', '删除', function () {
@@ -5916,7 +5938,7 @@
       const d = new Date();
       if (res === 'ok') { d.setDate(d.getDate() + 7); return d; }
       if (res === 'no') { d.setDate(d.getDate() + 1); return d; }
-      return srDefaultDue(task);
+      return new Date(Date.now() + 30 * 60000);   // 🌱 v156：不选结果 → 默认 30 分钟后（当天），别甩到明天
     };
     const m = App.ui.openModal('🎯 这次写出来了吗？',
       '<p class="rev-hint">「' + S().esc(task.text) + '」到今天已经复习 <b>' + doneN + '</b> 次' +
@@ -5930,13 +5952,24 @@
       '<input type="datetime-local" id="sra-at" value="' + dtLocalVal(dueFor(picked)) + '" style="width:200px" /></div>' +
       '<p class="rev-hint" id="sra-when" style="margin-top:-2px"></p>' +
       '<div class="sr-chips">' +
+      '<button class="btn" data-act="q-m30">⚡ 30分钟后</button>' +
       '<button class="btn" data-act="q-tmr">明天</button>' +
       '<button class="btn" data-act="q-3">+3 天</button>' +
       '<button class="btn" data-act="q-7">+7 天</button>' +
       '<button class="btn" data-act="q-30">+30 天</button>' +
       '<span class="hint" style="align-self:center">（快捷：从<b>现在</b>往后算）</span></div>' +
       '<div class="field"><label>这一轮过几遍</label>' +
-      '<input type="number" id="sra-per" min="1" max="20" style="width:90px" value="' + per0 + '" /></div>',
+      '<input type="number" id="sra-per" min="1" max="20" style="width:90px" value="' + per0 + '" /></div>' +
+      (function () {
+        // 🌱 v156：已排的待复习 —— 当场能取消（用户：「我定到明天8点，不可以取消吗？」）
+        const pend = plan.filter(function (r) { return r.done === null; });
+        return pend.length
+          ? '<p class="hint" style="margin:6px 0 0">📅 已排的待复习：' + pend.map(function (r) {
+              return '第 ' + r.n + ' 次 ' + srWhen(r.due) +
+                ' <button class="btn btn-small" data-act="sr-cancel2" data-n="' + r.n + '">✕ 取消</button>';
+            }).join('、') + '</p>'
+          : '';
+      })(),
       '<button class="btn btn-primary" data-act="again">🔁 排这一次</button>' +
       '<button class="btn" data-act="stop">🆗 就到这儿（不再安排）</button>');
     const gEl = srBindWhenPreview(m, 'sra-at', 'sra-when');
@@ -5964,10 +5997,24 @@
       const d = new Date(); d.setDate(d.getDate() + days);
       if (gEl) { gEl.value = dtLocalVal(d); gEl.dispatchEvent(new Event('input')); }
     };
+    const jumpM = function (mins) {
+      if (gEl) { gEl.value = dtLocalVal(Date.now() + mins * 60000); gEl.dispatchEvent(new Event('input')); }
+    };
     paint();
     App.ui.bindActions({
       'res-ok': function () { resPick('ok'); },
       'res-no': function () { resPick('no'); },
+      'q-m30': function () { jumpM(30); },
+      'sr-cancel2': function (el) {
+        const n2 = +el.dataset.n;
+        if (task.sp) {
+          task.sp.planned = (task.sp.planned || []).filter(function (r) { return !(r.n === n2 && r.done === null); });
+          S().save();
+          App.ui.toast('✕ 取消了第 ' + n2 + ' 次复习');
+        }
+        App.ui.closeModal();
+        srAskAgain(task);   // 重开一份（列表已更新）
+      },
       'q-tmr': function () { jump(1); },
       'q-3': function () { jump(3); },
       'q-7': function () { jump(7); },
@@ -6052,7 +6099,10 @@
         const cls = r.done === true ? ' ok' : ((r.done === null && r.due <= now) ? ' late' : '');
         return '<div class="sr-hist-r"><span class="sr-hist-n">第 ' + r.n + ' 次</span>' +
           '<span class="sr-hist-d">计划 ' + srWhen(r.due) + '</span>' +
-          '<span class="sr-hist-s' + cls + '">' + st + '</span>' + srResTag(r) + '</div>';
+          '<span class="sr-hist-s' + cls + '">' + st + '</span>' + srResTag(r) +
+          (r.done === null
+            ? '<button class="btn btn-small" data-act="sr-cancel" data-n="' + r.n + '" title="取消这一次（卡片和任务都还在）">✕ 取消</button>'
+            : '') + '</div>';
       }).join('') + srEndNote(task) + '</div>';
   }
   /** 🌱 v120：给这条任务定「**下一次**复习」。
@@ -6069,7 +6119,7 @@
     const isNewTask = task.mode === SR_MODE_NEW && !plan.some(function (r) { return r.done === true; });
     const body = srHistHTML(plan, task) +
       '<div class="field"><label>下次哪天几点复习（听完课由你自己定）</label>' +
-      '<input type="datetime-local" id="srp-at" style="width:200px" />' +
+      '<input type="datetime-local" id="srp-at" value="' + dtLocalVal(new Date(Date.now() + 30 * 60000)) + '" style="width:200px" />' +
       '<div class="sr-chips" style="margin-top:6px">' +
       '<button class="btn" data-act="srp-chip0">⚡ 30分钟后</button>' +
       '<button class="btn" data-act="srp-chip1">🌙 今晚 21:00</button>' +
@@ -6089,6 +6139,18 @@
       '<button class="btn" data-act="cancel">' + (isNewTask ? '🎧 听完课再来定' : '取消') + '</button>');
     const gEl = srBindWhenPreview(m, 'srp-at', 'srp-when');
     App.ui.bindActions({
+      'sr-cancel': function (el) {
+        // 🌱 v156：取消某一次还没做的复习 —— 用户：「我定到明天8点，我不可以取消这个吗？」
+        const n = +el.dataset.n;
+        App.ui.confirm('取消第 ' + n + ' 次复习？<br><span class="hint">只取消这一次 —— 任务和卡片都还在，想再排随时点 🌱。</span>', '取消', function () {
+          task.sp.planned = (task.sp.planned || []).filter(function (r) { return !(r.n === n && r.done === null); });
+          S().save();
+          App.ui.closeModal();
+          App.tasks.renderAll();
+          try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+          App.ui.toast('✕ 取消了第 ' + n + ' 次复习');
+        });
+      },
       ok: function () {
         const due = dtLocalParse(gEl ? gEl.value : '');
         if (!due) { App.ui.toast('时间还没挑 —— 想先去听课，就点「🎧 听完课再来定」', 4200); return; }
@@ -6210,12 +6272,15 @@
    *  日期 = 现在 + 模板的第一个间隔；后面每次复习完再单独定下一次。 */
   function srAfterTaskDone(task, listKey, dayKey) {
     if (!srOn() || !srWanted(task) || task.sp) return;
-    // 🌱 v133：**不再静默排「30分钟后」**（用户：「他还是自己定的，实际上可以听完一节课以后去定内容，
-    //    听完一节课以后定几点复习」）→ 完课只记两个待办：① 知识点弹窗（srPendKp，原有）
-    //    ② 排期弹窗（srPendPlan，接在知识点后面）—— 时间留空，由用户自己挑；不挑就先不排。
-    srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };
-    srPendPlan = { id: task.id, listKey: listKey, dayKey: dayKey };
-    App.ui.toast('🌱 听完一节课了 —— 接下来弹窗，<b>几点复习你自己定</b>（先不想定也可以）', 5600);
+    // 🌱 v156：完课**直接自动帮他订好第一次** —— 用户：「我做完之后你帮我订一下」「做一次定一次」。
+    //   默认 = 现在 +30 分钟（**当天**，不甩到明天）；不合适随时点行上的 🌱 改/取消。
+    //   （v133 的"必须自己挑"实测太烦：空框 + 红字「先挑一个时间」像在考他）
+    const due = Date.now() + 30 * 60000;
+    task.sp = { planned: [{ n: 1, gap: 30, due: due, done: null, at: null, need: 1, hits: [] }],
+                dl: srDeadlineHM(), at: Date.now(), bonus: false,
+                cfg: { gaps: [30], perDay: 1, dl: srDeadlineHM() } };
+    srPendKp = { id: task.id, listKey: listKey, dayKey: dayKey };   // 知识点弹窗照旧；排期不再逼着挑
+    App.ui.toast('🌱 听完一节课！已自动帮你排好下一次复习：<b>' + srWhen(due) + '</b> —— 不合适就点行上的 🌱 改或取消', 6600);
   }
 
   let srPendPlan = null;   // 🌱 v133：完课后待弹的「定下一次复习」

@@ -157,6 +157,9 @@ const SLIDES = [
       '<div class="tl" data-i="67"><div class="n">v67</div><div class="t">图片救援 · 只救图不动数据</div></div>'+
       '<div class="tl" data-i="68"><div class="n">v68</div><div class="t">复习不再翻倍 · 改天不吞任务</div></div>'+
       '<div class="tl" data-i="69"><div class="n">v69</div><div class="t">每天自动存卡片包到电脑</div></div>'+
+      '<div class="tl" data-i="70"><div class="n">v70</div><div class="t">完课必弹复习排期 · 静默角落堵上</div></div>'+
+      '<div class="tl" data-i="71"><div class="n">v71</div><div class="t">做完自动订复习 · 可取消</div></div>'+
+      '<div class="tl" data-i="72"><div class="n">v72</div><div class="t">欠的复习不再硬塞进今天</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -1830,6 +1833,52 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#0ea5e9"><h4>💡 提示</h4><ul><li>浏览器重启后第一次写盘可能要点一下「📁 …」续授权（一次点击）</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v70 · 完课必弹复习排期", badge:{t:"v70 · 🌱",c:"#22a06b"},
+    tag:"新知识做完/改属性，都会让你定下一次复习 —— 三个静默角落全堵上",
+    cols:[
+      {t:"🌱 什么时候会弹", c:"#22a06b", items:[
+        "📘 新知识**打勾完成** → 总结窗后弹「定下一次复习」（原有，没坏）",
+        "**先打勾、后改成📘 新知识**（✏️ 编辑里改）→ 现在当场补弹排期窗",
+        "**以前排过的**再完课 → 不重复弹，但会明说：「想加一轮点行上的 🌱」"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#22a06b"><h4>💡 找回入口</h4><ul><li>任何任务行上的 **🌱** 随时能排/加轮 —— 不用等完课弹窗</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v71 · 做完自动帮你订复习", badge:{t:"v71 · 🌱",c:"#22a06b"},
+    tag:"听完课不用挑时间 —— 系统直接订好 30 分钟后，不合适再改，还能取消",
+    cols:[
+      {t:"🌱 做完就订好", c:"#22a06b", items:[
+        "📘 新知识听完课 → **自动排好下一次复习（30 分钟后，当天）**，弹个提示告诉你订在哪",
+        "不甩空框让你挑、不默认到明天早上 —— 就在今天",
+        "不合适：点行上的 **🌱** 改时间，或直接取消这一次"]},
+      {t:"✕ 已订的能取消", c:"#dc2626", items:[
+        "🌱 排期记录里每条**待做的复习带 ✕ 取消**",
+        "「写出来了吗」弹窗里也列出已排的待复习，✕ 一点就没",
+        "默认时间全部改成 **30 分钟后**（写出来了选 7 天 / 没写出来选明天 照旧）"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#22a06b"><h4>💡 节奏</h4><ul><li>做一次订一次、复习完一次问一次要不要再订 —— 全程不用提前挑时间</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v72 · 欠的复习不再硬塞", badge:{t:"v72 · 📋",c:"#dc2626"},
+    tag:"前几天没做的复习不再自动堆进今天 —— 你点了才算数",
+    cols:[
+      {t:"📋 改成这样", c:"#dc2626", items:[
+        "队列页复习区顶部：「↷ **之前欠的复习 N 条**（最早 x/x 排的）」",
+        "**📥 搬进来今天做**：点了才进今天的清单；**🗑 不做了**：一批全收掉",
+        "不点就**永远不进今天的清单** —— 当天做完课自动订下一次（v156）不变"]},
+      {t:"↷ 已经塞进来的", c:"#0369a1", items:[
+        "带 ↷ 顺延标的那几条还在今天的清单里（之前搬的）",
+        "用「🗑 顺延来的收走」一次收掉，不用一条条删"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#dc2626"><h4>💡 为什么改</h4><ul><li>用户：「我自己都不打算今天做这个，你给我加上？」—— 从今天起欠账只记账，不上桌</li></ul></div>'+
       '</div>'
   },
   {

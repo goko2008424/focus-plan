@@ -1628,14 +1628,7 @@
       });
       return out;
     })();
-    // 📋 v157：之前欠的复习（没搬进来的）—— 汇总条，点了才进今天（在区块外统计，0 条复习也要显示）
-    let odN = 0, odFrom = '';
-    try {
-      const od = (App.memcards && App.memcards.overdueReviews) ? App.memcards.overdueReviews() : [];
-      odN = od.length;
-      if (odN) odFrom = od[0].k.slice(5);
-    } catch (e) { /* 忽略 */ }
-    if (revs.length || odN) {
+    if (revs.length) {
       const rolledN = revs.filter(function (x) { return x.t.rolled || (x.t.mcRef && x.t.mcRef.slippedFrom); }).length;
       h += '<div class="q-revsec"><div class="q-revsec-h">🌱 今天的复习（' + revs.length +
         ' 条）—— 平时在任务页必须栏，这儿也能直接开始' +
@@ -1643,10 +1636,7 @@
         '<button class="btn btn-small" data-act="qrev-dedupe" title="同一套卡今天出现两遍的，只留一条（留你自己排的那条）">🧹 清重复</button> ' +
         (rolledN ? '<button class="btn btn-small" data-act="qrev-droproll" title="这些是前几天没做完顺延过来的 —— 一次收走，你亲手排的不动">🗑 顺延来的 ' + rolledN + ' 条收走</button>' : '') +
         '</span></div>' +
-        (rolledN ? '<div class="q-revsec-note">↷ 标着顺延的，是之前搬进来的 —— 不想做就点「🗑 顺延来的收走」。</div>' : '') +
-        (odN ? '<div class="q-revsec-note">↷ <b>之前欠的复习还有 ' + odN + ' 条</b>（最早 ' + odFrom + ' 排的）—— 不点就<b>不会进今天的清单</b>，安心。' +
-          '<button class="btn btn-small" data-act="q-od-move" style="margin-left:6px">📥 搬进来今天做</button>' +
-          '<button class="btn btn-small" data-act="q-od-drop" style="margin-left:6px">🗑 不做了</button></div>' : '');
+        (rolledN ? '<div class="q-revsec-note">↷ 标着顺延的，是前几天排了没做完自动挪过来的（你没排过今天的它们）—— 不想做就一次收走，卡片页的排期链不受影响。</div>' : '');
       revs.forEach(function (x) {
         const t = x.t;
         const dots = (App.tasks && App.tasks.revDotsHTML) ? App.tasks.revDotsHTML(t) : '';
@@ -1971,25 +1961,6 @@
       return;
     }
     if (act === 'd-tomorrow-all') { moveAllDailyToTomorrow(); return; }
-    // 📋 v157：之前欠的复习 —— 搬进来 / 全不做了
-    if (act === 'q-od-move') {
-      let nm = 0;
-      try { nm = (App.memcards && App.memcards.moveOverdueIntoToday) ? App.memcards.moveOverdueIntoToday() : 0; } catch (e) { nm = 0; }
-      render();
-      try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
-      App.ui.toast(nm ? ('📥 搬进来 ' + nm + ' 条 —— 现在今天的复习里有它们了') : '没有可搬的', 4200);
-      return;
-    }
-    if (act === 'q-od-drop') {
-      App.ui.confirm('把<b>之前欠的复习一批全不做了</b>？<br><span class="hint">只取消还没做的那些 —— 卡片、任务、排期链都还在，以后想复习随时重新排。</span>', '全不做了', function () {
-        let nd = 0;
-        try { nd = (App.memcards && App.memcards.dropOverdueReviews) ? App.memcards.dropOverdueReviews() : 0; } catch (e) { nd = 0; }
-        render();
-        try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
-        App.ui.toast(nd ? ('🗑 ' + nd + ' 条欠的复习全收了 —— 今天的清单不会再冒出来') : '没有可收的', 4200);
-      });
-      return;
-    }
     // 🧹 v153：复习区块顶上的「清重复 / 收走顺延来的」
     if (act === 'qrev-dedupe') {
       let nd = 0;
