@@ -265,6 +265,7 @@
           .then(function () {
             try { localStorage.setItem(LAST_KEY, String(rec.at)); } catch (e) { /* 忽略 */ }
             busy = false;
+            try { writeAutoPack(str); } catch (e) { /* 忽略 */ }   // 📁 v154：顺手往电脑文件夹写一份完整卡片包
             render();
             return rec;
           });
@@ -421,7 +422,8 @@
       ' 天后自动清理，永远留最近 3 份）。<br>' +
       '✅ <b>图片本体也在备份里了</b>（v121）：导出的文件会把你的问答照片一起打包带走，' +
       '换电脑/重装浏览器用「⬆ 从文件恢复」就能连图一起回来。<br>' +
-      '⚠️ 要防「整台电脑/浏览器出事」，还是得偶尔点一下「⬇ 把最新一份存成文件」，把文件放到网盘或 U 盘里。';
+      '⚠️ 要防「整台电脑/浏览器出事」，还是得偶尔点一下「⬇ 把最新一份存成文件」，把文件放到网盘或 U 盘里。<br>' +
+      autoDirHTML();
   }
   /** 只刷新状态行与说明（改设置项时用 —— 不整块重画，免得把用户正在操作的控件换掉） */
   function refreshStatus() {
@@ -456,6 +458,7 @@
         '<button class="btn btn-small" data-bk-act="prune">🧹 清理过期的</button>' +
         '<button class="btn btn-small" data-bk-act="import">⬆ 从文件恢复</button>' +
         '<button class="btn btn-small" data-bk-act="photo-rescue">🖼 图片救援</button>' +
+        '<button class="btn btn-small" data-bk-act="pickdir">📁 每天自动存到电脑文件夹</button>' +
         '<button class="btn btn-small" data-bk-act="all">🗂 看全部（' + all.length + ' 份 · ' + kb(total) + '）</button>' +
         '</div>' +
         (all.length
@@ -524,6 +527,132 @@
     inp.click();
   }
 
+  /* ---------- 📁 v154：每天自动把「完整卡片包」写到你选的电脑文件夹 ----------
+   * 用户：「图片要和对应的问题存在一块 —— 直接导入就是卡片的形状」。
+   * 备份导出包**本来就是**这种形状（data 里每张卡挂着图 id + photos 图库整套），
+   * 这里补的是"自动"：选一次文件夹 → 之后每存一份快照，顺手往那儿写一份
+   * focus-plan-卡片备份-日期-时间.json —— 电脑上的文件，浏览器清不掉。 */
+  let dirHandle = null;          // 用户选过的文件夹句柄（存备份库里，刷新还在）
+  let dirNeedsGrant = false;     // 浏览器重启后权限可能要重新点一下授权
+  let lastAutoWrite = null;      // { at, name, bytes }
+  const DIR_KEY = '__dirhandle__';
+  const AUTO_KEY = '__autowrite__';
+  const PACK_PREFIX = 'focus-plan-卡片备份-';
+  const PACK_KEEP = 14;          // 文件夹里最多留 14 份
+
+  function metaGet(id) {
+    return tx(ST_META, 'readonly', function (st) { return st.get(id); }).then(function (r) { return r || null; });
+  }
+  function loadDirHandle() {
+    return metaGet(DIR_KEY).then(function (r) {
+      dirHandle = (r && r.handle) || null;
+      return metaGet(AUTO_KEY).then(function (w) {
+        if (w) lastAutoWrite = { at: w.at, name: w.name, bytes: w.bytes };
+        if (dirHandle) {
+          // 刷新后权限可能要重新点一次 —— 静默问一嘴，问不出 granted 就标"要续授权"
+          try {
+            dirHandle.queryPermission({ mode: 'readwrite' }).then(function (p) {
+              dirNeedsGrant = p !== 'granted';
+              try { refreshStatus(); } catch (e) { /* 忽略 */ }
+            }).catch(function () { dirNeedsGrant = true; });
+          } catch (e) { dirNeedsGrant = true; }
+        }
+        try { refreshStatus(); } catch (e) { /* 忽略 */ }
+        return dirHandle;
+      });
+    }).catch(function () { return null; });
+  }
+  /** 点「📁」：没选过 → 选文件夹；权限过期 → 借这次点击续授权（都得在用户点击里） */
+  function pickFolder() {
+    if (dirHandle && dirNeedsGrant) {
+      Promise.resolve(dirHandle.requestPermission({ mode: 'readwrite' })).then(function (p) {
+        dirNeedsGrant = p !== 'granted';
+        App.ui.toast(dirNeedsGrant ? '还没授权成 —— 再点一次' : '📁 好了，每天自动存续上了', 4200);
+        try { refreshStatus(); } catch (e) { /* 忽略 */ }
+      });
+      return;
+    }
+    if (typeof showDirectoryPicker !== 'function') {
+      App.ui.toast('这个浏览器不支持选文件夹 —— 用 Edge/Chrome，或者继续用「⬇ 把最新一份存成文件」', 6000);
+      return;
+    }
+    showDirectoryPicker({ mode: 'readwrite' }).then(function (h) {
+      dirHandle = h; dirNeedsGrant = false;
+      return metaPut({ id: DIR_KEY, handle: h });
+    }).then(function () {
+      App.ui.toast('📁 选好了 —— 以后每天自动写一份完整卡片包到这个文件夹（图和题绑在一起，导入就能用）', 6000);
+      return snap('manual');     // 立刻写第一份，让用户当场看到文件
+    }).then(function () {
+      try { refreshStatus(); } catch (e) { /* 忽略 */ }
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') return;   // 取消选择，不算错
+      App.ui.toast('没弄成：' + ((e && e.message) || e), 5000);
+    });
+  }
+  function autoDirHTML() {
+    if (!dirHandle) return '📁 <b>自动存到电脑文件夹</b>：还没开 —— 点上面「📁 每天自动存到电脑文件夹」选一次就行。' +
+      '以后每次备份都顺手写一份<b>完整卡片包</b>（问题+答案+图绑在一起，「⬆ 从文件恢复」一次导入全回来），电脑上的文件浏览器清不掉。';
+    if (dirNeedsGrant) return '📁 自动存盘：<b>权限过期了</b> —— 点上面「📁 …」续一下授权（一次点击），接着就会继续写。';
+    return '📁 自动存盘：<b>已开 ✔</b>' + (lastAutoWrite ? '（上次写 ' + when(lastAutoWrite.at) + ' · ' + esc(lastAutoWrite.name) + '）' : '') +
+      ' —— 文件夹里自动留最近 ' + PACK_KEEP + ' 份。';
+  }
+  /** 每次快照存好 → 顺手往选好的文件夹写一份完整卡片包（h 只给测试用） */
+  function writeAutoPack(dataStr, h) {
+    const hd = h || dirHandle;
+    if (!hd) return Promise.resolve(false);
+    const ask = h ? Promise.resolve('granted')
+                  : Promise.resolve(hd.queryPermission({ mode: 'readwrite' })).then(function (p) {
+                      if (p !== 'granted') { dirNeedsGrant = true; try { refreshStatus(); } catch (e) { /* 忽略 */ } }
+                      return p;
+                    });
+    return ask.then(function (p) {
+      if (p !== 'granted') return false;
+      const d = new Date();
+      const pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      const name = PACK_PREFIX + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.json';
+      let pack = '';
+      try { pack = JSON.stringify({ __focusPlan: 2, exportedAt: Date.now(), data: JSON.parse(dataStr), photos: photoMap() }); }
+      catch (e) { return false; }
+      return hd.getFileHandle(name, { create: true }).then(function (fh) {
+        return fh.createWritable();
+      }).then(function (w) {
+        return w.write(pack).then(function () { return w.close(); });
+      }).then(function () {
+        lastAutoWrite = { at: Date.now(), name: name, bytes: pack.length };
+        dirNeedsGrant = false;
+        try { metaPut({ id: AUTO_KEY, at: lastAutoWrite.at, name: name, bytes: pack.length }); } catch (e) { /* 忽略 */ }
+        // 清旧：只动自己写的这种文件名，留最近 PACK_KEEP 份
+        let pruneP = null;
+        try {
+          const olds = [];
+          const it = hd.values();
+          const step = function () {
+            return it.next().then(function (r) {
+              if (!r || r.done) return null;
+              const e = r.value;
+              if (e && e.kind === 'file' && String(e.name || '').indexOf(PACK_PREFIX) === 0) olds.push(e.name);
+              return step();
+            });
+          };
+          pruneP = step().then(function () {
+            olds.sort();
+            const kill = olds.slice(0, Math.max(0, olds.length - PACK_KEEP));
+            return kill.reduce(function (ch, nm) {
+              return ch.then(function () { return hd.removeEntry(nm); }).catch(function () { /* 忽略 */ });
+            }, Promise.resolve());
+          });
+        } catch (e) { pruneP = null; }
+        return Promise.resolve(pruneP).then(function () {
+          try { refreshStatus(); } catch (e) { /* 忽略 */ }
+          return true;
+        });
+      });
+    }).catch(function () {
+      if (!h) { dirNeedsGrant = true; try { refreshStatus(); } catch (e) { /* 忽略 */ } }
+      return false;
+    });
+  }
+
   function bind() {
     const box = document.getElementById('bk-box');
     if (!box || box.dataset.bkBound) return;
@@ -534,6 +663,7 @@
       const act = b.dataset.bkAct, id = b.dataset.id || '';
       if (act === 'now') { snap('manual').then(function (r) { if (r) App.ui.toast('💾 已备份一份（' + when(r.at) + '）'); }); return; }
       if (act === 'file') { if (id) exportOne(id); return; }
+      if (act === 'pickdir') { pickFolder(); return; }   // 📁 v154
       if (act === 'prune') {
         prune().then(function (n) { App.ui.toast(n ? ('🧹 清掉 ' + n + ' 份过期备份') : '🧹 没有过期的'); render(); });
         return;
@@ -580,6 +710,7 @@
     ensureDefaults();
     bind();
     render();
+    loadDirHandle();   // 📁 v154：把上次选的文件夹句柄捞回来
     idb().then(function () {
       return metaAll();
     }).then(function (all) {
@@ -650,6 +781,8 @@
     _metaAll: metaAll,
     _bodyGet: bodyGet,
     importFile: importFile, importFromText: importFromText,     // 💾 v121
+    writeAutoPack: writeAutoPack, pickFolder: pickFolder,       // 📁 v154
+    autoDirState: function () { return { has: !!dirHandle, needsGrant: dirNeedsGrant, last: lastAutoWrite }; },
     exportTextOf: exportTextOf,
     photos: function () { const m = photoMap(); return { n: Object.keys(m).length, mb: photoMBOf(m), map: m }; },
     when: when, kb: kb

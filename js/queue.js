@@ -1610,6 +1610,9 @@
       });
     }
 
+    // 🧹 v153：列之前先把今天的重复复习并掉（去重以前只在卡片页跑，卡片页不是每天都开）
+    try { if (App.memcards && App.memcards.dedupeReviewDupes) App.memcards.dedupeReviewDupes(); } catch (e) { /* 忽略 */ }
+
     // 🌱 v118：今天排的复习任务（平时只出现在任务页必须栏）—— 这里也列一份，能直接开始。
     //   用户：「复习的任务，它为什么只在那个必须做的任务当中显示，没有在每天的基础任务当中显示」
     const revs = (function () {
@@ -1626,8 +1629,14 @@
       return out;
     })();
     if (revs.length) {
+      const rolledN = revs.filter(function (x) { return x.t.rolled || (x.t.mcRef && x.t.mcRef.slippedFrom); }).length;
       h += '<div class="q-revsec"><div class="q-revsec-h">🌱 今天的复习（' + revs.length +
-        ' 条）—— 平时在任务页必须栏，这儿也能直接开始</div>';
+        ' 条）—— 平时在任务页必须栏，这儿也能直接开始' +
+        '<span class="q-revsec-acts">' +
+        '<button class="btn btn-small" data-act="qrev-dedupe" title="同一套卡今天出现两遍的，只留一条（留你自己排的那条）">🧹 清重复</button> ' +
+        (rolledN ? '<button class="btn btn-small" data-act="qrev-droproll" title="这些是前几天没做完顺延过来的 —— 一次收走，你亲手排的不动">🗑 顺延来的 ' + rolledN + ' 条收走</button>' : '') +
+        '</span></div>' +
+        (rolledN ? '<div class="q-revsec-note">↷ 标着顺延的，是前几天排了没做完自动挪过来的（你没排过今天的它们）—— 不想做就一次收走，卡片页的排期链不受影响。</div>' : '');
       revs.forEach(function (x) {
         const t = x.t;
         const dots = (App.tasks && App.tasks.revDotsHTML) ? App.tasks.revDotsHTML(t) : '';
@@ -1636,8 +1645,11 @@
         if (!nCards && App.memcards && App.memcards.cardsForTask) {
           try { nCards = App.memcards.cardsForTask(t).length; } catch (e) { /* 忽略 */ }
         }
-        h += '<div class="q-row q-rev-row" data-id="' + t.id + '">' +
+        // 🧹 v153：分清「你亲手排的」和「顺延来的」
+        const isRolled = !!(t.rolled || (t.mcRef && t.mcRef.slippedFrom));
+        h += '<div class="q-row q-rev-row' + (isRolled ? ' q-rev-rolled' : '') + '" data-id="' + t.id + '">' +
           '<span class="q-text">' + esc(t.text) +
+          (isRolled ? '<span class="rolled-tag" title="前几天排了没做完，自动顺延到今天的 —— 你没排过今天">↷ 顺延</span>' : '') +
           (nCards ? ' <span class="mc-chip" title="这套卡有 ' + nCards + ' 张">🃏 ' + nCards + '</span>' : '') +
           dots +
           // 🏅 v149：复习行也有积分框 —— 改的就是这条任务自己的 points，
@@ -1949,6 +1961,26 @@
       return;
     }
     if (act === 'd-tomorrow-all') { moveAllDailyToTomorrow(); return; }
+    // 🧹 v153：复习区块顶上的「清重复 / 收走顺延来的」
+    if (act === 'qrev-dedupe') {
+      let nd = 0;
+      try { nd = (App.memcards && App.memcards.dedupeReviewDupes) ? App.memcards.dedupeReviewDupes() : 0; } catch (e) { nd = 0; }
+      render();
+      try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+      App.ui.toast(nd ? ('🧹 清掉 ' + nd + ' 条重复的 —— 每套卡今天只留一条（留你亲手排的）') : '🧹 今天没有重复的复习', 4200);
+      return;
+    }
+    if (act === 'qrev-droproll') {
+      App.ui.confirm('把今天这些<b>带 ↷ 顺延来的</b>复习一次收走？<br>' +
+        '<span class="hint">你亲手排的（没有 ↷ 的）<b>一条都不动</b>；卡片页的排期链也不受影响 —— 只是今天不做它们了。</span>', '收走', function () {
+        let nr = 0;
+        try { nr = (App.memcards && App.memcards.dropRolledReviews) ? App.memcards.dropRolledReviews() : 0; } catch (e) { nr = 0; }
+        render();
+        try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+        App.ui.toast(nr ? ('🗑 收走 ' + nr + ' 条顺延来的 —— 今天清爽了') : '没有可收的（都是你自己排的）', 4200);
+      });
+      return;
+    }
     // 🌱 v118：基础任务卡里「今天的复习」那几个按钮
     if (act === 'qrev-start' || act === 'qrev-cards' || act === 'qrev-date' || act === 'qrev-del' || act === 'qrev-open') {
       const col = b.dataset.col || 'required';

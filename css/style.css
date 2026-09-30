@@ -1712,3 +1712,9 @@ body[data-theme="dark"] .hour-card.active, body[data-theme="purple"] .hour-card.
 /* v137：悬浮窗上的小时代计入行 */
 #tf-hp { margin: 8px 0 0; font-size: 12.5px; background: var(--bg); border: 1px solid var(--primary); border-radius: 8px; padding: 5px 9px; }
 #tf-hp.hidden { display: none; }
+
+/* 🧹 v153 复习区块：清重复 / 收走顺延来的 */
+.q-revsec-acts { display: inline-flex; gap: 6px; margin-left: 8px; flex-wrap: wrap; }
+.q-revsec-note { font-size: 12px; opacity: .75; margin: 2px 0 6px; line-height: 1.5; }
+.q-rev-row.q-rev-rolled { opacity: .93; }
+.q-rev-row.q-rev-rolled .rolled-tag { font-size: 11px; padding: 1px 6px; margin-left: 6px; border-radius: 10px; }

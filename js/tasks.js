@@ -4314,15 +4314,34 @@
       { text: task.text, points: task.points, mode: task.mode, mcRef: task.mcRef, kps: task.kps,
         subs: task.subs, groups: task.groups },
       listKey, d, task.standard, true, listKey);
-    if (!okM) App.ui.toast('那天有同名任务，本体没搬过去 —— 今天这条先收走了', 4200);
-    const nt = (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
+    // 🔴 v153：同名冲突**绝不能再删源** —— 老版 copyTaskToDay 返回 false 后照样 removeTask，
+    //   结果「昨天排到今天的 5 个任务今天全没了」（目标没落地、源被删，两头都没了）。
+    //   现在：先看看那天是不是真有同名的 —— 有就把身份/进度并过去，再收走源；真没有就**留着不动**。
+    const existN = (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
+    if (!okM && !existN) {
+      S().save();
+      App.ui.toast('那天没放进去，这条先留在今天（没动它）', 4600);
+      return;
+    }
+    const nt = existN || (S().getDay(d).tasks[listKey] || []).filter(function (x) { return x.text === task.text; })[0];
+    if (!okM && nt) {
+      if (task.mode) nt.mode = task.mode;
+      if (task.mcRef) nt.mcRef = JSON.parse(JSON.stringify(task.mcRef));
+      if (task.kps && task.kps.length) nt.kps = JSON.parse(JSON.stringify(task.kps));
+      if (!(nt.subs && nt.subs.length) && task.subs) {
+        const us = (task.subs || []).filter(function (x) { return x.done !== true; })
+          .map(function (x) { return JSON.parse(JSON.stringify(x)); });
+        if (us.length) nt.subs = us;
+      }
+    }
     if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
-    App.calendar.removeTask(dayKey, listKey, taskId);
+    if (okM || nt) App.calendar.removeTask(dayKey, listKey, taskId);
     S().save();
     App.tasks.renderAll();
     try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
     try { if (App.calendar && App.calendar.render) App.calendar.render(); } catch (e) { /* 忽略 */ }
     App.ui.toast('➡️ 「' + String(task.text || '').slice(0, 14) + '」挪到 ' + S().fmtDateCN(d) + ' 了' +
+      (!okM ? '（那天本来就有同名的 —— 并到那条上了）' : '') +
       (dropN ? '（做完的 ' + dropN + ' 项没带过去）' : ''), 5600);
   }
   /** 🌱 v139：把任务行/队列复习行的「📅 改天再做」统一到这里 */

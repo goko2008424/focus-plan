@@ -219,27 +219,75 @@
       });
     }
   }
-  /** 🧹 v147：把今天**成对/成堆**的重复复习清掉 —— 同一栏、同名（复习·开头）、都没做的，
-   *  保留一条（优先今天新排的正轮），其余删掉。用户一晚上被滚出 80 条就是这来的。 */
-  function dedupeReviewDupes() {
-    const today = S().todayKey();
-    const day = S().getDay(today);
+  /** 🧹 v153：把某天（默认今天）**成对/成堆**的重复复习清掉
+   *  🔴 老版（v147）三个漏子，用户一早上被滚出 50 多条、每个合集两条：
+   *    ① 只认 /^复习/ 开头 —— 而排期建出来的名字一律是「🃏 复习 · xxx」（**带 🃏**），
+   *       于是每一条重复都躲去重，成对成对地留；
+   *    ② 只按原文字比 —— 名字差一个标点/卡数不同就当两条；
+   *    ③ 只在卡片页跑 —— 卡片页不是每天都开，队列页看到的永远是最新的脏数据。
+   *  现在：键 = mcRef.colId（有就优先，同一套卡同一天只该有一条）；
+   *        否则用"规范化文字"（去 emoji / 复习前缀 / 空白 / 标点）。
+   *        同栏同键只留一条 —— 留**你亲手排的那条**，顺延(rolled)/挪来(slippedFrom)的让位。 */
+  function revIsReview(t) {
+    if (!t) return false;
+    if (t.mcRef) return true;
+    if (t.mode === 'review') return true;
+    return /^\s*复习/.test(String(t.text || '').replace(/[\u{1F000}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu, ''));
+  }
+  function revKeyOf(t) {
+    if (t && t.mcRef && t.mcRef.colId) return 'col:' + t.mcRef.colId;
+    const s0 = String((t && t.text) || '')
+      .replace(/[\u{1F000}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu, '')      // 去掉 🃏 这类 emoji
+      .replace(/^\s*复习\s*[·•・:：\-—]?\s*/, '')                        // 去掉"复习 ·"前缀
+      .replace(/[\s·•・:：\-—_()（）]/g, '');                             // 去掉空白与标点
+    return 'txt:' + s0;
+  }
+  /** 留谁：0 已做（当历史留着）→ 1 你亲手排的 → 2 顺延来的 → 3 结算搬来的 → 4 已被顶掉的 */
+  function revRank(t) {
+    if (t.done === true) return 0;
+    if (t.mcRef && t.mcRef.superseded) return 4;
+    if (t.rolled) return 3;
+    if (t.mcRef && t.mcRef.slippedFrom) return 2;
+    return 1;
+  }
+  function dedupeReviewDupes(dayKey) {
+    const day = S().getDay(dayKey || S().todayKey());
     let n = 0;
     ['required', 'ideal', 'extra'].forEach(function (c) {
-      const arr = day.tasks[c] || [];
-      const seen = {};
+      const arr = (day.tasks && day.tasks[c]) || [];
+      const groups = {};
+      arr.forEach(function (t) {
+        if (!revIsReview(t)) return;                 // 只收复习任务，别的任务绝不碰
+        if (t.done === true) return;                 // 做完的是历史，不动
+        const k = revKeyOf(t);
+        (groups[k] = groups[k] || []).push(t);
+      });
+      Object.keys(groups).forEach(function (k) {
+        const g = groups[k];
+        if (g.length < 2) return;
+        g.sort(function (a, b) {
+          return (revRank(a) - revRank(b)) || (String(a.at || '') < String(b.at || '') ? -1 : 1);
+        });
+        g.slice(1).forEach(function (t) {            // 排第一的留下，其余删
+          const i = arr.indexOf(t);
+          if (i >= 0) { arr.splice(i, 1); n++; }
+        });
+      });
+    });
+    if (n) S().save();
+    return n;
+  }
+  /** 🧹 v153：顺延/结算搬来的复习行，从今天收走（用户：「有些我压根就没安排」）
+   *  只动**今天**的、没做的、带 rolled 或 slippedFrom 的复习任务；你亲手排的一条不动。 */
+  function dropRolledReviews() {
+    const day = S().getDay(S().todayKey());
+    let n = 0;
+    ['required', 'ideal', 'extra'].forEach(function (c) {
+      const arr = (day.tasks && day.tasks[c]) || [];
       for (let i = arr.length - 1; i >= 0; i--) {
         const t = arr[i];
-        if (t.done === true) continue;
-        const txt = String(t.text || '').trim();
-        if (!/^复习/.test(txt)) continue;          // 只收复习任务，别的任务绝不碰
-        const key = c + '|' + txt;
-        if (!seen[key]) {
-          // 留下第一条（从后往前扫，遇到的就是"最后写的"—— 优先保留今天新排的正轮，
-          //   顺延来的旧副本在更前面，会被下面 continue 掉吗？不会 —— 从后往前第一条留下，其余删）
-          seen[key] = true;
-          continue;
-        }
+        if (t.done === true || !revIsReview(t)) continue;
+        if (!(t.rolled || (t.mcRef && t.mcRef.slippedFrom))) continue;
         arr.splice(i, 1); n++;
       }
     });
@@ -278,6 +326,8 @@
               // 🔴 只认「顺延副本」（结算搬的带 rolled / 我们搬的带 slippedFrom）——
               //    未来新排的其他轮次不算，不然漏掉的旧轮次永远被当成「已经有副本」而不搬
               if (t.mcRef && t.mcRef.colId === colId && (t.rolled || t.mcRef.slippedFrom)) hasLater = true;
+          // 🧹 v153：今天已经有这一套（不管是不是副本）→ 一样算"后面有了"，别再搬一份过来
+          if (k === today && t.mcRef && t.mcRef.colId === colId && t.done !== true) hasLater = true;
             });
           });
         }
@@ -1978,7 +2028,8 @@
     schedDaysOf: schedDaysOf, schedBadgeHTML: schedBadgeHTML, dupOnDay: dupOnDay, mcSweepOverdue: mcSweepOverdue,   // 📅 v116
     flippedOn: flippedOn,               // 🛟 v147 结算也要问「那天翻过这套卡没」
     phFailedNow: function () { return phFailed; },   // 🛟 v148
-    dedupeReviewDupes: dedupeReviewDupes,
+    dedupeReviewDupes: dedupeReviewDupes, dropRolledReviews: dropRolledReviews,   // 🧹 v153
+    revIsReview: revIsReview, revKeyOf: revKeyOf,
     cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,
     addSubject: addSubject,
