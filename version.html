@@ -160,6 +160,8 @@ const SLIDES = [
       '<div class="tl" data-i="70"><div class="n">v70</div><div class="t">完课必弹复习排期 · 静默角落堵上</div></div>'+
       '<div class="tl" data-i="71"><div class="n">v71</div><div class="t">做完自动订复习 · 可取消</div></div>'+
       '<div class="tl" data-i="72"><div class="n">v72</div><div class="t">欠的复习不再硬塞进今天</div></div>'+
+      '<div class="tl" data-i="73"><div class="n">v73</div><div class="t">排了就一定显示 · 去重不误伤</div></div>'+
+      '<div class="tl" data-i="74"><div class="n">v74</div><div class="t">专题归档 · 合集分类找</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -1879,6 +1881,36 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#dc2626"><h4>💡 为什么改</h4><ul><li>用户：「我自己都不打算今天做这个，你给我加上？」—— 从今天起欠账只记账，不上桌</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v73 · 排了就一定显示", badge:{t:"v73 · 📅",c:"#0369a1"},
+    tag:"排到某天遇到同名不再不排 —— 自动叫「（第2份）」照样排上",
+    cols:[
+      {t:"📅 排了就一定在", c:"#0369a1", items:[
+        "📅 排到某天遇到同名任务 → 自动叫「**（第2份）**」照样排进去（以前直接不排，提示一闪就没了）",
+        "你自己排的两遍**不再被当重复删掉** —— 去重只收系统搬来的副本",
+        "排过的日子在卡片页 📅 排期链里都看得见"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0369a1"><h4>💡 一句话</h4><ul><li>你排的永远在；系统搬的重复才清</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v74 · 专题归档", badge:{t:"v74 · 📁",c:"#7c3aed"},
+    tag:"合集 30+ 找起来慢？自己建专题，把合集归类",
+    cols:[
+      {t:"📁 自己建专题", c:"#7c3aed", items:[
+        "卡片页顶部「📁 专题」条 → **＋ 新建专题**（自己命名，比如「化学平衡」）",
+        "合集行上点 **📁** → 选已有专题或新建一个放进去",
+        "合集行会显示 📁 专题名"]},
+      {t:"🔍 点一下就筛出来", c:"#0369a1", items:[
+        "专题条点某个专题 → **只列那一个专题的合集**（学科分组照旧）",
+        "「未分组」一眼看到还没归档的；选择会记住，下次打开还是它",
+        "专题只是归类 —— 复习、排期、积分全不受影响"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#7c3aed"><h4>💡 建议</h4><ul><li>按「化学平衡 / 电化学 / 溶液」这种章节建专题，一专题管一摊</li></ul></div>'+
       '</div>'
   },
   {

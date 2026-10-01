@@ -169,6 +169,62 @@
 
   function subjectOf(col) { return (col && col.subject) || ''; }
 
+  /* ---------- 📁 v159：专题 —— 合集 30+ 找起来慢，自己建专题归档 ----------
+   * col.topic = 合集挂在哪个专题；d.topics = 用户建过的专题名（空专题也不丢）。
+   * 专题只是归类，不影响复习/积分/排期 —— 找起来快才是目的。 */
+  function topics() {
+    const d = S().data() || {};
+    const out = Array.isArray(d.topics) ? d.topics.slice() : [];
+    D().forEach(function (c) {
+      if (c.topic && out.indexOf(c.topic) < 0) out.push(c.topic);
+    });
+    return out;
+  }
+  function addTopic(name) {
+    const v = String(name || '').trim();
+    if (!v) return;
+    const d = S().data();
+    if (!Array.isArray(d.topics)) d.topics = [];
+    if (d.topics.indexOf(v) < 0) { d.topics.push(v); save(); }
+  }
+  function topicN(name) {
+    return D().filter(function (c) { return (c.topic || '') === name; }).length;
+  }
+  function curTopicGet() {
+    try { return localStorage.getItem('memcards.topic') || ''; } catch (e) { return ''; }
+  }
+  function curTopicSet(v) {
+    try { localStorage.setItem('memcards.topic', v || ''); } catch (e) { /* 忽略 */ }
+  }
+  /** 📁 把合集放进/移出专题的小弹窗 */
+  function topicModal(col) {
+    const tps = topics();
+    const mm = App.ui.openModal('📁 「' + esc(col.name) + '」放进哪个专题？',
+      '<div class="field"><label>选一个已有的专题</label>' +
+      '<select id="mc-tp-sel" class="select-small"><option value="">（不分组）</option>' +
+      tps.map(function (t) { return '<option value="' + esc(t) + '"' + (col.topic === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div class="field"><label>或新建一个专题（自己命名）</label>' +
+      '<input id="mc-tp-new" class="mc-inp" type="text" placeholder="比如：化学平衡" /></div>' +
+      '<p class="hint">专题只是给合集归类，不影响复习和积分 —— 筛选用卡片页顶上的 📁 专题条。</p>',
+      '<button class="btn btn-primary" data-act="mc-tp-ok">放进去</button>' +
+      '<button class="btn" data-act="mc-tp-cancel">取消</button>');
+    App.ui.bindActions({
+      'mc-tp-ok': function () {
+        const nvEl = mm.querySelector('#mc-tp-new');
+        const svEl = mm.querySelector('#mc-tp-sel');
+        const nv = nvEl ? (nvEl.value || '').trim() : '';
+        const sv = svEl ? (svEl.value || '') : '';
+        const v = nv || sv;
+        if (v) { addTopic(v); col.topic = v; }
+        else { delete col.topic; }
+        save(); App.ui.closeModal(); renderPage();
+        App.ui.toast(v ? ('📁 已放进专题「' + v + '」') : '📁 已移出专题');
+      },
+      'mc-tp-cancel': function () { App.ui.closeModal(); }
+    });
+  }
+
   /** 📅 v101：把「整个合集」或「某一张卡」排到日历某一天 —— 那天出现一条 🔄 复习 任务，
    *  点它右边的 🃏 直接翻卡。用户：「我添加进去的每个知识卡都要支持添加到日历」。 */
   /** 📅 v116：这个合集被排到过哪几天（从带 mcRef 的任务里找）
@@ -265,13 +321,24 @@
       Object.keys(groups).forEach(function (k) {
         const g = groups[k];
         if (g.length < 2) return;
-        g.sort(function (a, b) {
-          return (revRank(a) - revRank(b)) || (String(a.at || '') < String(b.at || '') ? -1 : 1);
-        });
-        g.slice(1).forEach(function (t) {            // 排第一的留下，其余删
-          const i = arr.indexOf(t);
-          if (i >= 0) { arr.splice(i, 1); n++; }
-        });
+        // 🌱 v158：**只删系统副本**（rolled / 顺延搬来的）—— 你自己排的（干净的）永远保留。
+        //    之前一把抓：用户排的两遍被当成重复删掉（「任务安排了一天，没有显示」）。
+        const isSys = function (t) { return !!(t.rolled || (t.mcRef && t.mcRef.slippedFrom)); };
+        const cleans = g.filter(function (t) { return !isSys(t); });
+        const sysds = g.filter(isSys);
+        if (!sysds.length) return;                   // 全是你排的 → 一条不动
+        if (cleans.length) {
+          sysds.forEach(function (t) {               // 有干净的在 → 系统副本全让位
+            const i = arr.indexOf(t);
+            if (i >= 0) { arr.splice(i, 1); n++; }
+          });
+        } else {
+          sysds.sort(function (a, b) { return String(a.at || '') < String(b.at || '') ? -1 : 1; });
+          sysds.slice(1).forEach(function (t) {      // 全是系统副本 → 留最早一条，其余删
+            const i = arr.indexOf(t);
+            if (i >= 0) { arr.splice(i, 1); n++; }
+          });
+        }
       });
     });
     if (n) S().save();
@@ -478,14 +545,17 @@
         const nm = (nmEl && nmEl.value.trim()) ? nmEl.value.trim() : nmDefault;
         if (pickKey < S().todayKey()) { App.ui.toast('那天已经过去了，往后挑一天'); return; }
         if (!App.calendar || !App.calendar.copyTaskToDay) { App.ui.toast('日历模块没加载，先刷新一下'); return; }
-        const okN = App.calendar.copyTaskToDay({ text: nm }, 'required', pickKey, '', false, 'required');
-        if (!okN) { App.ui.toast('那天已经有同名任务了 —— 改个名字或换一天'); return; }
+        // 🌱 v158：遇到同名**自动叫「（第2份）」照样排** —— 老版直接不排（toast 一闪就没），
+        //    用户实报：「任务安排了一天，没有显示了」
+        const nmUse = schedCopyName(pickKey, nm);
+        const okN = App.calendar.copyTaskToDay({ text: nmUse }, 'required', pickKey, '', false, 'required');
+        if (!okN) { App.ui.toast('没排上（那天已经有一样的了）—— 再点一次「✔ 就排这天」试试', 4200); return; }
         // 给它标成「🔄 复习」，并记住它对应哪几张卡
         try {
           const d2 = S().getDay(pickKey);
           let hit = null;
           ['required', 'ideal', 'extra'].forEach(function (k) {
-            (d2.tasks[k] || []).forEach(function (t) { if (!hit && t.text === nm) hit = t; });
+            (d2.tasks[k] || []).forEach(function (t) { if (!hit && t.text === nmUse) hit = t; });
           });
           if (hit) {
             hit.mode = 'review';
@@ -500,10 +570,24 @@
         App.ui.closeModal();
         try { App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
         try { renderPage(); } catch (e) { /* 忽略 */ }
-        App.ui.toast('📅 已排到 ' + pickKey + '：' + nm.slice(0, 16) + ' —— 那天点 🃏 直接翻卡', 5200);
+        App.ui.toast('📅 已排到 ' + pickKey + '：' + nmUse.slice(0, 16) + ' —— 那天点 🃏 直接翻卡', 5200);
       },
       'mc-sch-cancel': function () { App.ui.closeModal(); }
     });
+  }
+
+  /** 🌱 v158：那天已有同名任务时，给这次排的名字自动加「（第2份）（第3份）」—— 绝不再静默不排 */
+  function schedCopyName(dayKey, nm) {
+    const d = (S().data().days || {})[dayKey];
+    const list = [];
+    if (d && d.tasks) ['required', 'ideal', 'extra'].forEach(function (c) {
+      (d.tasks[c] || []).forEach(function (t) { list.push(String(t.text || '').trim()); });
+    });
+    if (list.indexOf(String(nm).trim()) < 0) return nm;
+    for (let i = 2; i < 50; i++) {
+      if (list.indexOf(nm + '（第' + i + '份）') < 0) return nm + '（第' + i + '份）';
+    }
+    return nm + '（' + Date.now() + '）';
   }
 
   /** 从任务行点 🃏 进来：如果那条任务记着「对应哪几张卡」，就直接开那个合集 */
@@ -1824,9 +1908,13 @@
         try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
       }
     } catch (e) { /* 忽略 */ }
-    const list = D().slice().sort(function (a, b) {
+    let list = D().slice().sort(function (a, b) {
       return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
     });
+    // 📁 v159：专题筛选（选了专题/未分组 → 只列那些合集）
+    const curT = curTopicGet();
+    if (curT === '__none__') list = list.filter(function (c) { return !c.topic; });
+    else if (curT) list = list.filter(function (c) { return c.topic === curT; });
     const total = list.reduce(function (n, c) { return n + (c.cards || []).length; }, 0);
     // 🛟 v148：图片库读出来是空的、但卡片明明引用了图 → 大声警示（别让人以为卡坏了）
     let phWarn = '';
@@ -1855,6 +1943,22 @@
       (photoStats().n ? '<button class="btn btn-small" data-act="card-clean">🧹 清理没用的图（' +
         orphanPhotoIds().length + ' / 共 ' + photoStats().n + ' 张 · 约 ' + photoStats().mb + 'MB）</button>' : '') +
       '</div>' +
+      // 📁 v159：专题筛选条 —— 合集多了靠它找
+      (function () {
+        const tps = topics();
+        const cntNone = D().filter(function (c) { return !c.topic; }).length;
+        let bar = '<div class="mc-topics" style="margin:2px 0 10px">' +
+          '<span class="hint" style="margin-right:2px">📁 专题：</span>' +
+          '<button class="btn btn-small' + (curT === '' ? ' btn-primary' : '') + '" data-act="mc-topic-filter" data-v="">全部 ' + list.length + '</button> ';
+        tps.forEach(function (name) {
+          const on = curT === name;
+          bar += '<button class="btn btn-small' + (on ? ' btn-primary' : '') + '" data-act="mc-topic-filter" data-v="' + esc(name) + '">' +
+            esc(name) + ' ' + (on ? list.length : topicN(name)) + '</button> ';
+        });
+        bar += '<button class="btn btn-small' + (curT === '__none__' ? ' btn-primary' : '') + '" data-act="mc-topic-filter" data-v="__none__">未分组 ' + cntNone + '</button> ' +
+          '<button class="btn btn-small" data-act="mc-topic-new">＋ 新建专题</button></div>';
+        return bar;
+      })() +
       '<p class="hint" style="margin-top:-4px">卡片<b>就在这个软件里复习</b> —— 复习的时候正面只有问题，' +
       '点一下才翻到答案（跟 Anki 一个意思）。<br>' +
       '📷 贴的照片<b>只存在你这台电脑的浏览器里</b>（跟着卡片走），哪天清了浏览器数据会一起没 —— 重要的题记得别只贴图。</p>';
@@ -1884,7 +1988,7 @@
           h += '<div class="mc-rowline" data-id="' + c.id + '">' +
             '<div class="mc-rowmain">' +
             '<b>' + esc(c.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
-            '<div class="mc-sub">' + (c.course ? esc(c.course) + ' · ' : '') + (c.dayKey || '') +
+            '<div class="mc-sub">' + (c.topic ? '📁 ' + esc(c.topic) + ' · ' : '') + (c.course ? esc(c.course) + ' · ' : '') + (c.dayKey || '') +
             ((c.cards || []).length
               ? ' · 第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
                 (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
@@ -1894,6 +1998,7 @@
             '<span class="mc-acts">' +
             '<button class="btn btn-small btn-primary" data-act="card-open" data-id="' + c.id + '">🃏 打开 / 复习</button>' +
             (n ? '<button class="btn btn-small" data-act="card-sched" data-id="' + c.id + '">📅 排到某天</button>' : '') +
+            '<button class="mc-ib" data-act="card-topic" data-id="' + c.id + '" title="放进某个专题（自己建、自己命名）">📁</button>' +
             '<button class="mc-ib" data-act="card-del" data-id="' + c.id + '" title="删掉这个合集">🗑</button>' +
             '</span></div>';
         });
@@ -1952,6 +2057,28 @@
     const b = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!b) return;
     const act = b.dataset.act;
+    // 📁 v159：专题筛选 / 新建专题
+    if (act === 'mc-topic-filter') { curTopicSet(b.dataset.v || ''); renderPage(); return; }
+    if (act === 'mc-topic-new') {
+      App.ui.openModal('📁 新建专题',
+        '<div class="field"><label>专题名字（比如：化学平衡）</label>' +
+        '<input id="mc-tn-name" class="mc-inp" type="text" placeholder="自己起" /></div>' +
+        '<p class="hint">建完在合集行上点 📁，把合集放进来。</p>',
+        '<button class="btn btn-primary" data-act="mc-tn-ok">建好</button>' +
+        '<button class="btn" data-act="mc-tn-cancel">取消</button>');
+      App.ui.bindActions({
+        'mc-tn-ok': function () {
+          const el = App.ui.query('#mc-tn-name');
+          const v = el ? (el.value || '').trim() : '';
+          if (!v) { App.ui.toast('先起个名字'); return; }
+          addTopic(v); curTopicSet(v);
+          App.ui.closeModal(); renderPage();
+          App.ui.toast('📁 专题「' + v + '」建好了 —— 现在就去合集行点 📁 放合集进来', 5200);
+        },
+        'mc-tn-cancel': function () { App.ui.closeModal(); }
+      });
+      return;
+    }
     if (act === 'card-new') { newColModal(); return; }
     // 📥 v99：导出到 Obsidian 已经去掉了（用户明确说不需要）—— 卡片就在这儿复习
     if (act === 'card-exportall') { App.ui.toast('导出已经去掉啦 —— 卡片就在这儿复习就好', 3600); return; }
@@ -2016,6 +2143,7 @@
     }
     const col = find(b.dataset.id);
     if (!col) return;
+    if (act === 'card-topic') { topicModal(col); return; }   // 📁 v159
     if (act === 'card-open') { openCol(col.id); return; }
     if (act === 'card-sched') { schedCardModal(col, null); return; }
     if (act === 'card-export') { exportCol(col); return; }
@@ -2043,6 +2171,8 @@
     phFailedNow: function () { return phFailed; },   // 🛟 v148
     dedupeReviewDupes: dedupeReviewDupes, dropRolledReviews: dropRolledReviews,   // 🧹 v153
     overdueReviews: overdueReviews, moveOverdueIntoToday: moveOverdueIntoToday, dropOverdueReviews: dropOverdueReviews,   // 📋 v157
+    schedCopyName: schedCopyName,   // 🌱 v158
+    topics: topics, addTopic: addTopic, topicN: topicN, curTopicGet: curTopicGet, curTopicSet: curTopicSet,   // 📁 v159
     revIsReview: revIsReview, revKeyOf: revKeyOf,
     cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,
