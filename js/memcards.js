@@ -196,8 +196,27 @@
   function curTopicSet(v) {
     try { localStorage.setItem('memcards.topic', v || ''); } catch (e) { /* 忽略 */ }
   }
+  /** 🧹 v163：同一天里同一套卡（mcRef.colId）的多余副本并成一条 —— 🧹 清重复按钮的手动强化档。
+   *  自动去重（v158）不碰用户排的两遍；这个只在用户点 🧹 时才并。 */
+  function consolidateColDupes(dayKey) {
+    const day = S().getDay(dayKey || S().todayKey());
+    let n = 0;
+    const seen = {};
+    ['required', 'ideal', 'extra'].forEach(function (c) {
+      const arr = (day.tasks && day.tasks[c]) || [];
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const t = arr[i];
+        if (t.done === true || !t.mcRef || !t.mcRef.colId) continue;
+        if (seen[t.mcRef.colId]) { arr.splice(i, 1); n++; continue; }
+        seen[t.mcRef.colId] = true;
+      }
+    });
+    if (n) S().save();
+    return n;
+  }
+
   /** 📁 把合集放进/移出专题的小弹窗 */
-  function topicModal(col) {
+  function topicModal(col, reopen) {
     const tps = topics();
     const mm = App.ui.openModal('📁 「' + esc(col.name) + '」放进哪个专题？',
       '<div class="field"><label>选一个已有的专题</label>' +
@@ -218,7 +237,9 @@
         const v = nv || sv;
         if (v) { addTopic(v); col.topic = v; }
         else { delete col.topic; }
-        save(); App.ui.closeModal(); renderPage();
+        save(); renderPage();
+        if (reopen) { openCol(col.id); }   // 📁 v164：从合集详情里改的 —— 重开合集继续
+        else { App.ui.closeModal(); }
         App.ui.toast(v ? ('📁 已放进专题「' + v + '」') : '📁 已移出专题');
       },
       'mc-tp-cancel': function () { App.ui.closeModal(); }
@@ -1210,6 +1231,7 @@
         '<button class="btn btn-small" data-act="mc-prev">⬅ 上一张</button>' +
         '<button class="btn btn-small btn-primary" data-act="mc-flip">' + (state.flipped ? '↩ 看正面' : '🔄 翻面') + '</button>' +
         '<button class="btn btn-small" data-act="mc-next">下一张 ➡</button>' + suppBtnHTML(c) +
+        '<button class="btn btn-small btn-primary" data-act="mc-finish" title="复习完了点这个 —— 勾掉今天的复习任务并发分">✅ 复习结束</button>' +
         '<button class="btn btn-small" data-act="mc-edit-front" title="复习时发现题目写错了 / 想换个问法，直接就地改">✏️ 改问题</button>' +
         '<button class="btn btn-small" data-act="mc-edit-back" title="复习时发现答案写错了 / 想补一句，直接就地改">✏️ 改答案</button>' +
         '</div>';
@@ -1321,7 +1343,9 @@
       '<div class="mc-head">' +
       '<div><b>' + esc(col.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
       '<button class="mc-tag" data-act="mc-subject" title="改学科">' +
-      (col.subject ? '🏷 ' + esc(col.subject) : '🏷 未分学科') + '</button></div>' +
+      (col.subject ? '🏷 ' + esc(col.subject) : '🏷 未分学科') + '</button>' +
+      '<button class="mc-tag" data-act="mc-topic" title="放进某个专题（自己建、自己命名）">' +
+      (col.topic ? '📁 ' + esc(col.topic) : '📁 未入专题') + '</button></div>' +
       '<div class="mc-sub">' + (col.course ? '来自：' + esc(col.course) + ' · ' : '') + (col.dayKey || '') +
       '　·　卡片只存在你本机，<b>复习日期你自己排</b></div>' +
       '<div class="mc-acts">' +
@@ -1600,6 +1624,7 @@
       App.ui.toast('🏷 新增学科「' + v + '」，以后都能选它');
       return;
     }
+    if (act === 'mc-topic') { topicModal(col, true); return; }   // 📁 v164
     if (act === 'mc-sched') { schedCardModal(col, null); return; }
     if (act === 'mc-card-sched') {
       const c = (col.cards || []).filter(function (x) { return x.id === b.dataset.id; })[0];
@@ -1613,27 +1638,23 @@
     }
     if (act === 'mc-flip') {
       state.flipped = !state.flipped;
-      // 🛟 v147：翻卡 = 这套卡当天复习过 —— 记下日期，结算/顺延就不再把它当「没做完」
-      //   （此前翻卡复习做完从不勾任务，结算每天把「未做」的复制一份，越滚越多成雪球）
+      // 🛟 v147/v161：翻卡只记「今天翻过这套卡」—— 结算/顺延的兜底（flippedOn 补勾补分）照旧。
+      //   ⚠️ v149b 的「第一次翻卡就自动勾任务 + 发分」拆掉了 —— 用户实报：复习页开着点了下外面空白，
+      //   卡片就直接算通过、从今天的复习里剔除了，很离谱。现在**勾不勾由用户点「✅ 复习结束」决定**。
       try {
         const tk = S().todayKey();
-        if (col.lastFlipDay !== tk) {
-          col.lastFlipDay = tk;
-          // 🛟 v149b：当天翻过这套卡 → 当天排的复习任务也自动勾 + 发分
-          //   （sweep 只管过去日的漏勾；当天不勾的话，明天结算又会把它当「没做完」滚一份 ——
-          //    昨天那个雪球的原点就是这个）
-          const d0 = S().getDay(tk);
-          ['required', 'ideal', 'extra'].forEach(function (c) {
-            (d0.tasks[c] || []).forEach(function (t) {
-              if (t.done === true) return;
-              if (!t.mcRef || t.mcRef.colId !== col.id) return;
-              markTaskDone(t, tk, c);
-            });
-          });
-          S().save();
-        }
+        if (col.lastFlipDay !== tk) { col.lastFlipDay = tk; S().save(); }
       } catch (e) { /* 忽略 */ }
       paint(); return;
+    }
+    if (act === 'mc-finish') {
+      // ✅ v161：复习结束 —— 用户点了才算复习完：勾任务 + 发分 + 关页面
+      const n = finishReview(col);
+      try { App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
+      try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
+      App.ui.closeModal();
+      App.ui.toast(n ? ('✅ 复习结束 —— 今天的复习任务已勾好') : '✅ 复习结束（今天这条没有待勾的复习任务）', 4800);
+      return;
     }
     if (act === 'mc-next') {
       state.flipped = false;
@@ -1819,7 +1840,8 @@
       pickSide: 'front'
     };
     const foot = '<button class="btn" data-act="mc-close">关闭</button>';
-    cur = App.ui.openModal('🃏 设问卡 · ' + esc(col.name).slice(0, 14), '<div class="mc-body"></div>', foot);
+    // 🛟 v161：lock —— 点外面空白不再整个关掉（以前手一滑，复习进度全没）
+    cur = App.ui.openModal('🃏 设问卡 · ' + esc(col.name).slice(0, 14), '<div class="mc-body"></div>', foot, { lock: true });
     cur.addEventListener('click', onClick);
     cur.addEventListener('input', onInput);
     cur.addEventListener('change', onFilePick);
@@ -1828,6 +1850,25 @@
     paint();
     ensureMath(function () { refreshOpen(); });
     phLoadAll(function () { refreshOpen(); });   // 📷 图读进内存后重画一次
+  }
+
+  /** ✅ v161：复习结束 —— 用户点了才勾任务 + 发分。
+   *  兜底不变：哪天没点就结算/顺延，flippedOn（那天翻过卡）照样补勾补分。 */
+  function finishReview(col) {
+    const tk = S().todayKey();
+    if (col.lastFlipDay !== tk) col.lastFlipDay = tk;   // 一张没翻就点结束，也算今天复习过
+    let n = 0;
+    const d0 = S().getDay(tk);
+    ['required', 'ideal', 'extra'].forEach(function (c) {
+      (d0.tasks[c] || []).forEach(function (t) {
+        if (t.done === true) return;
+        if (!t.mcRef || t.mcRef.colId !== col.id) return;
+        markTaskDone(t, tk, c);
+        n++;
+      });
+    });
+    S().save();
+    return n;
   }
 
   /** 从任务行进：有合集就开最近那个，没有就新建一个 */
@@ -1985,14 +2026,24 @@
           '<span class="mc-cnt">' + arr.length + ' 个合集 · ' + tot + ' 张</span></div>';
         arr.forEach(function (c) {
           const n = (c.cards || []).length;
+          // 📅 v160：这条合集排在哪些日子（还没做、没取消的）—— 用户：「你只写了制作出来的日期，很奇怪」
+          const pend = schedDaysOf(c.id).filter(function (x) { return !x.done && !x.superseded; });
+          const todayK = S().todayKey(), tmK = S().tomorrowKey();
+          const pendTxt = pend.length ? '📅 已排：' + pend.map(function (x) {
+            const d = x.key;
+            const nm = d === todayK ? '今天' : (d === tmK ? '明天' : d.slice(5).replace('-', '/'));
+            return (d < todayK ? '↷' : '') + nm;
+          }).join(' · ') : '';
           h += '<div class="mc-rowline" data-id="' + c.id + '">' +
             '<div class="mc-rowmain">' +
             '<b>' + esc(c.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
-            '<div class="mc-sub">' + (c.topic ? '📁 ' + esc(c.topic) + ' · ' : '') + (c.course ? esc(c.course) + ' · ' : '') + (c.dayKey || '') +
+            '<div class="mc-sub">' + (c.topic ? '📁 ' + esc(c.topic) + ' · ' : '') + (c.course ? esc(c.course) + ' · ' : '') +
+            (c.dayKey ? '建于 ' + c.dayKey.slice(5).replace('-', '/') + ' · ' : '') +
             ((c.cards || []).length
-              ? ' · 第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
+              ? '第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
                 (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
               : '') + '</div>' +
+            (pendTxt ? '<div class="mc-schedline">' + pendTxt + '</div>' : '') +
             schedBadgeHTML(c.id) +
             '</div>' +
             '<span class="mc-acts">' +
@@ -2021,6 +2072,9 @@
       '<div class="field"><label>学科（卡片页会按学科分组；也能自己写一个新的）</label>' +
       '<input id="mc-new-subject" class="mc-inp" type="text" list="mc-sub-list" placeholder="比如：化学" />' +
       '<datalist id="mc-sub-list">' + subjects().map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('') + '</datalist></div>' +
+      '<div class="field"><label>📁 专题（选填 —— 自己命名，归类了以后好找）</label>' +
+      '<input id="mc-new-topic" class="mc-inp" type="text" list="mc-tp-list" placeholder="比如：化学平衡" />' +
+      '<datalist id="mc-tp-list">' + topics().map(function (t) { return '<option value="' + esc(t) + '"></option>'; }).join('') + '</datalist></div>' +
       '<p class="hint">合集只是个收纳盒 —— 里面一张卡也没有也没关系，打开后随时加。</p>',
       '<button class="btn btn-primary" data-act="mc-nc-ok">建好并打开</button>' +
       '<button class="btn" data-act="mc-nc-cancel">取消</button>');
@@ -2033,6 +2087,9 @@
         const sv = se ? (se.value || '').trim() : '';
         if (sv) addSubject(sv);
         const col = ensureCollection({ name: v, course: '', subject: sv, dayKey: S().todayKey() });
+        const tpEl = App.ui.query('#mc-new-topic');
+        const tpv = tpEl ? (tpEl.value || '').trim() : '';
+        if (tpv) { addTopic(tpv); col.topic = tpv; save(); }   // 📁 v164：建的时候就归好专题
         App.ui.closeModal();
         renderPage();
         openCol(col.id, { focusAdd: true });
@@ -2172,7 +2229,11 @@
     dedupeReviewDupes: dedupeReviewDupes, dropRolledReviews: dropRolledReviews,   // 🧹 v153
     overdueReviews: overdueReviews, moveOverdueIntoToday: moveOverdueIntoToday, dropOverdueReviews: dropOverdueReviews,   // 📋 v157
     schedCopyName: schedCopyName,   // 🌱 v158
+    consolidateColDupes: consolidateColDupes,   // 🧹 v163
+    finishReview: finishReview,   // ✅ v161
     topics: topics, addTopic: addTopic, topicN: topicN, curTopicGet: curTopicGet, curTopicSet: curTopicSet,   // 📁 v159
+    topicModal: topicModal,   // 📁 v164
+    newColModal: newColModal,
     revIsReview: revIsReview, revKeyOf: revKeyOf,
     cardsForTask: cardsForTask, clearSchedOf: clearSchedOf, clearAllSched: clearAllSched,   // 🔗🧹 v120
     subjects: subjects,

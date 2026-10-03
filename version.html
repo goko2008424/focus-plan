@@ -162,6 +162,11 @@ const SLIDES = [
       '<div class="tl" data-i="72"><div class="n">v72</div><div class="t">欠的复习不再硬塞进今天</div></div>'+
       '<div class="tl" data-i="73"><div class="n">v73</div><div class="t">排了就一定显示 · 去重不误伤</div></div>'+
       '<div class="tl" data-i="74"><div class="n">v74</div><div class="t">专题归档 · 合集分类找</div></div>'+
+      '<div class="tl" data-i="75"><div class="n">v75</div><div class="t">合集行显示已排日期</div></div>'+
+      '<div class="tl" data-i="76"><div class="n">v76</div><div class="t">复习结束自己说了算</div></div>'+
+      '<div class="tl" data-i="77"><div class="n">v77</div><div class="t">点进复习自动计时</div></div>'+
+      '<div class="tl" data-i="78"><div class="n">v78</div><div class="t">搬家整套一起走</div></div>'+
+      '<div class="tl" data-i="79"><div class="n">v79</div><div class="t">建合集就归专题</div></div>'+
 '</div>'+
         '<p class="hint" style="position:static;margin-top:26px;letter-spacing:.1em">点上面任一版本可跳到那一页 · Goko 出品</p>'+
       '</div>';
@@ -1911,6 +1916,79 @@ const SLIDES = [
     ],
     note:'<div class="cols" style="margin-top:10px">'+
       '<div class="col" style="--cc:#7c3aed"><h4>💡 建议</h4><ul><li>按「化学平衡 / 电化学 / 溶液」这种章节建专题，一专题管一摊</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v75 · 合集行显示已排日期", badge:{t:"v75 · 📅",c:"#0369a1"},
+    tag:"合集行直接写「📅 已排：今天 · 明天」—— 不再只有创建日期",
+    cols:[
+      {t:"📅 一眼看到排到哪天", c:"#0369a1", items:[
+        "合集行新增「**📅 已排：今天 · 明天 · 10/3**」—— 排到哪天直接写",
+        "过了日子还没做的带 **↷**（该补了）",
+        "创建日期标成「**建于 9/30**」—— 不再跟复习日期混在一起"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0369a1"><h4>💡 提示</h4><ul><li>听完课自动订的复习轮次还是显示在下面的 📅 复习记录行里</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v76 · 复习结束自己说了算", badge:{t:"v76 · ✅",c:"#22a06b"},
+    tag:"翻卡不再自动算通过 —— 复习完点「✅ 复习结束」才算数",
+    cols:[
+      {t:"✅ 你来收尾", c:"#22a06b", items:[
+        "复习操作行加了 **✅ 复习结束**：点它才勾掉今天的复习任务 + 发分 + 关页面",
+        "**翻卡不再自动通过** —— 以前第一次翻卡就把任务勾掉，人还在复习任务就没了",
+        "点外面空白**不再关掉复习页**（以前手一滑进度全没）—— 关闭用「关闭」按钮或 ✅ 复习结束"]},
+      {t:"🛟 兜底照旧", c:"#0369a1", items:[
+        "忘了点结束就结算/第二天了？**那天翻过卡就照样补勾补分**（flippedOn 兜底不变）"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#22a06b"><h4>💡 为什么改</h4><ul><li>用户：复习页开着点了一下空白，卡片就直接算通过剔出列表了 —— 现在收尾动作归你</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v77 · 复习自动计时", badge:{t:"v77 · ⏱",c:"#0ea5e9"},
+    tag:"点 🃏 进复习就自动开始计时 —— 不用再单独按 ▶",
+    cols:[
+      {t:"⏱ 怎么运作", c:"#0ea5e9", items:[
+        "复习任务点 **🃏** 进卡片 → **自动开始计时**（正计时，沿用你上次选的方式）",
+        "已有任务在计时就不打扰 —— 这段复习记在正在跑的那段里",
+        "复习完点计时条上的「结束」收工，时长自动进账"]},
+      {t:"📍 哪里生效", c:"#0369a1", items:[
+        "队列页「🌱 今天的复习」点 🃏 → 自动计时",
+        "任务页复习任务的 🃏 → 同样自动计时",
+        "普通任务的 🃏 不受影响（那是听课整理，不计时）"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#0ea5e9"><h4>💡 一句话</h4><ul><li>复习 = 自动掐表，专注时间一分不少记</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v78 · 搬家整套一起走", badge:{t:"v78 · 📋",c:"#dc2626"},
+    tag:"复习任务挪走 = 这一套全收走 —— 不再移两次同一天两份",
+    cols:[
+      {t:"📋 搬家规则", c:"#dc2626", items:[
+        "复习任务 📅/→ 挪到某天：**同合集其他还没做的副本一并收掉**",
+        "今天及以前的旧副本标 superseded（排期链留史），**今天的清单立刻消失、没法再移**",
+        "目标日只留**刚搬来的这一条** —— 移几次都只有一份"]},
+      {t:"🧹 清重复强化", c:"#0369a1", items:[
+        "🧹 清重复 现在也会把**同一天同合集的多余副本并成一条**（点按钮才并，自动去重仍不碰你排的）"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#dc2626"><h4>💡 为什么之前会两份</h4><ul><li>同一个合集在好几天各有一份没做的 —— 每份都能单独挪，挪两次目标日就两份</li></ul></div>'+
+      '</div>'
+  },
+  {
+    name:"v79 · 建合集就归专题", badge:{t:"v79 · 📁",c:"#7c3aed"},
+    tag:"听课建合集的时候就能建专题、选专题 —— 不用事后补归档",
+    cols:[
+      {t:"📁 哪里都能归专题", c:"#7c3aed", items:[
+        "**＋ 新建一个合集**弹窗里直接填 📁 专题（选已有的或自己写新的）",
+        "合集详情页头部也有 **📁** 按钮（显示 已入专题/未入专题），随手归档",
+        "卡片页顶部 📁 专题条筛选不变"]}
+    ],
+    note:'<div class="cols" style="margin-top:10px">'+
+      '<div class="col" style="--cc:#7c3aed"><h4>💡 建议</h4><ul><li>按章节建专题（化学平衡/电化学/溶液…），一专题一摊</li></ul></div>'+
       '</div>'
   },
   {

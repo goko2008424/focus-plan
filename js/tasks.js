@@ -857,6 +857,28 @@
     });
   }
 
+  /** ⏱ v162：复习任务自动计时 —— 用户：「复习任务也没有单独的计时按钮，我点进去就可以复习，
+   *  那我复习的时候你是不是也得自动计一下时」。点 🃏 进复习时自动开计时：
+   *  正计时（沿用上次选的计时方式）、内容按任务名记；已有计时在跑就不打扰。 */
+  function autoStartTimer(taskKey, taskId) {
+    if (timer) { App.ui.toast('⏱ 已有任务在计时 —— 这段复习就记在正在跑的那段里', 4200); return 'busy'; }
+    const day = S().getDay(S().todayKey());
+    const task = ((day.tasks[taskKey] || []).filter(function (t) { return t.id === taskId; }))[0];
+    if (!task || task.done) return 'skip';
+    const planMode = ((S().settings() || {}).planMode === 'down') ? 'down' : 'up';
+    timer = {
+      taskKey: taskKey, taskId: taskId, taskText: task.text,
+      planContent: task.text || '',
+      mode: planMode,
+      planMinutes: planMode === 'down' ? 40 : 0,
+      startedAt: Date.now(), pausedMs: 0, paused: false
+    };
+    saveTimerSnap(); showTimerBar(); startTick(); renderToday();
+    try { pipOpen(); } catch (e) { /* 忽略 */ }   // 用户刚点了按钮，手势合法
+    App.ui.toast('⏱ 复习计时已自动开始 —— 复习完点计时条上的「结束」收工', 5200);
+    return 'started';
+  }
+
   /* ---------- 暂停 / 继续 ---------- */
   function togglePause() {
     if (!timer) return;
@@ -4343,6 +4365,39 @@
     }
     if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
     if (okM || nt) App.calendar.removeTask(dayKey, listKey, taskId);
+    // 📋 v163：复习任务搬家 = **这一整套一起走** —— 同合集（mcRef.colId）其他还没做的副本一并收掉。
+    //   用户实报：「移了两次，同一天生成了两份；今天的复习没一并移过去，导致还可以再继续移」。
+    //   ① 今天及以前的其他实例 → 标 superseded（排期链留史），今天的清单里立刻消失、不能再移
+    //   ② 目标日上同合集的多余副本 → 只留刚搬来的这一条
+    if (task.mcRef && task.mcRef.colId) {
+      const cid = task.mcRef.colId;
+      const todayK = S().todayKey();
+      const daysA = S().data().days || {};
+      Object.keys(daysA).forEach(function (k) {
+        if (k === d || k > todayK) return;              // 目标日另算；未来的安排不碰
+        const d2 = daysA[k];
+        if (!d2 || !d2.tasks) return;
+        ['required', 'ideal', 'extra'].forEach(function (c) {
+          (d2.tasks[c] || []).forEach(function (x) {
+            if (x.done === true || !x.mcRef || x.mcRef.colId !== cid) return;
+            if (x.mcRef.superseded) return;
+            x.mcRef.superseded = true;                  // 留史：排期链里看得到
+          });
+        });
+      });
+      const td = S().getDay(d);
+      let keepId = nt ? nt.id : null;
+      ['required', 'ideal', 'extra'].forEach(function (c) {
+        const arr = td.tasks[c] || [];
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const x = arr[i];
+          if (!x.mcRef || x.mcRef.colId !== cid || x.done === true) continue;
+          if (keepId && x.id === keepId) continue;
+          if (!keepId) { keepId = x.id; continue; }     // 总得留一条
+          arr.splice(i, 1);                             // 目标日多余的同合集副本 → 删
+        }
+      });
+    }
     S().save();
     App.tasks.renderAll();
     try { if (App.queue && App.queue.render) App.queue.render(); } catch (e) { /* 忽略 */ }
@@ -4472,7 +4527,11 @@
       if (act === 'memcards') {
         // 📅 v101：如果这条任务是"从卡片排过来的"，直接开那个合集（只翻那几张）
         const tk = ((S().getDay(S().todayKey()).tasks[listKey] || []).filter(function (t) { return t.id === taskId; })[0]) || null;
-        if (tk && tk.mcRef && App.memcards.openRef && App.memcards.openRef(tk.mcRef)) return;
+        if (tk && tk.mcRef && App.memcards.openRef && App.memcards.openRef(tk.mcRef)) {
+          // ⏱ v162：复习任务 → 自动开始计时
+          if (tk.mode === 'review' && App.tasks) { try { App.tasks.autoStartTimer(listKey, taskId); } catch (e) { /* 忽略 */ } }
+          return;
+        }
         // 🃏 v117：跟队列页/日历页同一个判断（别只是"不弹窗"了事 —— 要说清为什么）
         const w = mcWritable(tk);
         if (!w.ok) { App.ui.toast(w.why, 6600); return; }
@@ -7211,7 +7270,7 @@
     moveTaskDayDo: moveTaskDayDo,         // 🌟 v143 改天的核心动作（队列页 → 一键挪到明天调它）
     mcWritable: mcWritable,     // 🃏 v117
     autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
-    toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause,
+    toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause, autoStartTimer: autoStartTimer,   // ⏱ v162
     stopTimer: stopTimer, endDay: endDay, onTick: onTick,
     addTaskModal: addTaskModal, editTaskModal: editTaskModal,
     // 🧩 v110：基础任务明细里要复用任务页那套"小题按钮"，所以把这些也导出去

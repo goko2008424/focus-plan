@@ -1994,6 +1994,7 @@
     if (act === 'qrev-dedupe') {
       let nd = 0;
       try { nd = (App.memcards && App.memcards.dedupeReviewDupes) ? App.memcards.dedupeReviewDupes() : 0; } catch (e) { nd = 0; }
+      try { const nc = (App.memcards && App.memcards.consolidateColDupes) ? App.memcards.consolidateColDupes() : 0; nd += nc; } catch (e) { /* 忽略 */ }
       render();
       try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
       App.ui.toast(nd ? ('🧹 清掉 ' + nd + ' 条重复的 —— 每套卡今天只留一条（留你亲手排的）') : '🧹 今天没有重复的复习', 4200);
@@ -2017,13 +2018,22 @@
       const t0 = (day0.tasks[col] || []).filter(function (x) { return x.id === b.dataset.id; })[0];
       if (!t0) { App.ui.toast('这条找不到了，刷新一下'); return; }
       if (act === 'qrev-cards') {
-        if (t0.mcRef && App.memcards && App.memcards.openRef && App.memcards.openRef(t0.mcRef)) return;
-        // 🌱 v138：mcRef 没了也能按「合集名 = 课程名」匹配打开（cardsForTask 完整解析 → openCol）
-        try {
-          const cl = (App.memcards && App.memcards.cardsForTask) ? App.memcards.cardsForTask(t0) : [];
-          if (cl.length && App.memcards.openCol) { App.memcards.openCol(cl[0].colId, {}); return; }
-        } catch (e) { /* 忽略 */ }
-        App.ui.toast('这条没挂着卡片合集了'); return;
+        // ⏱ v162：复习任务点进去复习 → 自动开始计时（不用再单独按 ▶）
+        let opened = false;
+        if (t0.mcRef && App.memcards && App.memcards.openRef) opened = App.memcards.openRef(t0.mcRef);
+        if (!opened) {
+          // 🌱 v138：mcRef 没了也能按「合集名 = 课程名」匹配打开（cardsForTask 完整解析 → openCol）
+          try {
+            const cl = (App.memcards && App.memcards.cardsForTask) ? App.memcards.cardsForTask(t0) : [];
+            if (cl.length && App.memcards.openCol) { App.memcards.openCol(cl[0].colId, {}); opened = true; }
+          } catch (e) { /* 忽略 */ }
+        }
+        if (opened) {
+          try { if (App.tasks && App.tasks.autoStartTimer) App.tasks.autoStartTimer(col, t0.id); } catch (e) { /* 忽略 */ }
+        } else {
+          App.ui.toast('这条没挂着卡片合集了');
+        }
+        return;
       }
       if (act === 'qrev-date') {
         // 🌱 v139：交给任务页那套「📅 改天再做」（一份实现，两个入口；顺带把 withKids 打开，
