@@ -215,6 +215,21 @@
     return n;
   }
 
+  /** 🌳 v165 树形样式（进页面时注入一次） */
+  (function () {
+    try {
+      if (document.getElementById('mc-tree-style')) return;
+      const st = document.createElement('style');
+      st.id = 'mc-tree-style';
+      st.textContent = '.mc-subhead,.mc-tophead{cursor:pointer;user-select:none}' +
+        '.mc-subhead:hover,.mc-tophead:hover{filter:brightness(.96)}' +
+        '.mc-chev{display:inline-block;width:14px;opacity:.65}' +
+        '.mc-tophead{padding:6px 8px 6px 22px;font-weight:700;border-radius:8px;margin-top:2px}' +
+        '.mc-rowline.mc-in-topic{margin-left:18px}';
+      document.head.appendChild(st);
+    } catch (e) { /* 忽略 */ }
+  })();
+
   /** 📁 把合集放进/移出专题的小弹窗 */
   function topicModal(col, reopen) {
     const tps = topics();
@@ -2019,40 +2034,79 @@
         const ia = order.indexOf(a), ib = order.indexOf(b);
         return (ia < 0 ? 900 + a.charCodeAt(0) : ia) - (ib < 0 ? 900 + b.charCodeAt(0) : ib);
       });
+      // 🌳 v165：学科 ▾ → 专题 ▾ → 合集，可展开收起（用户：要 Obsidian 那种层级，别全塞一块）
+      const fold = (function () {
+        try { return JSON.parse(localStorage.getItem('memcards.fold') || '{}'); } catch (e) { return {}; }
+      })();
+      const isOpen = function (k) { return !fold[k]; };
+      const rowHTML = function (c, indent) {
+        const n = (c.cards || []).length;
+        // 📅 v160：这条合集排在哪些日子（还没做、没取消的）
+        const pend = schedDaysOf(c.id).filter(function (x) { return !x.done && !x.superseded; });
+        const todayK = S().todayKey(), tmK = S().tomorrowKey();
+        const pendTxt = pend.length ? '📅 已排：' + pend.map(function (x) {
+          const d = x.key;
+          const nm = d === todayK ? '今天' : (d === tmK ? '明天' : d.slice(5).replace('-', '/'));
+          return (d < todayK ? '↷' : '') + nm;
+        }).join(' · ') : '';
+        return '<div class="mc-rowline' + (indent ? ' mc-in-topic' : '') + '" data-id="' + c.id + '">' +
+          '<div class="mc-rowmain">' +
+          '<b>' + esc(c.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
+          '<div class="mc-sub">' + (c.course ? esc(c.course) + ' · ' : '') +
+          (c.dayKey ? '建于 ' + c.dayKey.slice(5).replace('-', '/') + ' · ' : '') +
+          ((c.cards || []).length
+            ? '第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
+              (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
+            : '') + '</div>' +
+          (pendTxt ? '<div class="mc-schedline">' + pendTxt + '</div>' : '') +
+          schedBadgeHTML(c.id) +
+          '</div>' +
+          '<span class="mc-acts">' +
+          '<button class="btn btn-small btn-primary" data-act="card-open" data-id="' + c.id + '">🃏 打开 / 复习</button>' +
+          (n ? '<button class="btn btn-small" data-act="card-sched" data-id="' + c.id + '">📅 排到某天</button>' : '') +
+          '<button class="mc-ib" data-act="card-topic" data-id="' + c.id + '" title="放进某个专题（自己建、自己命名）">📁</button>' +
+          '<button class="mc-ib" data-act="card-del" data-id="' + c.id + '" title="删掉这个合集">🗑</button>' +
+          '</span></div>';
+      };
       keys.forEach(function (s) {
         const arr = bySub[s];
         const tot = arr.reduce(function (m, c) { return m + (c.cards || []).length; }, 0);
-        h += '<div class="mc-subhead">' + esc(s) +
+        const sk = 'S:' + s;
+        const sOpen = isOpen(sk);
+        h += '<div class="mc-subhead" data-act="mc-fold" data-k="' + esc(sk) + '" title="点一下展开/收起">' +
+          '<span class="mc-chev">' + (sOpen ? '▾' : '▸') + '</span> ' + esc(s) +
           '<span class="mc-cnt">' + arr.length + ' 个合集 · ' + tot + ' 张</span></div>';
+        if (!sOpen) return;
+        // 学科内按专题再分一层；整科都没专题就不套娃
+        const byTp = {};
+        const plain = [];
         arr.forEach(function (c) {
-          const n = (c.cards || []).length;
-          // 📅 v160：这条合集排在哪些日子（还没做、没取消的）—— 用户：「你只写了制作出来的日期，很奇怪」
-          const pend = schedDaysOf(c.id).filter(function (x) { return !x.done && !x.superseded; });
-          const todayK = S().todayKey(), tmK = S().tomorrowKey();
-          const pendTxt = pend.length ? '📅 已排：' + pend.map(function (x) {
-            const d = x.key;
-            const nm = d === todayK ? '今天' : (d === tmK ? '明天' : d.slice(5).replace('-', '/'));
-            return (d < todayK ? '↷' : '') + nm;
-          }).join(' · ') : '';
-          h += '<div class="mc-rowline" data-id="' + c.id + '">' +
-            '<div class="mc-rowmain">' +
-            '<b>' + esc(c.name) + '</b> <span class="mc-cnt">' + n + ' 张</span>' +
-            '<div class="mc-sub">' + (c.topic ? '📁 ' + esc(c.topic) + ' · ' : '') + (c.course ? esc(c.course) + ' · ' : '') +
-            (c.dayKey ? '建于 ' + c.dayKey.slice(5).replace('-', '/') + ' · ' : '') +
-            ((c.cards || []).length
-              ? '第一张：' + esc(oneLine(c.cards[0].front) || (c.cards[0].frontImgs && c.cards[0].frontImgs.length ? '（看图）' : '')).slice(0, 26) +
-                (imgCount(c) ? ' · 📷 ' + imgCount(c) + ' 张图' : '')
-              : '') + '</div>' +
-            (pendTxt ? '<div class="mc-schedline">' + pendTxt + '</div>' : '') +
-            schedBadgeHTML(c.id) +
-            '</div>' +
-            '<span class="mc-acts">' +
-            '<button class="btn btn-small btn-primary" data-act="card-open" data-id="' + c.id + '">🃏 打开 / 复习</button>' +
-            (n ? '<button class="btn btn-small" data-act="card-sched" data-id="' + c.id + '">📅 排到某天</button>' : '') +
-            '<button class="mc-ib" data-act="card-topic" data-id="' + c.id + '" title="放进某个专题（自己建、自己命名）">📁</button>' +
-            '<button class="mc-ib" data-act="card-del" data-id="' + c.id + '" title="删掉这个合集">🗑</button>' +
-            '</span></div>';
+          if (c.topic) (byTp[c.topic] = byTp[c.topic] || []).push(c);
+          else plain.push(c);
         });
+        const tKeys = Object.keys(byTp).sort();
+        tKeys.forEach(function (tp) {
+          const tk = 'T:' + s + '|' + tp;
+          const tOpen = isOpen(tk);
+          const tArr = byTp[tp];
+          const tTot = tArr.reduce(function (m, c) { return m + (c.cards || []).length; }, 0);
+          h += '<div class="mc-tophead" data-act="mc-fold" data-k="' + esc(tk) + '" title="点一下展开/收起">' +
+            '<span class="mc-chev">' + (tOpen ? '▾' : '▸') + '</span> 📁 ' + esc(tp) +
+            '<span class="mc-cnt">' + tArr.length + ' 个合集 · ' + tTot + ' 张</span></div>';
+          if (tOpen) tArr.forEach(function (c) { h += rowHTML(c, true); });
+        });
+        if (plain.length) {
+          if (tKeys.length) {
+            const tk = 'T:' + s + '|__none__';
+            const tOpen = isOpen(tk);
+            h += '<div class="mc-tophead" data-act="mc-fold" data-k="' + esc(tk) + '">' +
+              '<span class="mc-chev">' + (tOpen ? '▾' : '▸') + '</span> 📁 未入专题' +
+              '<span class="mc-cnt">' + plain.length + ' 个合集</span></div>';
+            if (tOpen) plain.forEach(function (c) { h += rowHTML(c, true); });
+          } else {
+            plain.forEach(function (c) { h += rowHTML(c, false); });
+          }
+        }
       });
     }
     h += '</div>';
@@ -2114,6 +2168,15 @@
     const b = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!b) return;
     const act = b.dataset.act;
+    // 🌳 v165：展开/收起
+    if (act === 'mc-fold') {
+      try {
+        const f = JSON.parse(localStorage.getItem('memcards.fold') || '{}');
+        if (f[b.dataset.k]) delete f[b.dataset.k]; else f[b.dataset.k] = 1;
+        localStorage.setItem('memcards.fold', JSON.stringify(f));
+      } catch (e) { /* 忽略 */ }
+      renderPage(); return;
+    }
     // 📁 v159：专题筛选 / 新建专题
     if (act === 'mc-topic-filter') { curTopicSet(b.dataset.v || ''); renderPage(); return; }
     if (act === 'mc-topic-new') {
