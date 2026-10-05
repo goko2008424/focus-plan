@@ -1221,6 +1221,18 @@
     const box = cur.querySelector('.mc-body');
     if (!box) return;
     captureDraftText();          // 📝 v111：重建之前先把加卡区写着的文字收好（不然换标签一按就没了）
+    // 📝 v166：正在展开的就地编辑（✏️ 改卡框）也一样要先收 —— 用户实报：敲的好好的，
+    //    点了一下上面别的卡，没保存的字全没了。现在 ef/eb 跟着 state.editText 走。
+    const edBox = cur.querySelector('.mc-edit[data-edit]');
+    if (edBox) {
+      const eid = edBox.dataset.edit;
+      if (!state.editTexts) state.editTexts = {};
+      if (!state.editTexts[eid]) state.editTexts[eid] = { ef: '', eb: '' };
+      const e1 = edBox.querySelector('[data-f="ef"]');
+      const e2 = edBox.querySelector('[data-f="eb"]');
+      if (e1) state.editTexts[eid].ef = e1.value || '';
+      if (e2) state.editTexts[eid].eb = e2.value || '';
+    }
     const col = state.col;
     const n = (col.cards || []).length;
 
@@ -1342,9 +1354,11 @@
         '<button class="mc-ib" data-act="mc-card-del" data-id="' + c.id + '" title="删">🗑</button></div>' +
         (state.openId === c.id ? '<div class="mc-back">' + (backHTML(c) || '<span class="hint" style="margin:0">（反面还没写）</span>') + '</div>' : '') +
         (open
-          ? '<div class="mc-edit"><textarea class="mc-ta" data-f="ef" rows="2" placeholder="正面文字（也可以只贴图）">' + esc(c.front) + '</textarea>' +
+          ? '<div class="mc-edit" data-edit="' + c.id + '"><textarea class="mc-ta" data-f="ef" rows="2" placeholder="正面文字（也可以只贴图）">' +
+            esc((state.editTexts && state.editTexts[c.id]) ? state.editTexts[c.id].ef : c.front) + '</textarea>' +
             '<div class="mc-thumbs" data-thumbs="ef"></div>' +
-            '<textarea class="mc-ta" data-f="eb" rows="3" placeholder="反面文字">' + esc(c.back) + '</textarea>' +
+            '<textarea class="mc-ta" data-f="eb" rows="3" placeholder="反面文字">' +
+            esc((state.editTexts && state.editTexts[c.id]) ? state.editTexts[c.id].eb : c.back) + '</textarea>' +
             '<div class="mc-thumbs" data-thumbs="eb"></div>' +
             '<div class="mc-row"><button class="btn btn-small" data-act="mc-pick" data-side="ef">📷 正面贴图</button>' +
             '<button class="btn btn-small" data-act="mc-pick" data-side="eb">📷 反面贴图</button>' +
@@ -1776,13 +1790,32 @@
       paint(); return;
     }
     if (act === 'mc-card-ed') {
+      // 📝 v166：先把正在编辑的上一张的文字收好（换卡不冲掉）
+      const prevBox = cur.querySelector('.mc-edit[data-edit]');
+      if (prevBox) {
+        const pid = prevBox.dataset.edit;
+        if (!state.editTexts) state.editTexts = {};
+        if (!state.editTexts[pid]) state.editTexts[pid] = { ef: '', eb: '' };
+        const p1 = prevBox.querySelector('[data-f="ef"]');
+        const p2 = prevBox.querySelector('[data-f="eb"]');
+        if (p1) state.editTexts[pid].ef = p1.value || '';
+        if (p2) state.editTexts[pid].eb = p2.value || '';
+      }
       const c0 = col.cards.filter(function (c) { return c.id === b.dataset.id; })[0];
       state.editId = b.dataset.id; state.openId = b.dataset.id;
       state.draft.ef = c0 ? (c0.frontImgs || []).slice() : [];
       state.draft.eb = c0 ? (c0.backImgs || []).slice() : [];
+      // 📝 v166：文本草稿每卡一份 —— 没有就建（从卡上现值起步）
+      if (!state.editTexts) state.editTexts = {};
+      if (!state.editTexts[b.dataset.id]) {
+        state.editTexts[b.dataset.id] = { ef: c0 ? (c0.front || '') : '', eb: c0 ? (c0.back || '') : '' };
+      }
       paint(); return;
     }
-    if (act === 'mc-card-cancel') { state.editId = null; paint(); return; }
+    if (act === 'mc-card-cancel') {
+      if (state.editTexts) delete state.editTexts[b.dataset.id];   // 📝 v166：点了取消才是真不要了
+      state.editId = null; paint(); return;
+    }
     if (act === 'mc-card-save') {
       const t = cur.querySelectorAll('[data-f="ef"]');
       const k = cur.querySelectorAll('[data-f="eb"]');
@@ -1794,6 +1827,7 @@
       if (ef.length) card.frontImgs = ef; else delete card.frontImgs;
       if (eb.length) card.backImgs = eb; else delete card.backImgs;
       state.draft.ef = []; state.draft.eb = [];
+      if (state.editTexts) delete state.editTexts[b.dataset.id];   // 📝 v166：保存了才清草稿
       touch(col);
       state.editId = null; paint(); afterChange();
       App.ui.toast('改好了');
@@ -1852,6 +1886,7 @@
       //   ⚠️ 以前这俩只有 DOM 里那一份 —— `paint()` 一重建 innerHTML 就全没了：
       //   用户「我原先在正面写了一大段，点了一下上面的换标签，它就把我正在写的给搞没了」。
       draftText: { front: '', back: '' },
+      editTexts: {},   // 📝 v166：就地编辑的文字草稿（每张卡一份）
       pickSide: 'front'
     };
     const foot = '<button class="btn" data-act="mc-close">关闭</button>';
