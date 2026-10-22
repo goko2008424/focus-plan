@@ -1668,10 +1668,11 @@
           '" value="' + (t.points != null ? t.points : 2) +
           '" title="这条复习完成得多少分（翻卡做完自动算完成时按这个发；改成 0 = 不发分）" /></span>' +
           '<span class="q-acts">' +
+          '<button class="q-ib" data-act="qrev-plan" data-col="' + x.col + '" data-id="' + t.id + '" title="复习排期：看排了哪些天 / ✕ 取消某一次 / 🧹 以后都不复习了">🌱</button>' +
           (nCards ? '<button class="q-ib" data-act="qrev-cards" data-col="' + x.col + '" data-id="' + t.id + '" title="打开这套卡翻卡自测">🃏</button>' : '') +
           '<button class="q-ib" data-act="qrev-start" data-col="' + x.col + '" data-id="' + t.id + '" title="开始计时做这条">▶</button>' +
           '<button class="q-ib" data-act="qrev-date" data-col="' + x.col + '" data-id="' + t.id + '" title="重新定日期：改天再做（本体+复习计划一起搬过去）">📅</button>' +
-          '<button class="q-ib" data-act="qrev-del" data-col="' + x.col + '" data-id="' + t.id + '" title="把这条从今天的复习里收走（任务页那章和复习计划不受影响）">🗑</button>' +
+          '<button class="q-ib" data-act="qrev-del" data-col="' + x.col + '" data-id="' + t.id + '" title="只收走今天这条 —— 以后的排期还在；要取消排期点 🌱">🗑</button>' +
           '<button class="q-ib" data-act="qrev-open" data-col="' + x.col + '" data-id="' + t.id + '" title="先不做了？一键挪到明天（本体+复习计划一起搬走，今天这行就走；想挑别的日子用 📅）">→</button>' +
           '</span></div>';
       });
@@ -2012,11 +2013,19 @@
       return;
     }
     // 🌱 v118：基础任务卡里「今天的复习」那几个按钮
-    if (act === 'qrev-start' || act === 'qrev-cards' || act === 'qrev-date' || act === 'qrev-del' || act === 'qrev-open') {
+    if (act === 'qrev-start' || act === 'qrev-cards' || act === 'qrev-date' || act === 'qrev-del' || act === 'qrev-open' || act === 'qrev-plan') {
       const col = b.dataset.col || 'required';
       const day0 = S().getDay(S().todayKey());
       const t0 = (day0.tasks[col] || []).filter(function (x) { return x.id === b.dataset.id; })[0];
       if (!t0) { App.ui.toast('这条找不到了，刷新一下'); return; }
+      if (act === 'qrev-plan') {
+        // 🌱 v169：队列页复习行直接开「复习排期」—— 用户实报「安排了复习想取消，结果取消不掉」：
+        //   取消功能 v156 就有（任务页 🌱 弹窗里 ✕ 取消某一次 / 🧹 清空全部），但队列页没有入口。
+        //   这里把同一个弹窗借过来：srPlanModal 内部本来就 会刷新队列 render。
+        if (App.tasks && App.tasks.srPlanModal) App.tasks.srPlanModal(t0, col);
+        else App.ui.toast('暂时打不开复习排期，刷新一下页面');
+        return;
+      }
       if (act === 'qrev-cards') {
         // ⏱ v162：复习任务点进去复习 → 自动开始计时（不用再单独按 ▶）
         let opened = false;
@@ -2049,7 +2058,7 @@
         const iD = arrD.findIndex(function (xx) { return xx.id === t0.id; });
         if (iD < 0) { App.ui.toast('这条找不到了，刷新一下'); return; }
         App.ui.confirm('把「' + esc(t0.text) + '」从今天的复习里收走？<br>' +
-          '<span class="hint">只收今天这一条 —— 任务页那章还在，复习计划不受影响。</span>', '收走', function () {
+          '<span class="hint">只收今天这一条 —— 以后的排期照旧，到点还会冒出来；<b>想连以后的排期一起取消</b>，先用行上的 <b>🌱</b>（✕ 取消某一次 / 🧹 全部不复习了）。</span>', '收走', function () {
           const a2 = S().getDay(S().todayKey()).tasks[col] || [];
           const j = a2.findIndex(function (xx) { return xx.id === t0.id; });
           if (j >= 0) a2.splice(j, 1);

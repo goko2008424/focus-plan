@@ -4377,6 +4377,22 @@
       }
     }
     if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
+    // 🌟 v170：转移当天 = 过完一遍 —— 用户：「你哪天移动这个任务，就是哪天完成了第一遍，要把第一遍记住，
+    //   不然我都不知道一个东西复习多少遍了」（他按 3 天 / 7 天 / 一个月的节奏排，要能看到每遍的日期）
+    if (nt) {
+      if (!nt.sp) nt.sp = { planned: [], at: Date.now(), bonus: false, cfg: null };
+      if (!Array.isArray(nt.sp.planned)) nt.sp.planned = [];
+      const mvIso = new Date().toISOString();
+      const pend0 = nt.sp.planned.filter(function (r) { return r.done === null; })
+        .sort(function (a, b) { return a.due - b.due; })[0];
+      if (pend0) { pend0.done = true; pend0.at = mvIso; pend0.via = 'move'; }   // 本来就排着的轮 → 当天完成
+      else {
+        const dn0 = nt.sp.planned.filter(function (r) { return r.done === true; }).length;
+        nt.sp.planned.push({ n: dn0 + 1, gap: 1440, due: Date.now(), done: true, at: mvIso, via: 'move', need: 1, hits: [] });
+      }
+      delete nt.sp.stopped; delete nt.sp.stoppedAt; delete nt.sp.droppedN;      // 又开始新的复习周期了
+      nt.sp.at = Date.now();
+    }
     if (okM || nt) App.calendar.removeTask(dayKey, listKey, taskId);
     // 📋 v163：复习任务搬家 = **这一整套一起走** —— 同合集（mcRef.colId）其他还没做的副本一并收掉。
     //   用户实报：「移了两次，同一天生成了两份；今天的复习没一并移过去，导致还可以再继续移」。
@@ -6163,15 +6179,28 @@
     }
     const now = Date.now();
     return '<div class="sr-hist"><div class="sr-hist-t">📅 复习记录（共 ' + plan.length + ' 次）</div>' +
-      plan.map(function (r) {
+      plan.map(function (r, idx) {
         const st = r.done === true
           ? ('✅ 完成于 ' + srWhen(r.at || r.due))
           : (r.done === false ? '✗ 那天没做'
             : (r.due <= now ? '⚠️ 已过期还没做' : '📅 待做'));
         const cls = r.done === true ? ' ok' : ((r.done === null && r.due <= now) ? ' late' : '');
+        // 🌟 v170：距上一遍隔了几天 —— 他按 3 天 / 7 天 / 一个月的节奏排，得能对上账
+        let gapTxt = '';
+        if (r.done === true) {
+          const prev = plan.slice(0, idx).filter(function (x) { return x.done === true; }).pop();
+          if (prev) {
+            const a = prev.at ? Date.parse(prev.at) : prev.due;
+            const b = r.at ? Date.parse(r.at) : r.due;
+            if (!isNaN(a) && !isNaN(b)) gapTxt = '<span style="font-size:11px;color:#8a919c">隔 ' +
+              Math.max(1, Math.round((b - a) / 86400000)) + ' 天</span>';
+          }
+        }
         return '<div class="sr-hist-r"><span class="sr-hist-n">第 ' + r.n + ' 次</span>' +
           '<span class="sr-hist-d">计划 ' + srWhen(r.due) + '</span>' +
           '<span class="sr-hist-s' + cls + '">' + st + '</span>' + srResTag(r) +
+          (r.via === 'move' ? '<span title="这天你把任务 📅 转移到后面 —— 转移当天就算过完一遍" style="font-size:11px;color:#8a5a00;background:#fff4dd;border-radius:6px;padding:1px 6px">📅 转移算一遍</span>' : '') +
+          gapTxt +
           (r.done === null
             ? '<button class="btn btn-small" data-act="sr-cancel" data-n="' + r.n + '" title="取消这一次（卡片和任务都还在）">✕ 取消</button>'
             : '') + '</div>';
@@ -6288,6 +6317,7 @@
       const due = fmD(r.due), at = r.at ? fmD(r.at) : '';
       let s = prefix + '原定 ' + due;
       if (at && at !== due) s += ' → 实际 ' + at;
+      if (r.via === 'move') s += '·📅转移';
       return s + ' ✓' + (r.result === 'no' ? '（没写出来）' : '');
     };
     const bits = [];
