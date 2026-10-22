@@ -103,11 +103,15 @@
         const n = copyTaskToDay(task, colKey, pickKey, std, withKids, targetCol);
         if (!n) { App.ui.toast('目标日期已有同名任务，未重复安排（原任务原地保留）'); return; }
         if (moveIt && !(pickKey === fromKey && targetCol === colKey)) removeTask(fromKey, colKey, task.id);
+        // 🌟 v171：日历转移也记账 —— 转移当天 = 过完一遍（跟任务页 📅 同一套）；复习历史跟着走到新任务上
+        try { if (moveIt && n && App.tasks && App.tasks.recordMoveDone) App.tasks.recordMoveDone(n, task.sp, pickKey); } catch (e) { /* 忽略 */ }
         S().save();
         App.ui.closeModal();
         render();
+        try { if (App.tasks && App.tasks.renderAll) App.tasks.renderAll(); } catch (e) { /* 忽略 */ }
         App.ui.toast('🔁 已' + (moveIt ? '移动' : '复制') + '到 ' + dayLabel(pickKey) +
-          '：' + task.text.slice(0, 14) + (hasKids && withKids ? '（小任务/任务组一起带了）' : '') + (std ? '（标准：' + std + '）' : ''));
+          '：' + task.text.slice(0, 14) + (hasKids && withKids ? '（小任务/任务组一起带了）' : '') + (std ? '（标准：' + std + '）' : '') +
+          (moveIt ? '（转移当天算过完一遍）' : ''));
       },
       cancel: App.ui.closeModal
     });
@@ -153,7 +157,7 @@
     if (task.kps && task.kps.length) nt.kps = JSON.parse(JSON.stringify(task.kps));
     tday.tasks[toCol].push(nt);
     S().save();
-    return true;
+    return nt;   // 🌟 v171：返回新任务本体（转移记账要用；调用方只判真值，兼容）
   }
 
   function removeTask(dayKey, colKey, taskId) {
@@ -523,7 +527,8 @@
         html += '<div class="cal-task' + (t.done ? ' done' : '') + '" style="border-bottom:1px dashed var(--line);padding:6px 2px">' +
           '<span class="t-text" style="font-size:13.5px;word-break:break-all">' + esc(t.text) + (t.done ? ' ✓' : '') +
             ((App.tasks && App.tasks.carryTagHTML) ? App.tasks.carryTagHTML(t) : '') +
-            ((App.tasks && App.tasks.lecTagHTML) ? App.tasks.lecTagHTML(t) : '') + '</span>' +
+            ((App.tasks && App.tasks.lecTagHTML) ? App.tasks.lecTagHTML(t) : '') +
+            ((App.tasks && App.tasks.revDotsHTML) ? App.tasks.revDotsHTML(t) : '') + '</span>' +
           (t.standard ? '<div class="t-std" style="font-size:11.5px;color:#f59e0b;margin-top:2px">📌 标准：' + esc(t.standard) + '</div>' : '') +
           taskContextHTML(t, c.k) +
           '<div class="t-btns">' +

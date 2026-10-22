@@ -4336,6 +4336,25 @@
     });
     return sp;
   }
+  /** 🌟 v171：转移记账（任务页/队列页 📅 和日历 🔁 共用）—— 转移当天 = 过完一遍。
+   *  用户：「你哪天移动这个任务，就是哪天完成了第一遍，要把第一遍记住，不然我都不知道一个东西复习多少遍了」
+   *  nt = 目标日上那条新任务；srcSp = 原任务的 sp（没排过就是 undefined）——历史要跟着走，不然每 transfer 一次都从头数 */
+  function recordMoveDone(nt, srcSp, targetKey) {
+    if (!nt) return;
+    if (srcSp) nt.sp = moveSpRoundsTo(JSON.parse(JSON.stringify(srcSp)), targetKey);
+    if (!nt.sp) nt.sp = { planned: [], at: Date.now(), bonus: false, cfg: null };
+    if (!Array.isArray(nt.sp.planned)) nt.sp.planned = [];
+    const mvIso = new Date().toISOString();
+    const pend0 = nt.sp.planned.filter(function (r) { return r.done === null; })
+      .sort(function (a, b) { return a.due - b.due; })[0];
+    if (pend0) { pend0.done = true; pend0.at = mvIso; pend0.via = 'move'; }   // 本来就排着的轮 → 当天完成
+    else {
+      const dn0 = nt.sp.planned.filter(function (r) { return r.done === true; }).length;
+      nt.sp.planned.push({ n: dn0 + 1, gap: 1440, due: Date.now(), done: true, at: mvIso, via: 'move', need: 1, hits: [] });
+    }
+    delete nt.sp.stopped; delete nt.sp.stoppedAt; delete nt.sp.droppedN;      // 又开始新的复习周期了
+    nt.sp.at = Date.now();
+  }
   /** 🌟 v143：改天的**核心动作**（从 📅 弹窗回调里抽出来）—— 队列页「今天的复习」行上的 →（一键挪到明天）也调它。
    *  做的事：整条（+ 没做完的小题/组）搬到 d，sp 没做完的轮次跟着改期，今天这条删掉。
    *  v141 的口径保持：目标那天有同名任务搬不动时，今天这条也照样收走，只提示一句。 */
@@ -4376,23 +4395,7 @@
         if (us.length) nt.subs = us;
       }
     }
-    if (nt && spMove) nt.sp = moveSpRoundsTo(spMove, d);
-    // 🌟 v170：转移当天 = 过完一遍 —— 用户：「你哪天移动这个任务，就是哪天完成了第一遍，要把第一遍记住，
-    //   不然我都不知道一个东西复习多少遍了」（他按 3 天 / 7 天 / 一个月的节奏排，要能看到每遍的日期）
-    if (nt) {
-      if (!nt.sp) nt.sp = { planned: [], at: Date.now(), bonus: false, cfg: null };
-      if (!Array.isArray(nt.sp.planned)) nt.sp.planned = [];
-      const mvIso = new Date().toISOString();
-      const pend0 = nt.sp.planned.filter(function (r) { return r.done === null; })
-        .sort(function (a, b) { return a.due - b.due; })[0];
-      if (pend0) { pend0.done = true; pend0.at = mvIso; pend0.via = 'move'; }   // 本来就排着的轮 → 当天完成
-      else {
-        const dn0 = nt.sp.planned.filter(function (r) { return r.done === true; }).length;
-        nt.sp.planned.push({ n: dn0 + 1, gap: 1440, due: Date.now(), done: true, at: mvIso, via: 'move', need: 1, hits: [] });
-      }
-      delete nt.sp.stopped; delete nt.sp.stoppedAt; delete nt.sp.droppedN;      // 又开始新的复习周期了
-      nt.sp.at = Date.now();
-    }
+    if (nt) recordMoveDone(nt, task.sp, d);
     if (okM || nt) App.calendar.removeTask(dayKey, listKey, taskId);
     // 📋 v163：复习任务搬家 = **这一整套一起走** —— 同合集（mcRef.colId）其他还没做的副本一并收掉。
     //   用户实报：「移了两次，同一天生成了两份；今天的复习没一并移过去，导致还可以再继续移」。
@@ -7311,6 +7314,7 @@
     srAskAgain: srAskAgain,     // 🔁 v116
     moveTaskDayModal: moveTaskDayModal,   // 📅 v139 改天再做（队列页也调它）
     moveTaskDayDo: moveTaskDayDo,         // 🌟 v143 改天的核心动作（队列页 → 一键挪到明天调它）
+    recordMoveDone: recordMoveDone,       // 🌟 v171 转移记账（日历 🔁 也调它）
     mcWritable: mcWritable,     // 🃏 v117
     autoEndDayTick: autoEndDayTick, autoSettleKey: autoSettleKey,
     toggleTask: toggleTask, startTimer: startTimer, togglePause: togglePause, autoStartTimer: autoStartTimer,   // ⏱ v162
