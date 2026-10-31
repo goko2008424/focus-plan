@@ -512,14 +512,22 @@
     const nextR = rounds.filter(function (r) { return !r.done && r.due > Date.now(); })[0] || null;
     const parts = [];
     if (doneR.length) {
-      const last = doneR[doneR.length - 1];
-      const dueD = S().dateKey(new Date(last.due));
-      const atD = last.at ? S().dateKey(new Date(last.at)) : dueD;
-      if (doneR.length === 1) {
-        parts.push('复习 1 次：' + (dueD === atD ? fm(dueD) + ' ✓' : '原定 ' + fm(dueD) + ' → 实际 ' + fm(atD) + ' ✓'));
-      } else {
-        parts.push('复习 ' + doneR.length + ' 次，最近：' + (dueD === atD ? fm(dueD) + ' ✓' : '原定 ' + fm(dueD) + ' → 实际 ' + fm(atD) + ' ✓'));
-      }
+      // 🌟 v172：每一次复习都列出来（哪天过的 + 跟上一遍隔几天）——
+      //   用户：「我复习完7天安排在7天之后，又要安排30天，不把每一次都标着，就没法知道最佳日期是多少」
+      const msOf = function (v) { return typeof v === 'number' ? v : Date.parse(v); };
+      const list = doneR.map(function (r, idx) {
+        const dueD = S().dateKey(new Date(r.due));
+        const atD = r.at ? S().dateKey(new Date(r.at)) : dueD;
+        let s = dueD === atD ? fm(dueD) + ' ✓' : '原定 ' + fm(dueD) + ' → 实际 ' + fm(atD) + ' ✓';
+        if (idx > 0) {
+          const pm = doneR[idx - 1].at ? msOf(doneR[idx - 1].at) : doneR[idx - 1].due;
+          const cm = r.at ? msOf(r.at) : r.due;
+          if (!isNaN(pm) && !isNaN(cm)) s += '<span style="color:#8a919c">（隔 ' +
+            Math.max(1, Math.round((cm - pm) / 86400000)) + ' 天）</span>';
+        }
+        return s;
+      }).join(' · ');
+      parts.push((doneR.length === 1 ? '复习 1 次：' : '复习 ' + doneR.length + ' 次：') + list);
     }
     if (lateR.length) {
       parts.push('原定 ' + fm(lateR[lateR.length - 1].due) + ' 没做 → <b>顺延中</b>' + (doneR.length ? '（补上就记实际日期）' : ''));
